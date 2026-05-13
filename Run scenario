@@ -1,0 +1,468 @@
+"""
+=================================================================
+Radar-Guard | 시나리오 선택 → 유빈 UI 전달 파이프라인
+=================================================================
+사용법:
+    SCENARIO 변수만 바꾸면 됨
+    "fall"           → 낙상
+    "electric_shock" → 감전
+    "pinching"       → 협착
+    "vibration"      → 진동이상
+
+실행하면:
+    1. 승원 파트: 목데이터 생성 + LMS 필터링 → stage1_filtered.json
+    2. 성준 파트: LSTM-AE 탐지 + 분류       → stage2_event.json
+    3. 콘솔: 유빈 UI에 표시될 내용 미리보기
+    4. 그래프: 탐지 결과 시각화
+=================================================================
+"""
+
+# ======================================================
+# ★ 여기만 바꾸면 됨 ★
+SCENARIO = "fall"   # "fall" | "electric_shock" | "pinching" | "vibration"
+# ======================================================
+
+try:
+    from IPython.display import display
+except ImportError:
+    def display(fig): pass
+
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+from torch import optim
+from sklearn.preprocessing import MinMaxScaler
+from datetime import datetime, timedelta
+import json
+
+fs           = 1000
+seq_length   = 3
+feature_size = 64
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+SCENARIO_KR = {
+    "fall":           "낙상",
+    "electric_shock": "감전",
+    "pinching":       "협착",
+    "vibration":      "진동이상",
+}
+ZONE_MAP = {
+    "fall": "C", "electric_shock": "A", "pinching": "B", "vibration": "C"
+}
+
+
+# ================================================================
+# 승원 파트
+# ================================================================
+class RadarSignalProcessor:
+    def __init__(self, order=32, mu=0.01):
+        self.weights = np.zeros(order)
+        self.buffer  = np.zeros(order)
+        self.order, self.mu = order, mu
+
+    def lms_filter(self, input_sample, ref_sample):
+        self.buffer    = np.roll(self.buffer, 1)
+        self.buffer[0] = ref_sample
+        output         = np.dot(self.weights, self.buffer)
+        error          = input_sample - output
+        self.weights  += 2 * self.mu * error * self.buffer
+        return error
+
+    def extract_features(self, sig):
+        n   = len(sig)
+        w   = np.hanning(n)
+        fft = np.fft.fft(sig * w)
+        frq = np.fft.fftfreq(n, d=1/fs)
+        mag = np.abs(fft) / (n / 2)
+        return mag[np.where(frq >= 0)][:feature_size]
+
+
+def make_mock_data(scenario, n_samples=200):
+    signals = []
+    for i in range(n_samples):
+        t     = np.linspace(0, 0.1, 128)
+        noise = np.random.normal(0, 0.1, 128)
+        if scenario == "fall":
+            base = (np.sin(2*np.pi*50*t)*3.0 if 100 < i < 110
+                    else np.zeros(128) if i >= 110
+                    else np.sin(2*np.pi*5*t))
+        elif scenario == "electric_shock":
+            base = (np.sin(2*np.pi*50*t)*2.0 + np.sin(2*np.pi*63*t)*0.8
+                    + np.random.normal(0, 0.5, 128)
+                    if 80 <= i <= 130 else np.sin(2*np.pi*5*t))
+        elif scenario == "pinching":
+            base = (np.sin(2*np.pi*5*t)*2.5 + np.random.normal(0, 0.3, 128)
+                    if i >= 80 else np.sin(2*np.pi*5*t))
+        else:  # vibration
+            base = (np.sin(2*np.pi*3*t)*1.5 + np.sin(2*np.pi*7*t)*0.5
+                    if i >= 100 else np.sin(2*np.pi*5*t))
+        signals.append(base + noise)
+    return signals
+
+
+def seungwon_process(scenario, n_samples=200):
+    print(f"[승원] '{SCENARIO_KR[scenario]}' 시나리오 처리 중...")
+    features = []
+    for raw in make_mock_data(scenario, n_samples):
+        proc    = RadarSignalProcessor()
+        noise   = np.random.normal(0, 0.1, len(raw))
+        cleaned = np.array([proc.lms_filter(r, n*0.8) for r, n in zip(raw, noise)])
+        features.append(proc.extract_features(cleaned).tolist())
+
+    stage1 = {
+        "schema_version": "1.0",
+        "timestamp":      datetime.now().isoformat(),
+        "scenario":       scenario,
+        "n_samples":      n_samples,
+        "zone_id":        ZONE_MAP[scenario],
+        "features":       features,
+        "metadata":       {"filter_method": "LMS_adaptive", "signal_quality": 0.95},
+    }
+    with open("stage1_filtered.json", "w", encoding="utf-8") as f:
+        json.dump(stage1, f, ensure_ascii=False, indent=2)
+    print(f"[승원] 완료 → stage1_filtered.json 저장")
+    return stage1
+
+
+# ================================================================
+# 성준 파트
+# ================================================================
+class LSTM_Autoencoder(nn.Module):
+    def __init__(self, n_features, embedding_dim, seq_len):
+        super().__init__()
+        self.seq_len  = seq_len
+        self.encoder1 = nn.LSTM(n_features, embedding_dim, batch_first=True)
+        self.encoder2 = nn.LSTM(embedding_dim, embedding_dim//2, batch_first=True)
+        self.decoder1 = nn.LSTM(embedding_dim//2, embedding_dim//2, batch_first=True)
+        self.decoder2 = nn.LSTM(embedding_dim//2, embedding_dim, batch_first=True)
+        self.fc       = nn.Linear(embedding_dim, n_features)
+
+    def forward(self, x):
+        _, (h, _) = self.encoder1(x)
+        _, (h, _) = self.encoder2(h.transpose(0,1))
+        x = h.transpose(0,1).repeat(1, self.seq_len, 1)
+        x, _ = self.decoder1(x)
+        x, _ = self.decoder2(x)
+        return self.fc(x)
+
+
+def create_sequences(data, seq_len):
+    return np.array([data[i:i+seq_len] for i in range(len(data)-seq_len)])
+
+
+def train_model():
+    print("[성준] 정상 패턴 학습 중...")
+    normal_feat = []
+    for _ in range(600):
+        proc  = RadarSignalProcessor()
+        t     = np.linspace(0, 0.1, 128)
+        raw   = np.sin(2*np.pi*5*t) + np.random.normal(0, 0.2, 128)
+        noise = np.random.normal(0, 0.2, 128)
+        cleaned = np.array([proc.lms_filter(r, n*0.8) for r, n in zip(raw, noise)])
+        normal_feat.append(proc.extract_features(cleaned).tolist())
+
+    scaler = MinMaxScaler()
+    X      = torch.from_numpy(
+        create_sequences(scaler.fit_transform(normal_feat), seq_length)
+    ).float().to(device)
+
+    model     = LSTM_Autoencoder(feature_size, 32, seq_length).to(device)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001)
+    criterion = nn.MSELoss()
+
+    model.train()
+    for epoch in range(101):
+        optimizer.zero_grad()
+        loss = criterion(model(X), X)
+        loss.backward()
+        optimizer.step()
+        if epoch % 25 == 0:
+            print(f"  Epoch {epoch:3d} | Loss: {loss.item():.6f}")
+
+    model.eval()
+    with torch.no_grad():
+        recon     = model(X)
+        losses    = torch.mean((recon - X)**2, dim=(1,2)).cpu().numpy()
+        threshold = float(np.mean(losses) + 3*np.std(losses))
+    print(f"[성준] 학습 완료 | 임계치(μ+3σ): {threshold:.6f}")
+    return model, scaler, threshold
+
+
+def classify_event(signal, recon_error, threshold):
+    n, eps = len(signal), 1e-10
+    energy_front  = float(np.mean(signal[:n//2]**2)) + eps
+    energy_back   = float(np.mean(signal[n//2:]**2)) + eps
+    tail_energy   = float(np.mean(signal[int(n*0.7):]**2))
+    peak_amp      = float(np.max(np.abs(signal))) + eps
+    sustained_cnt = np.sum(np.abs(signal) > peak_amp*0.5)
+    fft_mag  = np.abs(np.fft.fft(signal))[:n//2]
+    freqs    = np.fft.fftfreq(n, d=1/fs)[:n//2]
+    dom_freq = float(freqs[np.argmax(fft_mag[1:])+1])
+    hf_ratio = float(np.sum(fft_mag[freqs>20]) / (np.sum(fft_mag)+eps))
+    pl_mask  = ((freqs>=45)&(freqs<=55)) | ((freqs>=55)&(freqs<=65))
+    pl_ratio = float(np.sum(fft_mag[pl_mask]) / (np.sum(fft_mag)+eps))
+    zcr      = float(len(np.where(np.diff(np.sign(signal)))[0]) / n)
+    tail_silence   = tail_energy < 0.05*energy_front
+    sustained_high = (sustained_cnt/n) > 0.40
+    excess         = recon_error / threshold
+
+    if pl_ratio > 0.15 and zcr > 0.20:
+        return {"event_type": "electric_shock_risk", "severity": "critical",
+                "confidence": round(min(0.99, 0.50+0.25*min(1,pl_ratio/0.3)+0.15*min(1,zcr/0.4)), 2)}
+    elif tail_silence and hf_ratio > 0.25:
+        return {"event_type": "fall_detected", "severity": "critical",
+                "confidence": round(min(0.99, 0.55+0.20*min(1,excess-1)+0.15*hf_ratio), 2)}
+    elif sustained_high and (energy_back/energy_front) > 0.50:
+        return {"event_type": "pinching", "severity": "critical",
+                "confidence": round(min(0.99, 0.50+0.25*(energy_back/energy_front)), 2)}
+    elif dom_freq < 15.0 and not tail_silence:
+        return {"event_type": "vibration_anomaly", "severity": "warning",
+                "confidence": round(min(0.99, 0.45+0.30*min(1,excess-1)), 2)}
+    else:
+        return {"event_type": "fall_detected", "severity": "warning",
+                "confidence": round(min(0.75, 0.40+0.10*excess), 2)}
+
+
+def build_details(event_type, signal, recon_error, threshold, timing):
+    eps      = 1e-10
+    excess   = recon_error / threshold
+    n        = len(signal)
+    fft_mag  = np.abs(np.fft.fft(signal))[:n//2]
+    freqs    = np.fft.fftfreq(n, d=1/fs)[:n//2]
+    dom_freq = float(freqs[np.argmax(fft_mag[1:])+1])
+    pl_mask  = ((freqs>=45)&(freqs<=55)) | ((freqs>=55)&(freqs<=65))
+    pl_ratio = float(np.sum(fft_mag[pl_mask]) / (np.sum(fft_mag)+eps))
+    zcr      = float(len(np.where(np.diff(np.sign(signal)))[0]) / n)
+    peak_amp = float(np.max(np.abs(signal)))
+    rms      = float(np.sqrt(np.mean(signal**2)))
+
+    base = {"anomaly_score": round(excess,3),
+            "reconstruction_error": round(recon_error,6),
+            "timing": timing}
+
+    if event_type == "fall_detected":
+        base["description"] = "작업자 낙상 확정 (자세 붕괴 + 속도 임계 초과)"
+        base["worker_pose"] = {"posture": "collapsed",
+                               "velocity_m_s": round(min(peak_amp*0.03, 2.0), 3),
+                               "height_m":     round(max(0.1, 1.8-peak_amp*0.4), 2)}
+        base["equipment_anomaly"] = None
+    elif event_type == "electric_shock_risk":
+        base["description"]          = "감전 위험 감지 (전력주파수 + 경련 패턴)"
+        base["proximity_m"]          = round(max(0.05, 1.0-pl_ratio*3.0), 2)
+        base["equipment_voltage_kv"] = 22.9
+        base["approach_speed_m_s"]   = round(min(zcr*4.0, 3.0), 2)
+    elif event_type == "pinching":
+        base["description"]           = "협착 감지 (회전체 근접 + 압박 신호 지속)"
+        base["equipment_id"]          = "rotor_detected"
+        base["body_part_proximity_m"] = round(max(0.02, 0.3-peak_amp*0.05), 3)
+        base["rotation_rpm"]          = min(int(abs(dom_freq)*60), 3600)
+    elif event_type == "vibration_anomaly":
+        base["description"]            = "진동 이상 (저주파 드리프트/마모 패턴)"
+        base["equipment_id"]           = "motor_detected"
+        base["rms_vibration_um_s"]     = round(rms*1000, 2)
+        base["frequency_anomaly_hz"]   = round(dom_freq, 1)
+        base["bearing_fault_suspected"]= (15.0 < dom_freq < 50.0)
+    return base
+
+
+def seongjun_detect(stage1):
+    features  = np.array(stage1["features"], dtype=np.float32)
+    zone      = stage1["zone_id"]
+    base_time = datetime.fromisoformat(stage1["timestamp"])
+
+    model, scaler, threshold = train_model()
+
+    scaled = scaler.transform(features)
+    X_test = torch.from_numpy(create_sequences(scaled, seq_length)).float().to(device)
+    model.eval()
+    with torch.no_grad():
+        recon     = model(X_test)
+        test_loss = torch.mean((recon - X_test)**2, dim=(1,2)).cpu().numpy()
+    is_anomaly = test_loss > threshold
+
+    print(f"[성준] 임계치: {threshold:.6f} | 이상 탐지: {is_anomaly.sum()}건 / {len(is_anomaly)}건")
+
+    if not is_anomaly.any():
+        print("[성준] 이상 없음")
+        return None, test_loss, is_anomaly, threshold, None, None
+
+    # 사고 시기 판별
+    anomaly_steps = np.where(is_anomaly)[0]
+    start_step    = int(anomaly_steps[0])
+    peak_step     = int(np.argmax(test_loss))
+    duration      = int(len(anomaly_steps))
+    ms_per_step   = (128/fs)*1000
+    elapsed_ms    = round(start_step*ms_per_step, 1)
+    timing = {
+        "anomaly_start_step": start_step,
+        "anomaly_peak_step":  peak_step,
+        "anomaly_duration":   duration,
+        "event_timestamp":    (base_time + timedelta(milliseconds=elapsed_ms)).isoformat(),
+        "elapsed_ms":         elapsed_ms,
+    }
+
+    peak_signal = scaled[peak_step:peak_step+seq_length].flatten()
+    peak_error  = float(test_loss[peak_step])
+    clf         = classify_event(peak_signal, peak_error, threshold)
+    details     = build_details(clf["event_type"], peak_signal, peak_error, threshold, timing)
+
+    # stage2_event.json 생성
+    now   = datetime.now()
+    event = {
+        "schema_version": "1.0",
+        "timestamp":      now.isoformat(),
+        "event_id":       f"evt_{now.strftime('%Y%m%d_%H%M%S')}_{zone}001",
+        "event_type":     clf["event_type"],
+        "zone_id":        zone,
+        "severity":       clf["severity"],
+        "confidence":     clf["confidence"],
+        "details":        details,
+        "event_log": [
+            {"time": now.strftime('%H:%M:%S'), "msg": f"Zone {zone} - LSTM-AE 이상 탐지"},
+            {"time": now.strftime('%H:%M:%S'), "msg": f"Zone {zone} - 유형: {clf['event_type']}"},
+            {"time": now.strftime('%H:%M:%S'), "msg": f"Zone {zone} - 알림 발송"},
+        ],
+    }
+    with open("stage2_event.json", "w", encoding="utf-8") as f:
+        json.dump(event, f, ensure_ascii=False, indent=2)
+    print(f"[성준] 완료 → stage2_event.json 저장")
+
+    return event, test_loss, is_anomaly, threshold, timing, clf
+
+
+# ================================================================
+# 유빈 UI 미리보기 출력
+# ================================================================
+def print_yubin_preview(event):
+    EVENT_KR = {
+        "fall_detected":       "🚨 낙상",
+        "electric_shock_risk": "⚡ 감전 위험",
+        "pinching":            "⚙️  협착",
+        "vibration_anomaly":   "📳 진동이상",
+    }
+    SEVERITY_KR = {"critical": "즉각 대응", "warning": "주의"}
+
+    label    = EVENT_KR.get(event["event_type"], event["event_type"])
+    severity = SEVERITY_KR.get(event["severity"], event["severity"])
+    timing   = event["details"]["timing"]
+
+    print("\n" + "="*55)
+    print("  ★ 유빈 UI에 표시될 내용 미리보기")
+    print("="*55)
+    print(f"  사고 유형  : {label}")
+    print(f"  심각도     : {severity} ({event['severity']})")
+    print(f"  신뢰도     : {event['confidence']:.0%}")
+    print(f"  구역       : Zone {event['zone_id']}")
+    print(f"  발생 시각  : {timing['event_timestamp']}")
+    print(f"  사고 시작  : step {timing['anomaly_start_step']}")
+    print(f"  피크 시점  : step {timing['anomaly_peak_step']}")
+    print(f"  지속 구간  : {timing['anomaly_duration']} steps ({timing['elapsed_ms']} ms)")
+    if event["event_type"] == "fall_detected":
+        wp = event["details"].get("worker_pose", {})
+        print(f"  작업자 자세: {wp.get('posture')} / 속도 {wp.get('velocity_m_s')} m/s")
+    elif event["event_type"] == "electric_shock_risk":
+        print(f"  접근 거리  : {event['details'].get('proximity_m')} m")
+        print(f"  설비 전압  : {event['details'].get('equipment_voltage_kv')} kV")
+    elif event["event_type"] == "pinching":
+        print(f"  신체 근접  : {event['details'].get('body_part_proximity_m')} m")
+        print(f"  회전수     : {event['details'].get('rotation_rpm')} RPM")
+    elif event["event_type"] == "vibration_anomaly":
+        print(f"  진동 RMS   : {event['details'].get('rms_vibration_um_s')} μm/s")
+        print(f"  이상 주파수: {event['details'].get('frequency_anomaly_hz')} Hz")
+    print("="*55)
+    print(f"\n  → stage2_event.json 저장 완료 (유빈 파트로 전달)")
+
+
+# ================================================================
+# 그래프
+# ================================================================
+def plot_result(test_loss, is_anomaly, threshold, timing, clf, scenario):
+    detected_kr = {
+        "fall_detected":       "낙상",
+        "electric_shock_risk": "감전 위험",
+        "pinching":            "협착",
+        "vibration_anomaly":   "진동이상",
+    }
+    input_label    = SCENARIO_KR[scenario]
+    detected_label = detected_kr.get(clf["event_type"], clf["event_type"])
+
+    correct_map = {"fall": "fall_detected", "electric_shock": "electric_shock_risk",
+                   "pinching": "pinching", "vibration": "vibration_anomaly"}
+    is_correct  = correct_map[scenario] == clf["event_type"]
+    tag   = "✓ 정확" if is_correct else "⚠ 오분류"
+    color = "#2C3E50" if is_correct else "#C0392B"
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle(f"Radar-Guard  |  입력: {input_label}  →  탐지: {detected_label}  {tag}",
+                 fontsize=12, fontweight="bold", color=color)
+
+    # 왼쪽: 복원 오차
+    ax = axes[0]
+    ax.plot(test_loss, color="royalblue", lw=1.5, label="복원 오차 (MSE)")
+    ax.axhline(threshold, color="red", linestyle="--", lw=1.8,
+               label=f"임계치 μ+3σ = {threshold:.4f}")
+    if timing and timing["anomaly_start_step"] is not None:
+        ax.axvspan(timing["anomaly_start_step"],
+                   timing["anomaly_start_step"] + timing["anomaly_duration"],
+                   color="orange", alpha=0.2, label="사고 구간")
+        ax.axvline(timing["anomaly_start_step"], color="#F39C12",
+                   lw=1.5, linestyle=":", label=f"시작 step {timing['anomaly_start_step']}")
+        ax.axvline(timing["anomaly_peak_step"], color="red",
+                   lw=2, linestyle="-.", label=f"피크 step {timing['anomaly_peak_step']}")
+    ax.set_title("① 복원 오차 + 사고 시기", fontsize=11, fontweight="bold")
+    ax.set_xlabel("Time Step"); ax.set_ylabel("MSE Loss")
+    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+
+    # 오른쪽: 탐지 포인트 + 결과 요약
+    ax = axes[1]
+    ax.plot(test_loss, color="gray", alpha=0.4, lw=1)
+    anomaly_idx = np.where(is_anomaly)[0]
+    ax.scatter(anomaly_idx, test_loss[anomaly_idx],
+               color="red", s=40, zorder=5, label=f"이상 탐지 ({len(anomaly_idx)}건)")
+    ax.axhline(threshold, color="red", linestyle="--", alpha=0.5)
+
+    if timing:
+        summary = (f"event_type : {clf['event_type']}\n"
+                   f"severity   : {clf['severity']}\n"
+                   f"confidence : {clf['confidence']:.0%}\n"
+                   f"start_step : {timing['anomaly_start_step']}\n"
+                   f"peak_step  : {timing['anomaly_peak_step']}\n"
+                   f"duration   : {timing['anomaly_duration']} steps\n"
+                   f"elapsed_ms : {timing['elapsed_ms']} ms")
+        ax.text(0.02, 0.97, summary, transform=ax.transAxes,
+                fontsize=8, va="top", fontfamily="monospace",
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="#FFF9C4",
+                          edgecolor="#F39C12", alpha=0.9))
+
+    ax.set_title("② 이상 탐지 포인트 + 결과 요약", fontsize=11, fontweight="bold")
+    ax.set_xlabel("Time Step"); ax.legend(fontsize=8); ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    display(fig)
+    plt.show()
+    fig.savefig(f"result_{scenario}.png", dpi=120, bbox_inches="tight")
+    print(f"[저장] result_{scenario}.png")
+    return fig
+
+
+# ================================================================
+# 메인 실행
+# ================================================================
+print(f"\n{'='*55}")
+print(f"  Radar-Guard 파이프라인 실행")
+print(f"  선택 시나리오: {SCENARIO_KR[SCENARIO]} ({SCENARIO})")
+print(f"{'='*55}")
+
+# 1. 승원 파트
+stage1 = seungwon_process(SCENARIO)
+
+# 2. 성준 파트
+event, test_loss, is_anomaly, threshold, timing, clf = seongjun_detect(stage1)
+
+# 3. 유빈 UI 미리보기 + 그래프
+if event:
+    print_yubin_preview(event)
+    plot_result(test_loss, is_anomaly, threshold, timing, clf, SCENARIO)
+else:
+    print("\n[결과] 이상 없음 — 유빈 UI에 전달할 이벤트 없음")
