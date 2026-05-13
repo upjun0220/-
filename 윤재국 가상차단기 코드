@@ -1,0 +1,151 @@
+import time
+import os
+import json
+from datetime import datetime
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+
+# =========================
+# 가상 차단기
+# =========================
+class VirtualBreaker:
+    def __init__(self):
+        self.zones = ["A", "B", "C"]
+        self.status = {zone: "normal" for zone in self.zones}
+        self.save_status()
+
+    def trigger(self, zone, event_type, severity):
+        if zone not in self.zones:
+            print(f"[오류] 존재하지 않는 Zone: {zone}")
+            return
+
+        if severity == "critical":
+            self.status[zone] = "tripped"
+            action = "차단"
+        elif severity == "warning":
+            self.status[zone] = "warning"
+            action = "경고"
+        else:
+            self.status[zone] = "normal"
+            action = "정상"
+
+        print(f"[재국 제어] Zone {zone} → {action} / 이벤트: {event_type}")
+        self.save_status()
+
+    def save_status(self):
+        data = {
+            "timestamp": datetime.now().isoformat(),
+            "zone_status": self.status,
+            "facility_map": {
+                zone: {
+                    "status": self.status[zone],
+                    "전력": "차단" if self.status[zone] == "tripped" else "정상",
+                    "작업자": self.status[zone]
+                }
+                for zone in self.zones
+            }
+        }
+
+        with open("breaker_status.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+breaker = VirtualBreaker()
+
+
+# =========================
+# 재국 오케스트레이터
+# =========================
+class JaegukController(FileSystemEventHandler):
+
+    def on_created(self, event):
+        self.handle(event)
+
+    def on_modified(self, event):
+        self.handle(event)
+
+    def handle(self, event):
+        if event.is_directory:
+            return
+
+        filename = os.path.basename(event.src_path)
+
+        # 승원 결과 감지
+        if filename == "stage1_filtered.json":
+            print(f"[{self.now()}] 승원 데이터 감지 → 성준 AI 분석 단계로 연결")
+            self.run_seongjun_code()
+
+        # 성준 결과 감지
+        elif filename == "stage2_event.json":
+            print(f"[{self.now()}] 성준 이상신호 감지 → 재국 차단 제어 실행")
+            self.control_breaker()
+            self.update_yubin_ui()
+
+    def run_seongjun_code(self):
+        # 성준 코드 파일명에 맞게 수정
+        os.system("python seongjun_ai.py")
+
+    def control_breaker(self):
+        try:
+            with open("stage2_event.json", "r", encoding="utf-8") as f:
+                event = json.load(f)
+
+            zone = event.get("zone_id", "C")
+            event_type = event.get("event_type", "unknown")
+            severity = event.get("severity", "warning")
+
+            breaker.trigger(zone, event_type, severity)
+
+        except Exception as e:
+            print(f"[오류] 차단기 제어 실패: {e}")
+
+    def update_yubin_ui(self):
+        try:
+            with open("stage2_event.json", "r", encoding="utf-8") as f:
+                event = json.load(f)
+
+            ui_data = {
+                "timestamp": datetime.now().isoformat(),
+                "event_type": event.get("event_type"),
+                "zone_id": event.get("zone_id"),
+                "severity": event.get("severity"),
+                "confidence": event.get("confidence"),
+                "new_event": True
+            }
+
+            with open("ui_trigger.json", "w", encoding="utf-8") as f:
+                json.dump(ui_data, f, ensure_ascii=False, indent=2)
+
+            print(f"[{self.now()}] 유빈 UI 갱신 파일 생성 완료")
+
+        except Exception as e:
+            print(f"[오류] UI 갱신 실패: {e}")
+
+    def now(self):
+        return datetime.now().strftime("%H:%M:%S")
+
+
+# =========================
+# 실행
+# =========================
+if __name__ == "__main__":
+    observer = Observer()
+    observer.schedule(JaegukController(), path=".", recursive=False)
+    observer.start()
+
+    print("=" * 50)
+    print("재국 제어 시스템 실행")
+    print("승원 → 성준 → 재국 → 유빈 자동 연결")
+    print("종료: Ctrl + C")
+    print("=" * 50)
+
+    try:
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        observer.stop()
+        print("시스템 종료")
+
+    observer.join()
