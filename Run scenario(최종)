@@ -19,7 +19,7 @@ Radar-Guard | 시나리오 선택 → 유빈 UI 전달 파이프라인
 
 # ======================================================
 # ★ 여기만 바꾸면 됨 ★
-SCENARIO = "fall"   # "fall" | "electric_shock" | "pinching" | "vibration"
+SCENARIO = "pinching"   # "fall" | "electric_shock" | "pinching" | "vibration"
 # ======================================================
 
 try:
@@ -79,25 +79,72 @@ class RadarSignalProcessor:
 
 
 def make_mock_data(scenario, n_samples=200):
+    """
+    현실적인 목데이터 — 매 샘플마다 진폭/노이즈/발생시점에 랜덤성 부여
+    완벽한 사인파가 아니라 실제 레이더 신호처럼 변동이 있어야
+    LSTM-AE 이상탐지 + classify_event 분류가 의미 있음
+    """
     signals = []
+    # 시나리오별 이상 발생 시점: 약간의 랜덤 지연
+    onset = {
+        "fall":           np.random.randint(95, 108),
+        "electric_shock": np.random.randint(75, 88),
+        "pinching":       np.random.randint(75, 90),
+        "vibration":      np.random.randint(92, 108),
+    }[scenario]
+
     for i in range(n_samples):
-        t     = np.linspace(0, 0.1, 128)
-        noise = np.random.normal(0, 0.1, 128)
+        t          = np.arange(128) / fs
+        base_noise = np.random.normal(0, 0.18, 128)   # 공통 배경 노이즈
+
         if scenario == "fall":
-            base = (np.sin(2*np.pi*50*t)*3.0 if 100 < i < 110
-                    else np.zeros(128) if i >= 110
-                    else np.sin(2*np.pi*5*t))
+            if onset < i < onset + 10:
+                # 낙상 충격: 50 Hz 순간 폭발, 진폭 매번 랜덤
+                amp  = np.random.uniform(2.2, 3.8)
+                base = np.sin(2*np.pi*50*t) * amp + np.random.normal(0, 0.4, 128)
+            elif i >= onset + 10:
+                # 낙상 후 침묵
+                base = np.random.normal(0, 0.05, 128)
+            else:
+                base = np.sin(2*np.pi*5*t) * np.random.uniform(0.8, 1.2)
+
         elif scenario == "electric_shock":
-            base = (np.sin(2*np.pi*50*t)*2.0 + np.sin(2*np.pi*63*t)*0.8
-                    + np.random.normal(0, 0.5, 128)
-                    if 80 <= i <= 130 else np.sin(2*np.pi*5*t))
+            if onset <= i <= onset + 50:
+                # 감전: 50 Hz + 63 Hz 동시, 진폭/위상 매번 랜덤 + 강한 노이즈
+                amp1  = np.random.uniform(1.4, 2.6)
+                amp2  = np.random.uniform(0.5, 1.1)
+                phase = np.random.uniform(0, 2*np.pi)
+                base  = (np.sin(2*np.pi*50*t + phase) * amp1
+                         + np.sin(2*np.pi*63*t) * amp2
+                         + np.random.normal(0, 0.6, 128))
+            else:
+                base = np.sin(2*np.pi*5*t) * np.random.uniform(0.8, 1.2)
+
         elif scenario == "pinching":
-            base = (np.sin(2*np.pi*5*t)*2.5 + np.random.normal(0, 0.3, 128)
-                    if i >= 80 else np.sin(2*np.pi*5*t))
+            if i >= onset:
+                # 협착: 30 Hz 회전체, 서서히 진폭 증가(ramp-up)
+                # 2배음(60Hz) 제거 — 감전 판별 대역(55~65Hz)과 충돌 방지
+                ramp = min(1.0, (i - onset) / 25.0)
+                amp  = np.random.uniform(1.8, 3.0) * ramp
+                freq = np.random.uniform(28, 32)       # 주파수도 약간 흔들림
+                base = (np.sin(2*np.pi*freq*t) * amp
+                        + np.random.normal(0, 0.35, 128))
+            else:
+                base = np.sin(2*np.pi*5*t) * np.random.uniform(0.8, 1.2)
+
         else:  # vibration
-            base = (np.sin(2*np.pi*3*t)*1.5 + np.sin(2*np.pi*7*t)*0.5
-                    if i >= 100 else np.sin(2*np.pi*5*t))
-        signals.append(base + noise)
+            if i >= onset:
+                # 진동이상: 3~7 Hz 저주파 드리프트, 진폭/주파수 매번 랜덤
+                amp   = np.random.uniform(1.0, 2.2)
+                freq1 = np.random.uniform(2.5, 3.5)
+                freq2 = np.random.uniform(6.0, 8.0)
+                base  = (np.sin(2*np.pi*freq1*t) * amp
+                         + np.sin(2*np.pi*freq2*t) * amp * np.random.uniform(0.3, 0.6)
+                         + np.random.normal(0, 0.25, 128))
+            else:
+                base = np.sin(2*np.pi*5*t) * np.random.uniform(0.8, 1.2)
+
+        signals.append(base + base_noise)
     return signals
 
 
@@ -156,7 +203,7 @@ def train_model():
     normal_feat = []
     for _ in range(600):
         proc  = RadarSignalProcessor()
-        t     = np.linspace(0, 0.1, 128)
+        t     = np.arange(128) / fs
         raw   = np.sin(2*np.pi*5*t) + np.random.normal(0, 0.2, 128)
         noise = np.random.normal(0, 0.2, 128)
         cleaned = np.array([proc.lms_filter(r, n*0.8) for r, n in zip(raw, noise)])
@@ -189,53 +236,93 @@ def train_model():
     return model, scaler, threshold
 
 
-def classify_event(signal, recon_error, threshold):
-    n, eps = len(signal), 1e-10
-    energy_front  = float(np.mean(signal[:n//2]**2)) + eps
-    energy_back   = float(np.mean(signal[n//2:]**2)) + eps
-    tail_energy   = float(np.mean(signal[int(n*0.7):]**2))
-    peak_amp      = float(np.max(np.abs(signal))) + eps
-    sustained_cnt = np.sum(np.abs(signal) > peak_amp*0.5)
-    fft_mag  = np.abs(np.fft.fft(signal))[:n//2]
-    freqs    = np.fft.fftfreq(n, d=1/fs)[:n//2]
-    dom_freq = float(freqs[np.argmax(fft_mag[1:])+1])
-    hf_ratio = float(np.sum(fft_mag[freqs>20]) / (np.sum(fft_mag)+eps))
-    pl_mask  = ((freqs>=45)&(freqs<=55)) | ((freqs>=55)&(freqs<=65))
-    pl_ratio = float(np.sum(fft_mag[pl_mask]) / (np.sum(fft_mag)+eps))
-    zcr      = float(len(np.where(np.diff(np.sign(signal)))[0]) / n)
-    tail_silence   = tail_energy < 0.05*energy_front
-    sustained_high = (sustained_cnt/n) > 0.40
-    excess         = recon_error / threshold
+def classify_event(time_signal, freq_signal, recon_error, threshold):
+    """
+    time_signal : scaled[peak_step:peak_step+seq_length].flatten()  스케일된 FFT 벡터 (192-dim)
+    freq_signal : features[peak_step]                               원본 FFT 스펙트럼  (64-dim)
+    ※ freq_signal 은 이미 FFT 결과 — FFT 재수행 없이 주파수 축 직접 매핑
+    """
+    n_t, eps = len(time_signal), 1e-10
 
-    if pl_ratio > 0.15 and zcr > 0.20:
+    # ── 시간축 에너지 특징 (스케일된 FFT 벡터 3프레임 기반) ────────
+    energy_front  = float(np.mean(time_signal[:n_t//2]**2)) + eps
+    energy_back   = float(np.mean(time_signal[n_t//2:]**2)) + eps
+    tail_energy   = float(np.mean(time_signal[int(n_t*0.7):]**2))
+    peak_amp      = float(np.max(np.abs(time_signal))) + eps
+    sustained_cnt = int(np.sum(np.abs(time_signal) > peak_amp * 0.5))
+    tail_silence  = tail_energy < 0.05 * energy_front
+    sustained_high = (sustained_cnt / n_t) > 0.40
+
+    # ── 주파수축 특징 (freq_signal = extract_features() 출력, FFT 재수행 ×) ──
+    # extract_features: 128점 FFT 양의 주파수 성분 64개 → 주파수 해상도 ≈ 7.8 Hz/bin
+    freqs = np.fft.fftfreq(128, d=1/fs)[:feature_size]   # [0, 7.8, 15.6, 23.4, ..., 492] Hz
+    total = float(np.sum(freq_signal)) + eps
+
+    dom_idx  = int(np.argmax(freq_signal[1:])) + 1        # DC(0Hz) 제외하고 피크 탐색
+    dom_freq = float(freqs[dom_idx])
+
+    hf_mask  = freqs > 20
+    hf_ratio = float(np.sum(freq_signal[hf_mask]) / total)
+
+    # 전력선 주파수 두 대역 분리 (50 Hz / 60 Hz)
+    pl_mask_a = (freqs >= 45) & (freqs <= 55)             # ~50 Hz 대역  (bin 6)
+    pl_mask_b = (freqs >= 55) & (freqs <= 65)             # ~60 Hz 대역  (bin 8)
+    energy_a  = float(np.sum(freq_signal[pl_mask_a]))
+    energy_b  = float(np.sum(freq_signal[pl_mask_b]))
+    pl_ratio  = (energy_a + energy_b) / total
+    dual_band = energy_b / (energy_a + eps)               # 두 대역 동시 존재 여부 → 감전 판별
+
+    excess = recon_error / threshold
+
+    # 디버그 출력
+    print(f"  [분류 디버그] dom_freq={dom_freq:.1f}Hz | pl_ratio={pl_ratio:.3f} | "
+          f"dual_band={dual_band:.3f} | hf_ratio={hf_ratio:.3f} | "
+          f"tail_silence={tail_silence} | sustained_high={sustained_high} | "
+          f"e_back/front={energy_back/energy_front:.3f}")
+
+    # ── 분류 (우선순위: 감전 > 낙상 > 협착 > 진동이상) ─────────────
+    # 주파수 대역 설계:
+    #   감전   : 50 Hz + 63 Hz 두 대역 동시  (dual_band 활용)
+    #   낙상   : dom_freq > 40 Hz            (50 Hz 순간 충격 → bin 6 = 46.9 Hz)
+    #   협착   : 25 < dom_freq <= 40 Hz      (30 Hz 회전체   → bin 4 = 31.3 Hz)
+    #   진동   : dom_freq < 20 Hz            (3+7 Hz 저주파  → bin 1 =  7.8 Hz)
+    if pl_ratio > 0.15 and dual_band > 0.10:
+        # 50 Hz + 63 Hz 동시 에너지 → 감전
         return {"event_type": "electric_shock_risk", "severity": "critical",
-                "confidence": round(min(0.99, 0.50+0.25*min(1,pl_ratio/0.3)+0.15*min(1,zcr/0.4)), 2)}
-    elif tail_silence and hf_ratio > 0.25:
+                "confidence": round(min(0.99, 0.55+0.25*min(1, dual_band/0.30)), 2)}
+    elif dom_freq > 40.0 and hf_ratio > 0.20:
+        # 40 Hz 초과 고주파 → 낙상 (50 Hz 충격)
         return {"event_type": "fall_detected", "severity": "critical",
-                "confidence": round(min(0.99, 0.55+0.20*min(1,excess-1)+0.15*hf_ratio), 2)}
-    elif sustained_high and (energy_back/energy_front) > 0.50:
+                "confidence": round(min(0.99, 0.55+0.20*min(1, excess-1)+0.15*hf_ratio), 2)}
+    elif 25.0 < dom_freq <= 40.0:
+        # 25~40 Hz 중주파 지속 → 협착 (30 Hz 회전체)
         return {"event_type": "pinching", "severity": "critical",
-                "confidence": round(min(0.99, 0.50+0.25*(energy_back/energy_front)), 2)}
-    elif dom_freq < 15.0 and not tail_silence:
+                "confidence": round(min(0.99, 0.55+0.20*min(1, excess-1)+0.10*hf_ratio), 2)}
+    elif dom_freq < 20.0:
+        # 20 Hz 미만 저주파 → 진동이상
         return {"event_type": "vibration_anomaly", "severity": "warning",
-                "confidence": round(min(0.99, 0.45+0.30*min(1,excess-1)), 2)}
+                "confidence": round(min(0.99, 0.45+0.30*min(1, excess-1)), 2)}
     else:
+        # 기본값: 낙상
         return {"event_type": "fall_detected", "severity": "warning",
                 "confidence": round(min(0.75, 0.40+0.10*excess), 2)}
 
 
-def build_details(event_type, signal, recon_error, threshold, timing):
+def build_details(event_type, time_signal, freq_signal, recon_error, threshold, timing):
+    """
+    time_signal : 스케일된 FFT 벡터 (192-dim) — 에너지/RMS 계산용
+    freq_signal : 원본 FFT 스펙트럼  (64-dim)  — 주파수 특징 추출용
+    """
     eps      = 1e-10
     excess   = recon_error / threshold
-    n        = len(signal)
-    fft_mag  = np.abs(np.fft.fft(signal))[:n//2]
-    freqs    = np.fft.fftfreq(n, d=1/fs)[:n//2]
-    dom_freq = float(freqs[np.argmax(fft_mag[1:])+1])
-    pl_mask  = ((freqs>=45)&(freqs<=55)) | ((freqs>=55)&(freqs<=65))
-    pl_ratio = float(np.sum(fft_mag[pl_mask]) / (np.sum(fft_mag)+eps))
-    zcr      = float(len(np.where(np.diff(np.sign(signal)))[0]) / n)
-    peak_amp = float(np.max(np.abs(signal)))
-    rms      = float(np.sqrt(np.mean(signal**2)))
+    freqs    = np.fft.fftfreq(128, d=1/fs)[:feature_size]
+    total    = float(np.sum(freq_signal)) + eps
+    dom_idx  = int(np.argmax(freq_signal[1:])) + 1
+    dom_freq = float(freqs[dom_idx])
+    pl_mask  = ((freqs >= 45) & (freqs <= 55)) | ((freqs >= 55) & (freqs <= 65))
+    pl_ratio = float(np.sum(freq_signal[pl_mask]) / total)
+    peak_amp = float(np.max(np.abs(time_signal)))
+    rms      = float(np.sqrt(np.mean(time_signal**2)))
 
     base = {"anomaly_score": round(excess,3),
             "reconstruction_error": round(recon_error,6),
@@ -251,7 +338,7 @@ def build_details(event_type, signal, recon_error, threshold, timing):
         base["description"]          = "감전 위험 감지 (전력주파수 + 경련 패턴)"
         base["proximity_m"]          = round(max(0.05, 1.0-pl_ratio*3.0), 2)
         base["equipment_voltage_kv"] = 22.9
-        base["approach_speed_m_s"]   = round(min(zcr*4.0, 3.0), 2)
+        base["approach_speed_m_s"]   = round(min(pl_ratio*4.0, 3.0), 2)
     elif event_type == "pinching":
         base["description"]           = "협착 감지 (회전체 근접 + 압박 신호 지속)"
         base["equipment_id"]          = "rotor_detected"
@@ -302,10 +389,13 @@ def seongjun_detect(stage1):
         "elapsed_ms":         elapsed_ms,
     }
 
-    peak_signal = scaled[peak_step:peak_step+seq_length].flatten()
+    # 시간축 분석 → scaled_test (에너지 분포, tail_silence 등)
+    # 주파수축 분석 → features 원본 (FFT 스펙트럼 그대로)
+    time_signal = scaled[peak_step:peak_step+seq_length].flatten()
+    freq_signal = features[peak_step]   # 64차원 FFT 스펙트럼 원본
     peak_error  = float(test_loss[peak_step])
-    clf         = classify_event(peak_signal, peak_error, threshold)
-    details     = build_details(clf["event_type"], peak_signal, peak_error, threshold, timing)
+    clf         = classify_event(time_signal, freq_signal, peak_error, threshold)
+    details     = build_details(clf["event_type"], time_signal, freq_signal, peak_error, threshold, timing)
 
     # stage2_event.json 생성
     now   = datetime.now()
@@ -378,48 +468,52 @@ def print_yubin_preview(event):
 # 그래프
 # ================================================================
 def plot_result(test_loss, is_anomaly, threshold, timing, clf, scenario):
-    detected_kr = {
-        "fall_detected":       "낙상",
-        "electric_shock_risk": "감전 위험",
-        "pinching":            "협착",
-        "vibration_anomaly":   "진동이상",
+    detected_en = {
+        "fall_detected":       "Fall",
+        "electric_shock_risk": "Electric Shock",
+        "pinching":            "Pinching",
+        "vibration_anomaly":   "Vibration",
     }
-    input_label    = SCENARIO_KR[scenario]
-    detected_label = detected_kr.get(clf["event_type"], clf["event_type"])
+    scenario_en = {
+        "fall": "Fall", "electric_shock": "Electric Shock",
+        "pinching": "Pinching", "vibration": "Vibration",
+    }
+    input_label    = scenario_en[scenario]
+    detected_label = detected_en.get(clf["event_type"], clf["event_type"])
 
     correct_map = {"fall": "fall_detected", "electric_shock": "electric_shock_risk",
                    "pinching": "pinching", "vibration": "vibration_anomaly"}
     is_correct  = correct_map[scenario] == clf["event_type"]
-    tag   = "✓ 정확" if is_correct else "⚠ 오분류"
+    tag   = "✓ Correct" if is_correct else "⚠ Misclassified"
     color = "#2C3E50" if is_correct else "#C0392B"
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Radar-Guard  |  입력: {input_label}  →  탐지: {detected_label}  {tag}",
+    fig.suptitle(f"Radar-Guard  |  Input: {input_label}  ->  Detected: {detected_label}  {tag}",
                  fontsize=12, fontweight="bold", color=color)
 
-    # 왼쪽: 복원 오차
+    # Left: Reconstruction error
     ax = axes[0]
-    ax.plot(test_loss, color="royalblue", lw=1.5, label="복원 오차 (MSE)")
+    ax.plot(test_loss, color="royalblue", lw=1.5, label="Recon Error (MSE)")
     ax.axhline(threshold, color="red", linestyle="--", lw=1.8,
-               label=f"임계치 μ+3σ = {threshold:.4f}")
+               label=f"Threshold u+3s = {threshold:.4f}")
     if timing and timing["anomaly_start_step"] is not None:
         ax.axvspan(timing["anomaly_start_step"],
                    timing["anomaly_start_step"] + timing["anomaly_duration"],
-                   color="orange", alpha=0.2, label="사고 구간")
+                   color="orange", alpha=0.2, label="Accident Window")
         ax.axvline(timing["anomaly_start_step"], color="#F39C12",
-                   lw=1.5, linestyle=":", label=f"시작 step {timing['anomaly_start_step']}")
+                   lw=1.5, linestyle=":", label=f"Start step {timing['anomaly_start_step']}")
         ax.axvline(timing["anomaly_peak_step"], color="red",
-                   lw=2, linestyle="-.", label=f"피크 step {timing['anomaly_peak_step']}")
-    ax.set_title("① 복원 오차 + 사고 시기", fontsize=11, fontweight="bold")
+                   lw=2, linestyle="-.", label=f"Peak step {timing['anomaly_peak_step']}")
+    ax.set_title("(1) Recon Error + Event Timing", fontsize=11, fontweight="bold")
     ax.set_xlabel("Time Step"); ax.set_ylabel("MSE Loss")
     ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
-    # 오른쪽: 탐지 포인트 + 결과 요약
+    # Right: Anomaly points + result summary
     ax = axes[1]
     ax.plot(test_loss, color="gray", alpha=0.4, lw=1)
     anomaly_idx = np.where(is_anomaly)[0]
     ax.scatter(anomaly_idx, test_loss[anomaly_idx],
-               color="red", s=40, zorder=5, label=f"이상 탐지 ({len(anomaly_idx)}건)")
+               color="red", s=40, zorder=5, label=f"Anomaly ({len(anomaly_idx)} pts)")
     ax.axhline(threshold, color="red", linestyle="--", alpha=0.5)
 
     if timing:
@@ -435,13 +529,13 @@ def plot_result(test_loss, is_anomaly, threshold, timing, clf, scenario):
                 bbox=dict(boxstyle="round,pad=0.4", facecolor="#FFF9C4",
                           edgecolor="#F39C12", alpha=0.9))
 
-    ax.set_title("② 이상 탐지 포인트 + 결과 요약", fontsize=11, fontweight="bold")
+    ax.set_title("(2) Anomaly Points + Result Summary", fontsize=11, fontweight="bold")
     ax.set_xlabel("Time Step"); ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
     plt.tight_layout()
     display(fig)
-    plt.show()
     fig.savefig(f"result_{scenario}.png", dpi=120, bbox_inches="tight")
+    plt.close(fig)
     print(f"[저장] result_{scenario}.png")
     return fig
 
