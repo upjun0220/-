@@ -614,6 +614,8 @@ def jaeguk_breaker(event):
         "description":    resp["description"],
         "response_ms":    resp["response_ms"],
         "timing":         timing,
+        # ── 유빈 RAG 호출에 필요한 세부 정보 전달 ──────────────────
+        "details":        event.get("details", {}),
         "event_log":      event.get("event_log", []) + [
             {
                 "time": now.strftime("%H:%M:%S"),
