@@ -20,7 +20,7 @@ Radar-Guard | run_scenario.py  (Point Cloud 버전 v2)
 
 # ======================================================
 # ★ 여기만 바꾸면 됨 ★
-SCENARIO = "electric_shock"   # "fall" | "electric_shock" | "pinching" | "vibration"
+SCENARIO = "fall"   # "fall" | "electric_shock" | "pinching" | "vibration"
 # ======================================================
 
 try:
@@ -180,7 +180,7 @@ def make_point_cloud(scenario, n_frames=N_FRAMES):
                 pts = _person_points(n=np.random.randint(3, 6),
                                      x0=1.0, y0=1.5, z0=0.8,
                                      dx=0.04, dy=0.04, dz=0.03,
-                                     dop_mean=vib, dop_std=amp*0.3 + 0.003,
+                                     dop_mean=vib, dop_std=amp*0.3 + 0.010,
                                      int_lo=250, int_hi=400)
 
         frames.append(pts)
@@ -476,7 +476,7 @@ def classify_event(feat_window, recon_error, threshold, zone):
         }
 
     # ── 진동이상: 저주파 도플러 진동, 위치 고정 ────────────────────
-    if dop_std > 0.004:
+    if dop_std > 0.002:
         return {
             "event_type": "vibration_anomaly",
             "severity":   "warning",
@@ -870,34 +870,93 @@ def plot_result(test_loss, is_anomaly, threshold, timing, clf,
 
 
 # ================================================================
+# 4시나리오 분류 정확도 검증
+# ================================================================
+def test_all_scenarios(n_repeat=10):
+    """
+    4가지 시나리오를 각 n_repeat회 반복 실행해 정분류율 측정.
+    SCENARIO 변수와 무관하게 독립 실행됨.
+    """
+    CORRECT_MAP = {
+        "fall":           "fall_detected",
+        "electric_shock": "electric_shock_risk",
+        "pinching":       "pinching",
+        "vibration":      "vibration_anomaly",
+    }
+
+    print(f"\n{'='*55}")
+    print(f"  Radar-Guard 분류 정확도 검증 (각 {n_repeat}회 반복)")
+    print(f"{'='*55}")
+
+    results = {}
+    for scenario in ["fall", "electric_shock", "pinching", "vibration"]:
+        correct = 0
+        fails   = []
+        for i in range(n_repeat):
+            try:
+                rd          = minseok_generate(scenario)
+                s1          = seungwon_process(rd)
+                ev, *_      = seongjun_detect(s1)
+                predicted   = ev["event_type"] if ev else "none"
+                if predicted == CORRECT_MAP[scenario]:
+                    correct += 1
+                else:
+                    fails.append(predicted)
+            except Exception as e:
+                fails.append(f"ERROR:{e}")
+        results[scenario] = (correct, n_repeat)
+        status = "✓" if correct == n_repeat else "✗"
+        print(f"  {SCENARIO_KR[scenario]:6s} : {correct:2d}/{n_repeat}  {status}", end="")
+        if fails:
+            print(f"  → 오분류: {set(fails)}", end="")
+        print()
+
+    total    = sum(c for c, _ in results.values())
+    total_all = n_repeat * 4
+    print(f"\n  총합: {total}/{total_all}  "
+          f"({'100% PASS ✅' if total == total_all else f'FAIL ❌  ({total_all-total}건 오분류)'})")
+    print(f"{'='*55}\n")
+    return results
+
+
+# ================================================================
 # 메인 실행
 # ================================================================
-print(f"\n{'='*55}")
-print(f"  Radar-Guard 파이프라인 실행 (Point Cloud 버전)")
-print(f"  선택 시나리오: {SCENARIO_KR[SCENARIO]} ({SCENARIO})")
-print(f"  Zone: {ZONE_MAP[SCENARIO]}")
-print(f"{'='*55}")
 
-# 1. 민석 파트: Point Cloud 목데이터 생성
-radar_data = minseok_generate(SCENARIO)
+# ★ TEST_MODE = True  → 4시나리오 정확도 검증 (n_repeat회 반복)
+# ★ TEST_MODE = False → SCENARIO 단일 실행 + 그래프
+TEST_MODE = False
 
-# 2. 승원 파트: LMS 필터 + 피처 추출
-stage1 = seungwon_process(radar_data)
+if TEST_MODE:
+    test_all_scenarios(n_repeat=10)
 
-# 3. 성준 파트: LSTM-AE 탐지 + 분류
-event, test_loss, is_anomaly, threshold, timing, clf = seongjun_detect(stage1)
-
-# 4. 재국 파트: 자동 대응
-if event:
-    jaeguk_breaker(event)
-
-# 5. 유빈 UI 미리보기 + 그래프
-if event:
-    print_yubin_preview(event)
-    plot_result(
-        test_loss, is_anomaly, threshold,
-        timing, clf, SCENARIO,
-        stage1["features"],
-    )
 else:
-    print("\n[결과] 이상 없음 — 유빈 UI에 전달할 이벤트 없음")
+    print(f"\n{'='*55}")
+    print(f"  Radar-Guard 파이프라인 실행 (Point Cloud 버전)")
+    print(f"  선택 시나리오: {SCENARIO_KR[SCENARIO]} ({SCENARIO})")
+    print(f"  Zone: {ZONE_MAP[SCENARIO]}")
+    print(f"{'='*55}")
+
+    # 1. 민석 파트: Point Cloud 목데이터 생성
+    radar_data = minseok_generate(SCENARIO)
+
+    # 2. 승원 파트: LMS 필터 + 피처 추출
+    stage1 = seungwon_process(radar_data)
+
+    # 3. 성준 파트: LSTM-AE 탐지 + 분류
+    event, test_loss, is_anomaly, threshold, timing, clf = seongjun_detect(stage1)
+
+    # 4. 재국 파트: 자동 대응
+    if event:
+        jaeguk_breaker(event)
+
+    # 5. 유빈 UI 미리보기 + 그래프
+    if event:
+        print_yubin_preview(event)
+        plot_result(
+            test_loss, is_anomaly, threshold,
+            timing, clf, SCENARIO,
+            stage1["features"],
+        )
+    else:
+        print("\n[결과] 이상 없음 — 유빈 UI에 전달할 이벤트 없음")
