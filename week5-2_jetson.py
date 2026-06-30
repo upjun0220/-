@@ -19,6 +19,7 @@ PC → Jetson 변경 사항:
 import warnings
 warnings.filterwarnings("ignore")
 
+import json, os
 import numpy as np
 from datetime import datetime, timedelta
 
@@ -56,6 +57,9 @@ N_FRAMES    = 200
 FEATURE_DIM = 8
 SEQ_LEN     = 5
 DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 실제 mmWave 데이터 경로 (radar_parser.py 출력)
+REAL_DATA_PATH = "/home/project/stage1_filtered.json"
 
 SCENARIO_KR = {
     "fall":           "낙상",
@@ -151,6 +155,57 @@ def make_point_cloud(scenario, n_frames=N_FRAMES, seed=42):
 
         frames.append(pts)
     return frames, onset
+
+
+# ===================================================================
+# 승원 파트 (실제 데이터): stage1_filtered.json 로더
+# ===================================================================
+
+def load_real_frames(json_path=REAL_DATA_PATH):
+    """
+    radar_parser.py 가 출력한 stage1_filtered.json 을 읽어
+    make_point_cloud() 와 동일한 frames 형식으로 변환.
+
+    지원 포맷:
+      A) {"frames": [{"points": [{"x":..,"y":..,"z":..,"doppler":..,"snr"/intensity:..}, ...]}, ...]}
+      B) [{"points": [...]}, ...]          ← 배열 루트
+      C) [{"x":..,"y":..,"z":..,...}, ...] ← 단일 프레임 (포인트 직접 나열)
+    """
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"stage1_filtered.json 없음: {json_path}")
+
+    with open(json_path, "r") as f:
+        data = json.load(f)
+
+    # 포맷 감지
+    if isinstance(data, dict) and "frames" in data:
+        raw_frames = data["frames"]
+    elif isinstance(data, list) and data and isinstance(data[0], dict) and "points" in data[0]:
+        raw_frames = data
+    elif isinstance(data, list) and data and "x" in data[0]:
+        # 포인트가 직렬 나열된 경우 → 단일 프레임으로 묶기
+        raw_frames = [{"points": data}]
+    else:
+        raw_frames = data if isinstance(data, list) else []
+
+    frames = []
+    for frame_data in raw_frames:
+        pts_raw = frame_data.get("points", frame_data.get("pts", frame_data.get("detected_points", [])))
+        pts = []
+        for p in pts_raw:
+            pts.append({
+                "x":         float(p.get("x", 0.0)),
+                "y":         float(p.get("y", 0.0)),
+                "z":         float(p.get("z", 0.0)),
+                "doppler":   float(p.get("doppler", p.get("velocity", p.get("v", 0.0)))),
+                "intensity": float(p.get("intensity", p.get("snr", p.get("peak_val", 300.0)))),
+            })
+        frames.append(pts)
+
+    if not frames:
+        raise ValueError("stage1_filtered.json 에서 프레임을 읽지 못했습니다.")
+
+    return frames
 
 
 # ===================================================================
@@ -424,6 +479,101 @@ def run_detection(scenario, model, scaler, threshold):
     }
 
 
+def run_detection_real(json_path, zone, model, scaler, threshold):
+    """
+    실제 stage1_filtered.json 데이터로 탐지 실행.
+    make_point_cloud() 대신 load_real_frames() 사용.
+    승원 파트(LMS + 피처 추출) / 성준 파트(LSTM-AE) 는 기존과 동일.
+    """
+    base_time = datetime.now()
+
+    # ── 실제 데이터 로드 ──────────────────────────────────────────
+    frames = load_real_frames(json_path)   # 민석 파트 대체
+
+    # ── 승원 파트: LMS 필터 + 피처 추출 ──────────────────────────
+    lms           = LMSFilter()
+    features      = []
+    prev_centroid = None
+    for frame_pts in frames:
+        feat = extract_pc_features(frame_pts, prev_centroid)
+        # ref: 해당 프레임 도플러 평균 (0에 가까울수록 정상 기준)
+        ref = float(np.mean([p["doppler"] for p in frame_pts]) if frame_pts else 0.0)
+        feat[3] = lms.filter(feat[3], ref)
+        prev_centroid = feat[:3].copy()
+        features.append(feat.tolist())
+
+    features_raw = np.array(features, dtype=np.float32)
+
+    if len(features_raw) < SEQ_LEN + 1:
+        return None  # 프레임 수 부족
+
+    # ── 성준 파트: LSTM-AE 탐지 ──────────────────────────────────
+    scaled = scaler.transform(features_raw)
+    X_test = torch.from_numpy(create_sequences(scaled, SEQ_LEN)).float().to(DEVICE)
+
+    with torch.no_grad():
+        recon     = model(X_test)
+        test_loss = torch.mean((recon - X_test)**2, dim=(1, 2)).cpu().numpy()
+
+    is_anomaly = test_loss > threshold
+
+    if not is_anomaly.any():
+        return None  # 이상 없음
+
+    anomaly_steps = np.where(is_anomaly)[0]
+    start_step    = int(anomaly_steps[0])
+    peak_step     = int(np.argmax(test_loss))
+    duration      = int(len(anomaly_steps))
+    elapsed_ms    = round(start_step * (1000 // FRAME_RATE), 1)
+
+    timing = {
+        "anomaly_start_step": start_step,
+        "anomaly_peak_step":  peak_step,
+        "anomaly_duration":   duration,
+        "event_timestamp":    (base_time + timedelta(milliseconds=elapsed_ms)).isoformat(),
+        "elapsed_ms":         elapsed_ms,
+    }
+
+    feat_window_raw = features_raw[peak_step:peak_step + SEQ_LEN]
+    peak_error      = float(test_loss[peak_step])
+    clf             = classify_event(feat_window_raw, peak_error, threshold, zone)
+    details         = build_details(clf["event_type"], feat_window_raw, peak_error, threshold, timing)
+
+    now      = datetime.now()
+    event_id = f"evt_real_{now.strftime('%Y%m%d_%H%M%S')}_{zone}001"
+
+    return {
+        "_test_loss":    test_loss,
+        "_is_anomaly":   is_anomaly,
+        "_features_raw": features_raw,
+        "_frames":       frames,
+        "_onset":        start_step,   # 실제 데이터는 탐지 시작점을 onset 으로 사용
+        "_threshold":    threshold,
+        "_timing":       timing,
+        "_clf":          clf,
+        # 이벤트 메타
+        "schema_version": "1.0",
+        "timestamp":      now.isoformat(),
+        "event_id":       event_id,
+        "event_type":     clf["event_type"],
+        "zone_id":        zone,
+        "severity":       clf["severity"],
+        "confidence":     clf["confidence"],
+        "details":        details,
+        "event_log": [
+            {"time": now.strftime("%H:%M:%S"),
+             "msg":  f"[실제데이터] Zone {zone} - LSTM-AE 이상 탐지 (score={round(peak_error/threshold,3)})"},
+            {"time": now.strftime("%H:%M:%S"),
+             "msg":  f"[실제데이터] Zone {zone} - 유형 분류: {clf['event_type']}"},
+            {"time": now.strftime("%H:%M:%S"),
+             "msg":  f"[실제데이터] Zone {zone} - 알림 발송 (severity={clf['severity']}, conf={clf['confidence']:.0%})"},
+        ],
+        "zone": zone,
+        "anomaly_score":        round(peak_error / threshold, 3),
+        "reconstruction_error": round(peak_error, 6),
+    }
+
+
 @st.cache_data(show_spinner="📡 Point Cloud 파이프라인 실행 중... (최초 1회)")
 def build_pipeline_data():
     model, scaler, threshold = get_trained_model()
@@ -513,10 +663,11 @@ def get_llm():
 # ===================================================================
 # Session State
 # ===================================================================
-if "current_event"   not in st.session_state: st.session_state.current_event   = None
+if "current_event"    not in st.session_state: st.session_state.current_event    = None
 if "current_scenario" not in st.session_state: st.session_state.current_scenario = None
-if "facility_status" not in st.session_state: st.session_state.facility_status = {"A":"normal","B":"normal","C":"normal"}
-if "auto_run_rag"    not in st.session_state: st.session_state.auto_run_rag    = False
+if "facility_status"  not in st.session_state: st.session_state.facility_status  = {"A":"normal","B":"normal","C":"normal"}
+if "auto_run_rag"     not in st.session_state: st.session_state.auto_run_rag     = False
+if "real_data_error"  not in st.session_state: st.session_state.real_data_error  = None
 
 
 def load_scenario(scenario: str, facility: dict):
@@ -565,9 +716,44 @@ with st.sidebar:
               args=("vibration",      {"A":"normal","B":"normal","C":"warning"}))
     st.divider()
     st.button("🔄 초기화 (정상 상태)", use_container_width=True, on_click=reset_state)
+
+    # ── 실제 mmWave 데이터 로드 ──────────────────────────────────
+    st.divider()
+    st.subheader("📡 실제 mmWave 데이터")
+    st.caption(f"경로: `{REAL_DATA_PATH}`")
+
+    real_zone = st.selectbox("Zone 선택 (실제 데이터)", ["A", "B", "C"], index=2,
+                             key="real_zone_sel")
+
+    if st.button("🔴 실제 데이터 로드 & 분석", use_container_width=True, type="primary"):
+        st.session_state.real_data_error = None
+        try:
+            with st.spinner("mmWave 데이터 로드 및 LSTM-AE 분석 중..."):
+                model, scaler, threshold = get_trained_model()
+                result = run_detection_real(REAL_DATA_PATH, real_zone, model, scaler, threshold)
+            if result is None:
+                st.session_state.real_data_error = "⚠️ 이상 탐지 없음 (정상 구간이거나 프레임 수 부족)"
+            else:
+                st.session_state.current_event    = result
+                st.session_state.current_scenario = f"real_{real_zone}"
+                st.session_state.facility_status  = {
+                    "A": "critical" if real_zone == "A" else "normal",
+                    "B": "critical" if real_zone == "B" else "normal",
+                    "C": "critical" if real_zone == "C" else "normal",
+                }
+                st.session_state.auto_run_rag = True
+                st.rerun()
+        except FileNotFoundError as e:
+            st.session_state.real_data_error = f"❌ 파일 없음: {e}"
+        except Exception as e:
+            st.session_state.real_data_error = f"❌ 오류: {e}"
+
+    if st.session_state.real_data_error:
+        st.error(st.session_state.real_data_error)
+
     st.divider()
     st.caption("📌 민석: Point Cloud 목데이터 (TI IWR6843 시뮬)\n"
-               "📌 승원: LMS 필터 + PC 피처 추출\n"
+               "📌 승원: LMS 필터 + PC 피처 추출 / 실제 데이터 로더\n"
                "📌 성준: LSTM-AE 이상 탐지 + 분류\n"
                "📌 재국: 자동 대응 (ui_trigger 기반)\n"
                "📌 유빈: UI + RAG (Ollama + Llama3, Jetson)")
