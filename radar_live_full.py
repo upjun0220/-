@@ -67,13 +67,14 @@ except ImportError:
 JSON_PATH     = '/home/project/stage1_filtered.json'
 CONN_STR      = 'postgresql://postgres:password@localhost:5432/radar_guard'
 
-N_WARMUP      = 300      # real frames for normal baseline (~30 sec at 10 fps)
+N_WARMUP      = 150      # real frames for normal baseline (~15 sec at 10 fps)
 FEATURE_DIM   = 8
 SEQ_LEN       = 5
 HISTORY_LEN   = 120
 N_RESET       = 15
 POLL_SEC      = 0.4
 UPDATE_MS     = 1000
+DEBUG_TIMING  = True     # print per-update loop time to terminal (진단용)
 FALL_Z_THR    = 0.6
 WRAP_WIDTH    = 52
 
@@ -840,11 +841,13 @@ def update(_i):
 
     # ---- 3D scatter ----
     if pts:
-        xs = [p['x'] for p in pts]; ys = [p['y'] for p in pts]
-        zs = [p['z'] for p in pts]; cs = [p['intensity'] for p in pts]
+        n  = len(pts)
+        cz = float(np.mean([p['z'] for p in pts]))
+        draw_pts = pts[::max(1, n // 40)]      # decimate -> <=40 pts (render 부하 감소)
+        xs = [p['x'] for p in draw_pts]; ys = [p['y'] for p in draw_pts]
+        zs = [p['z'] for p in draw_pts]; cs = [p['intensity'] for p in draw_pts]
         scatter3d._offsets3d = (xs, ys, zs)
         scatter3d.set_array(np.array(cs, dtype=float))
-        cz = float(np.mean(zs)); n = len(pts)
     else:
         cz = 1.7; n = 0
 
@@ -1031,6 +1034,28 @@ if __name__ == '__main__':
     add_log('System started -- waiting for radar data')
     add_log(f'Data path: {JSON_PATH}')
 
-    ani = FuncAnimation(fig, update, interval=UPDATE_MS,
-                        blit=False, cache_frame_data=False)
-    plt.show()
+    # ── Manual render loop (replaces FuncAnimation) ───────
+    # FuncAnimation의 Tk 타이머는 draw가 느려지면 콜백이 계속 쌓여
+    # 결국 창 전체가 얼어붙는다(=warmup 98%에서 멈추던 원인).
+    # 수동 루프는 매 사이클 update()를 try/except로 감싸므로 한 프레임이
+    # 실패해도 죽지 않고, plt.pause가 GUI 이벤트를 직접 처리해서
+    # draw가 느려도 "느려질" 뿐 Reset 버튼은 계속 반응한다.
+    update_sec = UPDATE_MS / 1000.0
+    plt.show(block=False)
+    frame_i = 0
+    t_prev  = time.time()
+    while plt.fignum_exists(fig.number):
+        try:
+            update(frame_i)
+        except Exception as e:
+            print(f'[UPD-ERR] frame={frame_i}: {e}')
+        if DEBUG_TIMING:
+            now = time.time()
+            print(f'[UPD] frame={frame_i}  loop_dt={now - t_prev:.2f}s')
+            t_prev = now
+        frame_i += 1
+        try:
+            plt.pause(update_sec)   # draw + GUI 이벤트 처리 (non-blocking)
+        except Exception as e:
+            print(f'[PAUSE-ERR] {e}')
+    print('[EXIT] window closed -- bye')
