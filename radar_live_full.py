@@ -73,7 +73,7 @@ SEQ_LEN       = 5
 HISTORY_LEN   = 120
 N_RESET       = 15
 POLL_SEC      = 0.4
-UPDATE_MS     = 800
+UPDATE_MS     = 1000
 FALL_Z_THR    = 0.6
 WRAP_WIDTH    = 52
 
@@ -121,7 +121,7 @@ SEV_COLOR = {'normal': '#44ff88', 'warning': '#ffaa00', 'critical': '#ff3333'}
 # 2. PIPELINE CLASSES
 # ═══════════════════════════════════════════════════════════
 class LMSFilter:
-    def __init__(self, order=8, mu=0.005):
+    def __init__(self, order=8, mu=0.008):
         self.w = np.zeros(order); self.buf = np.zeros(order)
         self.order, self.mu = order, mu
 
@@ -305,8 +305,7 @@ def pipeline_loop():
     feat_buf    = []
     warmup_feat = []
     prev_c      = None
-    last_mtime  = 0.0
-    proc_idx    = -1
+    read_offset = 0
     model       = None
     scaler      = None
     thr         = 0.01
@@ -345,12 +344,13 @@ def pipeline_loop():
             model       = None
             scaler      = None
             thr         = 0.01
-            proc_idx    = -1      # restart from beginning of JSON
-            last_mtime  = 0.0    # force re-read
+            read_offset = 0      # re-read JSONL stream from start
 
         time.sleep(POLL_SEC)
 
-        # ── Load JSON ──────────────────────────────────────
+        # ── Load new frames (JSONL, offset-based tail read) ──
+        # 전체 파일을 다시 파싱하지 않고, 지난번 읽은 위치(read_offset)
+        # 이후의 새 줄만 읽는다. -> 파일이 아무리 커져도 비용 일정.
         no_file = not os.path.exists(JSON_PATH)
         with _lock:
             state['data_ok'] = not no_file
@@ -358,26 +358,42 @@ def pipeline_loop():
             continue
 
         try:
-            mtime = os.path.getmtime(JSON_PATH)
+            fsize = os.path.getsize(JSON_PATH)
         except OSError:
             continue
-        if mtime == last_mtime:
-            continue
+        if fsize < read_offset:
+            read_offset = 0          # 파서 재시작(파일 초기화) 감지 -> 처음부터
 
         try:
-            with open(JSON_PATH, 'r') as f:
-                all_frames = json.load(f)
-        except (json.JSONDecodeError, OSError):
+            with open(JSON_PATH, 'rb') as f:
+                f.seek(read_offset)
+                chunk = f.read()
+        except OSError:
             continue
 
-        last_mtime = mtime
+        if not chunk:
+            continue
 
-        new_frames = all_frames[proc_idx + 1:]
+        # 마지막 완전한 줄까지만 소비 (쓰는 도중의 partial line 방지)
+        last_nl = chunk.rfind(b'\n')
+        if last_nl == -1:
+            continue                 # 아직 완전한 줄 없음
+        read_offset += last_nl + 1
+
+        new_frames = []
+        for line in chunk[:last_nl + 1].split(b'\n'):
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            new_frames.append(rec.get('points', []))
+
         if not new_frames:
             continue
 
         for frame_pts in new_frames:
-            proc_idx += 1
             if not frame_pts:
                 continue
 
