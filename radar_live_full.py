@@ -210,7 +210,7 @@ def classify(feat_win, score, thr):
 # ═══════════════════════════════════════════════════════════
 # 3. SHARED STATE
 # ═══════════════════════════════════════════════════════════
-_lock = threading.Lock()
+_lock = threading.RLock()   # RLock: 같은 스레드의 재진입 허용 (add_log 중첩 데드락 방지)
 state = {
     'phase':             PH_READY,
     'warmup_count':      0,
@@ -446,9 +446,11 @@ def pipeline_loop():
                 if wc >= N_WARMUP:
                     # Baseline done -- wait for user to click Start Training
                     with _lock:
-                        if state['phase'] != PH_WAIT_TRAIN:
+                        newly_done = state['phase'] != PH_WAIT_TRAIN
+                        if newly_done:
                             state['phase'] = PH_WAIT_TRAIN
-                            add_log(f'Baseline complete ({N_WARMUP} frames). Click "Start Training" to proceed.')
+                    if newly_done:   # add_log는 락 밖에서 호출 (락 중첩 방지)
+                        add_log(f'Baseline complete ({N_WARMUP} frames). Click "Start Training" to proceed.')
 
                     # Spin until train button pressed
                     with _lock:
@@ -547,6 +549,22 @@ def pipeline_loop():
                                 f'[{datetime.now().strftime("%H:%M:%S")}] '
                                 f'CLEAR Zone {zn}: {lbl} resolved'
                             )
+
+def pipeline_loop_safe():
+    """pipeline_loop을 감싸 예외를 터미널에 출력(+재시작).
+    파이프라인 스레드가 예외로 조용히 죽으면 warmup이 멈추고 Reset도
+    안 먹는(플래그를 읽을 스레드가 없으므로) 증상이 난다 → 여기서 추적."""
+    import traceback
+    while True:
+        try:
+            pipeline_loop()
+        except Exception as e:
+            print('\n[PIPELINE-CRASH] ==================================')
+            print(f'[PIPELINE-CRASH] {type(e).__name__}: {e}')
+            traceback.print_exc()
+            print('[PIPELINE-CRASH] 3초 후 재시작...\n')
+            time.sleep(3.0)
+
 
 # ═══════════════════════════════════════════════════════════
 # 6. MATPLOTLIB FIGURE
@@ -1028,7 +1046,7 @@ if __name__ == '__main__':
     btn_reset.on_clicked(do_reset)
 
     # ── Start pipeline thread ─────────────────────────────
-    t = threading.Thread(target=pipeline_loop, daemon=True)
+    t = threading.Thread(target=pipeline_loop_safe, daemon=True)
     t.start()
 
     add_log('System started -- waiting for radar data')
@@ -1038,8 +1056,8 @@ if __name__ == '__main__':
     # FuncAnimation의 Tk 타이머는 draw가 느려지면 콜백이 계속 쌓여
     # 결국 창 전체가 얼어붙는다(=warmup 98%에서 멈추던 원인).
     # 수동 루프는 매 사이클 update()를 try/except로 감싸므로 한 프레임이
-    # 실패해도 죽지 않고, plt.pause가 GUI 이벤트를 직접 처리해서
-    # draw가 느려도 "느려질" 뿐 Reset 버튼은 계속 반응한다.
+    # 실패해도 죽지 않고, draw_idle+flush_events로 GUI 이벤트를 직접 밀어내
+    # (plt.pause 미사용 → TkAgg 데드락 회피) draw가 느려도 얼지 않는다.
     update_sec = UPDATE_MS / 1000.0
     plt.show(block=False)
     frame_i = 0
@@ -1047,6 +1065,9 @@ if __name__ == '__main__':
     while plt.fignum_exists(fig.number):
         try:
             update(frame_i)
+            # plt.pause() 대신 명시적 draw+flush (TkAgg+스레드 데드락 회피)
+            fig.canvas.draw_idle()
+            fig.canvas.flush_events()
         except Exception as e:
             print(f'[UPD-ERR] frame={frame_i}: {e}')
         if DEBUG_TIMING:
@@ -1054,8 +1075,5 @@ if __name__ == '__main__':
             print(f'[UPD] frame={frame_i}  loop_dt={now - t_prev:.2f}s')
             t_prev = now
         frame_i += 1
-        try:
-            plt.pause(update_sec)   # draw + GUI 이벤트 처리 (non-blocking)
-        except Exception as e:
-            print(f'[PAUSE-ERR] {e}')
+        time.sleep(update_sec)
     print('[EXIT] window closed -- bye')
