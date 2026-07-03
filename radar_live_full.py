@@ -41,7 +41,6 @@ import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
 from matplotlib.widgets import Button
 from mpl_toolkits.mplot3d import Axes3D  # noqa
-from matplotlib.animation import FuncAnimation
 matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 
 import torch
@@ -55,8 +54,6 @@ warnings.filterwarnings("ignore")
 try:
     from langchain_ollama import ChatOllama, OllamaEmbeddings
     from langchain_community.vectorstores import PGVector
-    from langchain_core.prompts import PromptTemplate
-    from langchain_core.output_parsers import StrOutputParser
     RAG_OK = True
 except ImportError:
     RAG_OK = False
@@ -77,6 +74,9 @@ DANGER_ZONES = {
     # 데모 후 실제 Zone으로 축소. 예: 'A': {'x': (0.5, 1.5), 'z': (-0.5, 0.8), 'label': '배전반'},
 }
 STAT_N_MIN    = 4      # 사람 존재 최소 포인트 (빈공간 차단 문턱과 동일)
+STAT_DS_MIN   = 0.10   # [7/3 패치] 생체 존재 하한: 사람은 호흡·미세동요로 프레임 dop_std가
+                       # 절대 0.17 밑으로 안 내려감(실측 1000프레임). 정적 클러터(매트·꺼진
+                       # 선풍기·케이블)는 ~0 -> 빈 공간 PRE-ALERT 오탐 차단 (TI 재실감지 원리)
 STAT_DS_MAX   = 0.35   # 저동작: 프레임 dop_std < 이 값 (정지·미세움직임. 보행 0.43+)
 # 2단계 경보 (산업 man-down 장비 표준 방식: pre-alert -> escalation).
 # 설비 앞 정당한 정지 작업의 오경보 방지: 1차는 경고만(움직이면 자동 취소),
@@ -88,19 +88,25 @@ MAINT_MODE    = False  # True = 계획 정비 중(LOTO/작업허가) -> 정지�
 STAT_MISS_TOL = 5      # 조건 이탈 프레임 이만큼 연속되면 타이머 리셋 (~0.5s 튐 용인)
 CONN_STR      = 'postgresql://postgres:password@localhost:5432/radar_guard'
 
+# ── (옵션) 경량 LLM 요약 — 수행계획서 '생성형 AI 조치 가이드' 복원용 ──
+# llama3:8b(Q4 4.9GB)는 Orin Nano 8GB 공유메모리에서 OOM 프리징 유발(실측).
+# llama3.2:3b(Q4 2.0GB)는 같은 Llama 3 계열로 메모리 버짓 내 동작(README 분석 참조).
+# 사용법: 젯슨에서 `ollama pull llama3.2:3b` + 단독 테스트 통과 후 True로.
+# False면 기존과 100% 동일(검색 전용) -> 시연 안전 기본값.
+USE_LLM_SUMMARY = False
+LLM_MODEL       = 'llama3.2:3b'
+
 N_WARMUP      = 150      # real frames for normal baseline (~15 sec at 10 fps)
 CEILING_H     = 2.30     # 천장(센서)~바닥 실측 거리(m). height = CEILING_H - y(range)
 FEATURE_DIM   = 8
 SEQ_LEN       = 5        # LSTM-AE 입력 시퀀스 길이
 CLF_WIN       = 20       # 규칙 classify 집계 창(~2s). 실측 문턱이 20프레임 기준이라 별도 유지
 HISTORY_LEN   = 120
-N_RESET       = 15
 CONFIRM_FRAMES = 3       # 이상이 이만큼 연속돼야 경보 latch (순간 움직임 디바운스)
 CONFIRM_EVENTS = 3       # non-fall 판정이 이만큼 '연속 동일'해야 latch (전이 오탐 억제, ~수 초)
 POLL_SEC      = 0.4
 UPDATE_MS     = 1000
 DEBUG_TIMING  = True     # print per-update loop time to terminal (진단용)
-FALL_Z_THR    = 0.6
 WRAP_WIDTH    = 52
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -154,7 +160,7 @@ EVENT_SHORT = {
 }
 
 # 이벤트 발생 즉시(몇 초 내) 띄우는 하드코딩 첫 조치.
-# RAG 상세 SOP(llama3 1~2분)는 그 아래에 나중에 붙는다. 응급 UX용.
+# 상세 매뉴얼(pgvector 검색 원문, 몇 초)은 그 아래에 나중에 붙는다. 응급 UX용.
 INSTANT_ACTION = {
     'fall_detected': (
         "[IMMEDIATE]  FALL DETECTED\n"
@@ -347,6 +353,7 @@ state = {
     'rag_running': False,
     'sop_text':    '',
     'instant_sop': '',   # 이벤트 즉시 첫 조치(하드코딩). RAG 상세 SOP가 아래 붙음
+    'pre_alert':   '',   # 정지형 1차 PRE-ALERT 배너 텍스트 (노란색, 비latch, 카운트다운)
     'logs': deque(maxlen=20),
     'incidents': deque(maxlen=20),   # 사고 이력: {type, zone, detected, resolved}
     'last_data_t': 0.0,
@@ -404,6 +411,27 @@ def run_rag(ev_type, zone):
             state['rag_running'] = False
         add_log(f'Manual retrieved ({len(docs)} chunk) - retrieval-only, no LLM')
 
+        # ── (옵션) 경량 LLM 요약: 검색 원문 표시 "후"에 별도로 시도 ──
+        # 실패해도 위 검색 결과는 이미 화면에 있으므로 시연에 영향 없음.
+        # 켜는 조건: 젯슨에 llama3.2:3b 설치 + 단독 테스트 통과 + USE_LLM_SUMMARY=True.
+        if USE_LLM_SUMMARY:
+            try:
+                llm = ChatOllama(model=LLM_MODEL, temperature=0.2,
+                                 num_ctx=1024,      # 컨텍스트 축소 -> 메모리 절약
+                                 num_predict=180,   # 짧은 요약만 생성
+                                 keep_alive=0)      # 생성 후 즉시 언로드 -> 상시 점유 방지
+                ctx = ' '.join(d.page_content for d in docs)[:1500]
+                out = llm.invoke(
+                    f'상황: {situation}\n아래 안전 매뉴얼 발췌를 근거로, 현장 작업자가 '
+                    f'지금 즉시 따라야 할 조치를 한국어 3~4줄로 요약하라:\n{ctx}'
+                ).content.strip()
+                with _lock:
+                    state['sop_text'] += (f'\n\n=== AI summary ({LLM_MODEL}) ===\n'
+                                          + textwrap.fill(out, width=WRAP_WIDTH))
+                add_log(f'LLM summary appended ({LLM_MODEL})')
+            except Exception as e:
+                add_log(f'LLM summary skipped: {e}')   # 검색 결과는 유지됨
+
     except Exception as e:
         with _lock:
             state['sop_text']    = instant + f'\n[Manual search error: {e}]\n  check: docker start radar-guard-db / ollama serve'
@@ -426,6 +454,7 @@ def pipeline_loop():
     stat_miss   = 0           # 정지 조건 연속 이탈 프레임 수
     stat_zone   = None        # 현재 정지 중인 Zone id
     stat_pre    = False       # 1차 PRE-ALERT 발화 여부 (2단계 경보)
+    stat_log_t  = 0.0         # 게이트 상태 로그 rate-limit (~2초마다)
     read_offset = 0
     model       = None
     scaler      = None
@@ -449,6 +478,8 @@ def pipeline_loop():
                 state['ev_conf']         = 0.0
                 state['norm_count']      = 0
                 state['sop_text']        = ''
+                state['instant_sop']     = ''
+                state['pre_alert']       = ''
                 state['rag_running']     = False
                 state['threshold']       = 0.01
                 state['logs'].append(
@@ -646,23 +677,48 @@ def pipeline_loop():
                     break
             if MAINT_MODE:
                 stat_since = None; stat_zone = None; stat_pre = False   # 계획 정비: 억제
-            elif _zone_hit and _n >= STAT_N_MIN and _ds < STAT_DS_MAX:
+                with _lock:
+                    state['pre_alert'] = ''
+            elif _zone_hit and _n >= STAT_N_MIN and STAT_DS_MIN < _ds < STAT_DS_MAX:
                 if stat_since is None:
                     stat_since = time.time()
                     stat_zone  = _zone_hit
                 stat_miss = 0
                 # 1차 PRE-ALERT (경고, 비latch): 움직이면 자동 취소됨
                 _dwell = time.time() - stat_since
+                # [게이트 상태 로그] 오탐 시 어떤 물체(위치·특성)가 타이머를 돌렸는지 확정용
+                if time.time() - stat_log_t >= 2.0:
+                    stat_log_t = time.time()
+                    try:
+                        with open(CLF_LOG_PATH, 'a') as _lf:
+                            _lf.write(json.dumps({
+                                't': round(time.time(), 2), 'type': 'stat_gate',
+                                'zone': stat_zone, 'dwell': round(_dwell, 1),
+                                'n': _n, 'ds': round(_ds, 3),
+                                'cx': round(_cx, 2), 'cz': round(_czf, 2),
+                                'height': round(CEILING_H - float(feat[1]), 2),
+                                'inten': round(float(feat[5])),
+                            }) + '\n')
+                    except Exception:
+                        pass
                 if not stat_pre and _dwell >= STAT_PRE_SEC:
                     stat_pre = True
                     add_log(f'PRE-ALERT Zone {stat_zone}: no-motion {int(_dwell)}s '
                             f'-- move to cancel ({int(STAT_CRIT_SEC - _dwell)}s to CRITICAL)')
+                if stat_pre:
+                    # 화면 배너(노란색)에 실시간 카운트다운 표시
+                    _remain = max(0, int(STAT_CRIT_SEC - _dwell))
+                    with _lock:
+                        state['pre_alert'] = (f'PRE-ALERT  Zone {stat_zone}: no-motion {int(_dwell)}s'
+                                              f'  --  MOVE to cancel  ({_remain}s to CRITICAL)')
             else:
                 stat_miss += 1
                 if stat_miss >= STAT_MISS_TOL:
                     if stat_pre:
                         add_log(f'PRE-ALERT cleared Zone {stat_zone}: motion resumed')
                     stat_since = None; stat_zone = None; stat_pre = False
+                    with _lock:
+                        state['pre_alert'] = ''
 
             score = 0.0
             if len(feat_buf) == SEQ_LEN:
@@ -764,7 +820,7 @@ def pipeline_loop():
                             'ev_conf': clf['confidence'],
                             'ev_zone': zn,
                             'instant_sop': instant,
-                            'sop_text': instant + '\n>> Detailed SOP loading (llama3, 1-2 min)...',
+                            'sop_text': instant + '\n>> Searching safety manual (pgvector)...',
                         })
                         lbl = EVENT_LABELS.get(et, et)
                         msg = f'ALERT Zone {zn}: {lbl} (conf={clf["confidence"]:.0%} score={score/thr:.1f}x)'
@@ -782,6 +838,7 @@ def pipeline_loop():
                     zn2 = stat_zone or EVENT_ZONE.get(et2, 'B')
                     dwell = time.time() - stat_since
                     stat_since = None; stat_zone = None; stat_miss = 0; stat_pre = False
+                    state['pre_alert'] = ''          # PRE-ALERT 배너 -> critical 경보로 승격
                     instant2 = instant_action(et2)
                     state.update({
                         'ev_active': True, 'ev_type': et2,
@@ -789,7 +846,7 @@ def pipeline_loop():
                         'ev_conf': 0.85,   # human-in-the-loop: 현장 확인 필요
                         'ev_zone': zn2,
                         'instant_sop': instant2,
-                        'sop_text': instant2 + '\n>> Detailed SOP loading (llama3, 1-2 min)...',
+                        'sop_text': instant2 + '\n>> Searching safety manual (pgvector)...',
                     })
                     lbl2 = EVENT_LABELS.get(et2, et2)
                     state['logs'].append(
@@ -1067,9 +1124,9 @@ def make_guide_text(phase, data_ok, ev_active, ev_type, ev_zone, ev_conf, rag_ru
         return '\n'.join(lines)
     if rag_run:
         return (
-            "======= GENERATING SOP =======\n\n"
-            "  Llama3 is generating response...\n"
-            "  (Typical: 1-2 minutes)\n\n"
+            "======= RETRIEVING SOP =======\n\n"
+            "  Searching safety manual (pgvector)...\n"
+            "  (retrieval-only, a few seconds)\n\n"
             "  Do not close this window."
         )
     if ev_active and ev_type:
@@ -1110,6 +1167,7 @@ def update(_i):
         thr        = state['threshold']
         sop        = state['sop_text']
         rag_run    = state['rag_running']
+        pre_alert  = state['pre_alert']
         logs       = list(state['logs'])
         incidents  = list(state['incidents'])
         last_dt    = state['last_data_t']
@@ -1222,10 +1280,20 @@ def update(_i):
     else:
         sop_text.set_color('#aabbcc')
 
-    # ---- Active alarm banner (latched) ----
+    # ---- Active alarm banner (latched) / PRE-ALERT banner (yellow) ----
     if ev_active and ev_type:
         lbl = EVENT_LABELS.get(ev_type, ev_type)
         alarm_banner.set_text(f'[ ! ]  ACTIVE ALARM  Zone {ev_zone}: {lbl}   ->  press [Event Resolved]')
+        alarm_banner.set_color('white')
+        alarm_banner.get_bbox_patch().set_facecolor('#3a0000')
+        alarm_banner.get_bbox_patch().set_edgecolor('#ff3333')
+        alarm_banner.set_visible(True)
+    elif pre_alert:
+        # 정지형 1차 경고: 노란색 + 실시간 카운트다운. 움직이면 자동으로 사라짐.
+        alarm_banner.set_text(f'[ ~ ]  {pre_alert}')
+        alarm_banner.set_color('#ffdd66')
+        alarm_banner.get_bbox_patch().set_facecolor('#3a2a00')
+        alarm_banner.get_bbox_patch().set_edgecolor('#ffcc00')
         alarm_banner.set_visible(True)
     else:
         alarm_banner.set_visible(False)
