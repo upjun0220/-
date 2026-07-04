@@ -29,13 +29,20 @@ Display layout (5 panels + step guide + progress bar):
   [Start Baseline Btn]          [Reset Baseline Btn]
 """
 
-import json, os, time, threading, textwrap, warnings
+import json, os, time, threading, textwrap, warnings, sys
 from datetime import datetime
 from collections import deque, Counter
 
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')
+# ── [7/4] Headless 모드 ──────────────────────────────────────
+#   `python3 radar_live_full.py --headless` 또는 환경변수 RADAR_HEADLESS=1
+#   -> Matplotlib GUI 창/실시간 렌더 루프를 켜지 않음(젯슨에서 Ollama/RAG와
+#      CPU·메모리 경쟁하는 '연속 draw'가 실제 비용 -> 이를 제거).
+#   -> 탐지·판정·로그 저장·데이터셋 저장은 그대로 수행.
+#   Agg 백엔드는 디스플레이(X) 없이도 동작하므로 헤드리스 젯슨에서 안전.
+HEADLESS = ('--headless' in sys.argv) or (os.environ.get('RADAR_HEADLESS') == '1')
+matplotlib.use('Agg' if HEADLESS else 'TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
@@ -121,7 +128,9 @@ LOAD_BASELINE = True   # False = 항상 새로 웜업/학습
 
 N_WARMUP      = 150      # real frames for normal baseline (~15 sec at 10 fps)
 CEILING_H     = 2.30     # 천장(센서)~바닥 실측 거리(m). height = CEILING_H - y(range)
-FEATURE_DIM   = 8
+FEATURE_DIM   = 9        # [7/4 9차원] cx,cy,cz,mean_dop,dop_std,int_mean,n_pts,z_vel,z_accel
+                         #   z_vel = 수직(높이) 속도(천장기준: 높이축=y), z_accel = 그 가속도(EMA)
+                         #   ⚠ 8차원 구 baseline_model.pt는 로드 불가 -> RESET 후 재수집·재학습 필요
 SEQ_LEN       = 5        # LSTM-AE 입력 시퀀스 길이
 CLF_WIN       = 20       # 규칙 classify 집계 창(~2s). 실측 문턱이 20프레임 기준이라 별도 유지
 HISTORY_LEN   = 120
@@ -224,7 +233,15 @@ class LMSFilter:
         return float(e)
 
 
-def extract_features(frame_pts, prev_c=None):
+def extract_features(frame_pts, prev_c=None, prev_zvel=0.0, dt=None, ema_zacc=0.0,
+                     ema_a=0.5):
+    """[7/4 9차원] 천장 기준 좌표계 인지: 수직축 = y(range), height = CEILING_H - y.
+    바닥평면(수평) = (x, z). 이전엔 z_vel을 '바닥 z 변화'로 잡아 수직이 아니라 수평을
+    쟀고 classify에서 안 썼음 -> 물리적으로 맞게 '수직(높이) 속도'로 재정의.
+      idx7 z_vel   : 수직속도 = prev_cy - cy  (+상승 / -하강; 높이=CEIL-y 이므로 부호반전)
+      idx8 z_accel : 수직가속도 = (z_vel - prev_zvel)/dt, EMA 스무딩(노이즈 억제, 지연 최소).
+                     dt 없거나 0, 또는 첫 프레임이면 안전하게 0 처리.
+    """
     if not frame_pts:
         return np.zeros(FEATURE_DIM, dtype=np.float32)
     pts = np.array([[p['x'], p['y'], p['z'], p['doppler'], p['intensity']]
@@ -234,8 +251,15 @@ def extract_features(frame_pts, prev_c=None):
     dop_std  = float(pts[:, 3].std() + 1e-8)
     int_mean = float(pts[:, 4].mean())
     n_pts    = float(len(pts))
-    z_vel    = float(c[2] - prev_c[2]) if prev_c is not None else 0.0
-    return np.array([c[0], c[1], c[2], mean_dop, dop_std, int_mean, n_pts, z_vel],
+    # 수직(높이) 속도: 높이 상승 = cy 감소이므로 prev_cy - cy
+    z_vel    = float(prev_c[1] - c[1]) if prev_c is not None else 0.0
+    # 수직 가속도(EMA). dt/이전값 없으면 raw=0 -> 안전
+    if dt is not None and dt > 1e-6 and prev_c is not None:
+        raw_acc = (z_vel - float(prev_zvel)) / dt
+    else:
+        raw_acc = 0.0
+    z_accel  = float(ema_a * raw_acc + (1.0 - ema_a) * float(ema_zacc))
+    return np.array([c[0], c[1], c[2], mean_dop, dop_std, int_mean, n_pts, z_vel, z_accel],
                     dtype=np.float32)
 
 
@@ -295,7 +319,8 @@ def classify(feat_win, score, thr):
     """천장 설치 + 실측 데이터(events_collect.jsonl, 50샘플) 기반 규칙 분류.
 
     좌표계: y = 센서 아래로의 거리(range). height = CEILING_H - y.
-    feat 벡터 = [cx, cy(=y), cz, mean_dop, dop_std, int_mean, n_pts, z_vel].
+    feat 벡터 = [cx, cy(=y), cz, mean_dop, dop_std, int_mean, n_pts, z_vel, z_accel] (9차원).
+      cy=y=수직(높이)축, (cx,cz)=바닥평면(수평), z_vel/z_accel=수직 속도/가속도.
 
     실측으로 확정한 판별치 (원본 50샘플 50/50, 2026-07-02 라이브 오탐 패치 반영):
       - FALL        : 프레임 dop_std 피크 >= 1.2  (낙상 격렬함; 다른 동작 전부 <=1.16)
@@ -322,6 +347,19 @@ def classify(feat_win, score, thr):
     ds_last     = sum(ds_list[half:]) / max(1, len(ds_list) - half)  # 창 후반부 평균
     cy_vals     = [float(f[1]) for f in win]
     h_drop      = max(cy_vals) - min(cy_vals)               # height=C-y 이므로 y범위 = 높이변화폭
+
+    # [7/4 10차] 수평 성분 복원 — 천장 기준: 바닥평면 = (cx, cz).
+    #   낙상은 '무너지며' 바닥평면으로 traverse/확산 -> centroid 수평 이동폭이 큼.
+    #   제자리 빠른앉기는 수직만 내려가고 수평 고정(실측 horiz_range: 낙상 0.75~1.26
+    #   vs 빠른앉기 0.35~0.79) -> 도플러가 라이브에서 튀어도 이 축으로 앉기 배제.
+    cx_vals     = [float(f[0]) for f in win]
+    cz_vals     = [float(f[2]) for f in win]
+    horiz_range = float(np.hypot(max(cx_vals) - min(cx_vals),
+                                 max(cz_vals) - min(cz_vals)))   # 바닥평면 이동폭
+    # 수직 가속도(z_accel, idx8) 피크 — 보조 신뢰도용(정지·보행 대비 사건성 가산).
+    #   ⚠ 단독 낙상 판정 금지: 실측상 낙상/빠른앉기 모두 수직하강이라 둘을 못 가름.
+    #   보행(hacc≈0.19)과 사건(≈0.67)만 가름 -> 게이트 아닌 confidence 가산에만 사용.
+    zacc_amp    = max((abs(float(f[8])) for f in win), default=0.0)
 
     # [7/3 6차] 낙상 전용 지표 (오탐 3건 분석 -> '높이 하강' + '스파이크 지속폭' 추가)
     #  - h_desc: 도플러 피크 '이전' 평균높이 - '이후' 평균높이 (순서 있는 하강.
@@ -364,13 +402,23 @@ def classify(feat_win, score, thr):
     #                            앉은채 팔휘두름(0.424)은 미달 -> 높이 조건 복원(이슈 5,1)
     #     - 임펄스비 >= 2.2    : ds_max / 전반부평균. 낙상=조용->격발(2.3~7.9) vs
     #                            달리기·지속활동=전반부부터 높아 비율 낮음(이슈 3)
-    #     - ds_last <= 0.85   : 낙상 후엔 가라앉음(실측 최대 0.826) vs 달리기는 지속
+    #     - ds_last <= 1.0    : 낙상 후엔 가라앉음(실측 fall 최대 0.96, fast_sit<=0.51,
+    #                            walk<=0.51) vs 달리기는 지속. [7/4] 0.85->1.0 완화로
+    #                            실측 낙상 10/10 회복(구 0.85는 fall#1,#6 누락)하되 앉기/보행 여전히 배제.
+    #    [7/4 10차] 수평 성분 결합 (데모 버그 근본수정: 뛰기/빠른앉기 오탐):
+    #     - horiz_range >= 0.6 : 낙상은 바닥평면 이동/확산(실측 fall min 0.75) vs
+    #                            제자리 빠른앉기(수평 고정)는 미달 -> 라이브 도플러 스파이크에도 앉기 배제.
+    #     - 검증: 수집 40샘플 혼동행렬 fall 10/10, fast_sit·walk·normal 0/10.
+    #       합성 뛰기(지속고도플러·수평만)·제자리앉기(수직만) 전부 정상 판정.
+    #     - z_accel(수직가속도)은 게이트 아님 -> 사건성 있을 때 confidence만 +0.05 가산.
     _impulse = dopstd_max >= 2.2 * max(0.15, ds_first)
-    _shape   = h_drop >= 0.43 and _impulse and ds_last <= 0.85
+    _horiz   = horiz_range >= 0.6                       # NEW 수평: 무너짐/traverse
+    _shape   = h_drop >= 0.43 and _impulse and ds_last <= 1.0 and _horiz
     if ((dopstd_max >= 1.2 and n_mean >= 5 and ds_broad >= 2 and _shape)
             or (n_mean >= 35 and dopstd_max >= 0.9 and ds_broad >= 1 and _shape)):
+        _acc_boost = 0.05 if zacc_amp >= 0.4 else 0.0   # 수직 사건성 보조 가산(비게이트)
         return {'event_type': 'fall_detected', 'severity': 'critical',
-                'confidence': round(min(0.99, conf + 0.10), 2)}
+                'confidence': round(min(0.99, conf + 0.10 + _acc_boost), 2)}
 
     # 2) [2026-07-02 3차 패치] 정지형(협착/감전) 규칙은 classify에서 제거됨.
     #    옛 규칙(dop_std<0.6, 8<=n_mean<18)은 라이브에서 n이 4~7로 잡혀 미달했고,
@@ -519,6 +567,9 @@ def pipeline_loop():
     clf_buf     = []          # 규칙 classify용 장기 히스토리(~CLF_WIN 프레임)
     warmup_feat = []
     prev_c      = None
+    prev_zvel   = 0.0         # [9차원] 직전 프레임 수직속도 (z_accel 계산용)
+    prev_ts     = None        # [9차원] 직전 프레임 시각 (dt 계산용)
+    ema_zacc    = 0.0         # [9차원] 수직가속도 EMA 상태
     anom_streak = 0           # 연속 이상 프레임 수 (디바운스)
     pend_et     = None        # non-fall 경보 후보 (연속 판정 확인용)
     pend_cnt    = 0           # 같은 판정이 연속으로 나온 횟수
@@ -560,6 +611,18 @@ def pipeline_loop():
                 ck = torch.load(BASELINE_PATH, map_location=DEVICE, weights_only=False)
             except TypeError:                     # 구버전 torch: weights_only 인자 없음
                 ck = torch.load(BASELINE_PATH, map_location=DEVICE)
+            # [7/4 9차원] 차원 호환성 사전 점검 — 8차원 구 baseline은 9차원 모델에 로드 불가.
+            _saved_dim = None
+            try:
+                _saved_dim = int(getattr(ck.get('scaler'), 'n_features_in_', None)
+                                 or ck['model']['enc1.weight_ih_l0'].shape[1])
+            except Exception:
+                _saved_dim = None
+            if _saved_dim is not None and _saved_dim != FEATURE_DIM:
+                raise ValueError(
+                    f'저장된 baseline은 {_saved_dim}차원인데 현재 모델은 {FEATURE_DIM}차원입니다 '
+                    f'(z_accel 추가로 확장됨). 8차원 구 baseline은 재사용 불가 -> '
+                    f'[RESET] 후 빈방 스캔+베이스라인 재수집+재학습 필요.')
             model = LSTM_AE(FEATURE_DIM, 16, SEQ_LEN).to(DEVICE)
             model.load_state_dict(ck['model'])
             model.eval()
@@ -573,7 +636,9 @@ def pipeline_loop():
                     f'-- LIVE now. Radar moved? press RESET.')
         except Exception as e:
             model, scaler, thr = None, None, 0.01
-            add_log(f'Baseline load failed ({e}) -- collecting new baseline')
+            add_log(f'⚠ Baseline load failed: {e}')
+            add_log('>> 9차원 feature로 재학습이 필요합니다. [START] 눌러 재수집하세요.')
+            print(f'[BASELINE] load 실패 -> 재학습 필요: {e}')
 
     while True:
         # ── Reset check ────────────────────────────────────
@@ -607,6 +672,9 @@ def pipeline_loop():
             clf_buf     = []
             warmup_feat = []
             prev_c      = None
+            prev_zvel   = 0.0    # [9차원] z_accel 상태 초기화
+            prev_ts     = None
+            ema_zacc    = 0.0
             anom_streak = 0
             pend_et     = None
             pend_cnt    = 0
@@ -693,10 +761,15 @@ def pipeline_loop():
             ys  = [p['y'] for p in frame_pts]
             cz  = CEILING_H - (float(np.mean(ys)) if ys else CEILING_H)  # 천장기준 높이(바닥 위 높이)
             n   = len(frame_pts)
-            feat = extract_features(frame_pts, prev_c)
+            _now_t = time.time()
+            _dt    = (_now_t - prev_ts) if prev_ts is not None else None
+            feat = extract_features(frame_pts, prev_c, prev_zvel, _dt, ema_zacc)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
-            prev_c  = feat[:3].copy()
+            prev_c    = feat[:3].copy()
+            prev_zvel = float(feat[7])    # [9차원] 다음 프레임 z_accel용
+            ema_zacc  = float(feat[8])
+            prev_ts   = _now_t
 
             with _lock:
                 state['cz_h'].append(cz)
@@ -982,6 +1055,10 @@ def pipeline_loop():
                                     # 낙상 재캘리브레이션용 (판정엔 broad만 사용 중)
                                     'broad': int((_ds >= 0.8).sum()),
                                     'h_desc': _hd, 'post_med': _pm,
+                                    # [7/4 10차] 수평·수직가속 진단값
+                                    'horiz': round(float(np.hypot(_w[:, 0].max() - _w[:, 0].min(),
+                                                                  _w[:, 2].max() - _w[:, 2].min())), 3),
+                                    'zacc': round(float(np.abs(_w[:, 8]).max()), 3),
                                 }) + '\n')
                     except Exception:
                         pass   # 로깅 실패가 파이프라인을 죽이면 안 됨
@@ -1530,6 +1607,20 @@ if __name__ == '__main__':
     print('  [Terminal 2]  python3 ~/radar_live_full.py  <- this')
     print('=' * 65)
     print()
+
+    # ── [7/4] HEADLESS: GUI 없이 탐지만 (메인 스레드 블로킹 실행) ──
+    #   버튼이 없으므로 baseline 수집/학습은 저장된 baseline_model.pt 자동로드로
+    #   바로 LIVE 진입하거나, 최초 1회는 GUI 모드로 baseline을 만든 뒤 headless 운용.
+    #   (baseline 없으면 READY에서 대기 -> 환경변수/신호로 트리거하도록 확장 여지)
+    if HEADLESS:
+        print('  [HEADLESS] GUI 비활성 — 탐지/판정/로그/데이터셋 저장만 수행합니다.')
+        print('  종료: Ctrl+C')
+        print('=' * 65)
+        try:
+            pipeline_loop_safe()          # 메인 스레드에서 블로킹 실행 (렌더 루프 없음)
+        except KeyboardInterrupt:
+            print('\n[EXIT] headless 종료 -- bye')
+        sys.exit(0)
 
     # ── Buttons ──────────────────────────────────────────
     # Start Baseline (center)
