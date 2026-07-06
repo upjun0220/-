@@ -114,11 +114,14 @@ CONN_STR      = 'postgresql://postgres:password@localhost:5432/radar_guard'
 
 # ── (옵션) 경량 LLM 요약 — 수행계획서 '생성형 AI 조치 가이드' 복원용 ──
 # llama3:8b(Q4 4.9GB)는 Orin Nano 8GB 공유메모리에서 OOM 프리징 유발(실측).
-# llama3.2:3b(Q4 2.0GB)는 같은 Llama 3 계열로 메모리 버짓 내 동작(README 분석 참조).
-# 사용법: 젯슨에서 `ollama pull llama3.2:3b` + 단독 테스트 통과 후 True로.
+# [7/4 팀 결정] llama3.2:3b(Q4 2.0GB) -> gemma2:2b(Q4 1.6GB)로 전환.
+#   근거: 비전/레이더 인지 모듈 + 자율주행 노드와 공유메모리 경쟁 시 2B가 OOM 여유 큼,
+#   초당 토큰(TPS) 빨라 PRE-ALERT 즉시 보고에 유리. RAG 요약/정형 안전매뉴얼 검색엔
+#   2B instruct로 충분(단일 목적). 심층 추론용은 클라우드/관제 후처리로 분리.
+# 사용법: 젯슨에서 `ollama pull gemma2:2b` + 단독 테스트 통과 후 True로.
 # False면 기존과 100% 동일(검색 전용) -> 시연 안전 기본값.
 USE_LLM_SUMMARY = False
-LLM_MODEL       = 'llama3.2:3b'
+LLM_MODEL       = 'gemma2:2b'
 
 # ── Baseline 모델 저장/재사용 (7/3) ──
 # 학습 완료 시 자동 저장. 다음 실행에서 파일이 있으면 웜업/학습 생략하고 바로 LIVE.
@@ -533,7 +536,7 @@ def run_rag(ev_type, zone):
 
         # ── (옵션) 경량 LLM 요약: 검색 원문 표시 "후"에 별도로 시도 ──
         # 실패해도 위 검색 결과는 이미 화면에 있으므로 시연에 영향 없음.
-        # 켜는 조건: 젯슨에 llama3.2:3b 설치 + 단독 테스트 통과 + USE_LLM_SUMMARY=True.
+        # 켜는 조건: 젯슨에 gemma2:2b 설치(`ollama pull gemma2:2b`) + 단독 테스트 통과 + USE_LLM_SUMMARY=True.
         if USE_LLM_SUMMARY:
             try:
                 llm = ChatOllama(model=LLM_MODEL, temperature=0.2,
@@ -1457,7 +1460,9 @@ def update(_i):
     if pts:
         n  = len(pts)
         cz = CEILING_H - float(np.mean([p['y'] for p in pts]))   # 천장기준 높이
-        draw_pts = pts[::max(1, n // 40)]      # decimate -> <=40 pts (render 부하 감소)
+        _CAP = 28                              # [7/4] 3D 표시 포인트 상한 40->28 (젯슨 3D draw 부하↓,
+                                               #   ~25~30이 인체 클러스터 셀링포인트 유지 스윗스팟)
+        draw_pts = pts[::max(1, n // _CAP)][:_CAP]   # 하드 캡. 표시 전용 — 탐지는 전체 클라우드 사용(무영향)
         xs = [p['x'] for p in draw_pts]
         zf = [p['z'] for p in draw_pts]                          # 바닥평면 z축
         hs = [CEILING_H - p['y'] for p in draw_pts]              # 높이 = CEILING_H - y
