@@ -86,6 +86,19 @@ try:
 except ImportError:
     RAG_OK = False
 
+# [7/6] RF 낙상/동작 분류기 (팔흔들기 오탐 억제). 파일 없으면 규칙만 사용(안전).
+RF_MODEL_PATH = os.path.expanduser('~/fall_classifier.joblib')
+try:
+    import joblib
+    _rf_ck    = joblib.load(RF_MODEL_PATH)
+    RF_MODEL  = _rf_ck['model']
+    RF_FEATURES = _rf_ck['features']
+    RF_OK     = True
+    print(f'[RF] fall_classifier 로드 OK ({len(RF_FEATURES)} feats) -> wave 오탐 억제 활성')
+except Exception as _rfe:
+    RF_MODEL = None; RF_OK = False
+    print(f'[RF] 모델 없음/로드실패 -> 규칙만 사용: {_rfe}')
+
 # ═══════════════════════════════════════════════════════════
 # 1. CONFIG
 # ═══════════════════════════════════════════════════════════
@@ -172,6 +185,12 @@ HISTORY_LEN   = 120
 CONFIRM_FRAMES = 3       # 이상이 이만큼 연속돼야 경보 latch (순간 움직임 디바운스)
 CONFIRM_EVENTS = 3       # non-fall 판정이 이만큼 '연속 동일'해야 latch (전이 오탐 억제, ~수 초)
 FALL_CONFIRM   = 2       # [7/3 6차] 낙상도 2연속 확정 (경계선 오탐 차단, 지연 ~0.3s)
+# [7/6] z_accel 하한 게이트 — 라이브 검증 결과 '비활성'(0).
+#   근거: 수집데이터는 낙상 zacc 182~1389로 팔흔들기(15~155)와 분리됐으나, 라이브는
+#   포인트 희소로 스케일이 달라 낙상 zacc도 15~155로 팔흔들기와 '겹침'(젯슨 로그 확인).
+#   -> zacc로는 라이브에서 둘을 못 가름. 팔흔들기 오탐은 라벨 데이터 수집 후 재설계 필요.
+#   (0 = 게이트 없음. 팔흔들기 판별자 확정되면 값 복원)
+FALL_ZACC_MIN  = 0
 POLL_SEC      = 0.4
 UPDATE_MS     = 1000
 DEBUG_TIMING  = True     # print per-update loop time to terminal (진단용)
@@ -374,6 +393,54 @@ def build_clutter_map(scan_pts):
     return spots
 
 
+def _rf_features(win):
+    """classify의 win(9차원 벡터 리스트) -> train_fall_classifier.extract()와 동일 19피처.
+    (샌드박스 검증: 수집 프레임 기반 추출과 0/70 불일치 = 라이브·오프라인 완전 일치)"""
+    if len(win) < 4:
+        return None
+    cx = np.array([float(f[0]) for f in win]); cy = np.array([float(f[1]) for f in win])
+    cz = np.array([float(f[2]) for f in win]); ds = np.array([float(f[4]) for f in win])
+    n  = np.array([float(f[6]) for f in win]); dop = np.array([float(f[3]) for f in win])
+    h  = CEILING_H - cy
+    half = max(1, len(ds) // 2)
+    ds_first = ds[:half].mean(); ds_last = ds[half:].mean()
+    zvel = np.zeros(len(win))
+    for i in range(1, len(win)):
+        zvel[i] = cy[i-1] - cy[i]
+    zvv = zvel[np.abs(zvel) > 0.05]
+    zsc = int(np.sum(np.diff(np.sign(zvv)) != 0)) if len(zvv) > 2 else 0
+    def _pk(a, t=0.6):
+        p = 0
+        for i in range(1, len(a) - 1):
+            if a[i] >= t and a[i] >= a[i-1] and a[i] > a[i+1]: p += 1
+        return p
+    pk = int(np.argmax(ds))
+    return [
+        float(ds.max()), float(ds.mean()), float(ds_first), float(ds_last),
+        float(ds.max() / max(0.15, ds_first)), int((ds >= 0.8).sum()),
+        float(ds_last / (ds.max() + 1e-6)), _pk(ds), zsc,
+        float(cy.max() - cy.min()), float(h.min()), float(h[-3:].mean()), float(h[:3].mean()),
+        float(np.hypot(cx.max()-cx.min(), cz.max()-cz.min())),
+        float(np.hypot(cx[pk:].mean()-cx[:max(1,pk)].mean(), cz[pk:].mean()-cz[:max(1,pk)].mean())),
+        float(n.mean()), float(np.percentile(n, 75)), float(n.max()),
+        float(np.abs(dop).mean()),
+    ]
+
+
+def _rf_veto(win):
+    """RF가 이 창을 '낙상 아님'(wave 등)으로 판단하면 True -> 규칙 낙상을 억제.
+    RF 실패/모델없음 시 False (규칙 판정 유지 = 낙상 안 놓치는 안전측)."""
+    if not RF_OK:
+        return False
+    try:
+        feats = _rf_features(win)
+        if feats is None:
+            return False
+        return RF_MODEL.predict([feats])[0] != 'fall'
+    except Exception:
+        return False
+
+
 def classify(feat_win, score, thr):
     """천장 설치 + 실측 데이터(events_collect.jsonl, 50샘플) 기반 규칙 분류.
 
@@ -471,13 +538,17 @@ def classify(feat_win, score, thr):
     #       합성 뛰기(지속고도플러·수평만)·제자리앉기(수직만) 전부 정상 판정.
     #     - z_accel(수직가속도)은 게이트 아님 -> 사건성 있을 때 confidence만 +0.05 가산.
     _impulse = dopstd_max >= 2.2 * max(0.15, ds_first)
-    _horiz   = horiz_range >= 0.6                       # NEW 수평: 무너짐/traverse
-    _shape   = h_drop >= 0.43 and _impulse and ds_last <= 1.0 and _horiz
+    _horiz   = horiz_range >= 0.6                       # 수평: 무너짐/traverse
+    _zacc    = zacc_amp >= FALL_ZACC_MIN                # [7/6] 수직가속 하한: 팔흔들기(<=155) 배제
+    _shape   = h_drop >= 0.43 and _impulse and ds_last <= 1.0 and _horiz and _zacc
     if ((dopstd_max >= 1.2 and n_mean >= 5 and ds_broad >= 2 and _shape)
             or (n_mean >= 35 and dopstd_max >= 0.9 and ds_broad >= 1 and _shape)):
-        _acc_boost = 0.05 if zacc_amp >= 0.4 else 0.0   # 수직 사건성 보조 가산(비게이트)
-        return {'event_type': 'fall_detected', 'severity': 'critical',
-                'confidence': round(min(0.99, conf + 0.10 + _acc_boost), 2)}
+        # [7/6] RF 검증: 규칙이 낙상이라 해도 RF가 wave/기타로 보면 억제(팔흔들기 오탐 제거).
+        #   RF가 fall이라 하거나 RF 없으면 그대로 낙상 확정. -> 아래 walk/vibration으로 안 흘림.
+        if not _rf_veto(win):
+            _acc_boost = 0.05 if zacc_amp >= 400 else 0.0
+            return {'event_type': 'fall_detected', 'severity': 'critical',
+                    'confidence': round(min(0.99, conf + 0.10 + _acc_boost), 2)}
 
     # 2) [2026-07-02 3차 패치] 정지형(협착/감전) 규칙은 classify에서 제거됨.
     #    옛 규칙(dop_std<0.6, 8<=n_mean<18)은 라이브에서 n이 4~7로 잡혀 미달했고,
@@ -534,6 +605,7 @@ state = {
     'detailed_sop':     '',   # [7/4] Gemma 생성 상세 SOP (팝업창 내용)
     'detailed_sop_ver': 0,    # 새 SOP 생성 시 증가 -> 메인 스레드가 팝업 갱신
     '_manual_ctx':      '',   # 검색된 매뉴얼 원문(상세 SOP 생성 컨텍스트 재사용)
+    'sop_cache_status': 'SOP cache: waiting for LIVE...',  # [7/6] 화면 표시용 사전생성 진행상태
     'pre_alert':   '',   # 정지형 1차 PRE-ALERT 배너 텍스트 (노란색, 비latch, 카운트다운)
     'scan_left':   None, # 빈 방 클러터 스캔 남은 시간(초). None = 스캔 아님
     'logs': deque(maxlen=20),
@@ -596,14 +668,23 @@ def _prewarm_gemma():
                 break
         time.sleep(0.5)
     add_log('상세 SOP 사전생성 시작 (백그라운드, 유형별 1회)...')
-    for et in ('fall_detected', 'stationary_anomaly', 'vibration_anomaly'):
+    _types = ('fall_detected', 'stationary_anomaly', 'vibration_anomaly')
+    with _lock:
+        state['sop_cache_status'] = 'SOP cache: generating 0/3...'
+    for i, et in enumerate(_types, 1):
         try:
             txt = generate_detailed_sop(et, 'C', '')
             if txt:
                 _sop_cache[et] = txt
-                add_log(f'상세 SOP 캐시 완료: {et}')
+                add_log(f'상세 SOP 캐시 완료: {et} ({i}/3)')
+                with _lock:
+                    done = len(_sop_cache)
+                    state['sop_cache_status'] = (f'SOP cache READY {done}/3 (instant popup)'
+                                                 if done >= 3 else f'SOP cache: generating {done}/3...')
         except Exception as e:
             add_log(f'상세 SOP 사전생성 중단 ({et}): {e} -- ollama/gemma2:2b 확인')
+            with _lock:
+                state['sop_cache_status'] = f'SOP cache FAILED ({e})'
             break   # ollama 연결 안 되면 나머지도 실패 -> 중단
 
 
@@ -1731,7 +1812,7 @@ def update(_i):
         else:
             status_box.set_text(
                 f'[STEP 4: LIVE - NORMAL]  H={cz:.2f}m  pts={n}  '
-                f'|  score={sc_h[-1]:.5f}  thr={thr:.5f}')
+                f'|  score={sc_h[-1]:.5f}  thr={thr:.5f}  |  {state.get("sop_cache_status","")}')
         status_box.set_color(sev_col)
         status_box.get_bbox_patch().set_edgecolor(sev_col)
 
