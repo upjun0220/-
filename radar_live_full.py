@@ -50,6 +50,27 @@ from matplotlib.widgets import Button
 from mpl_toolkits.mplot3d import Axes3D  # noqa
 matplotlib.rcParams['font.family'] = 'DejaVu Sans'
 
+# ── [7/4] 한글 SOP 표시용 폰트 ────────────────────────────────
+#   DejaVu Sans는 한글 미지원 -> 하드코딩 SOP/상세 SOP 한글이 □로 깨짐.
+#   설치된 한글 폰트를 찾아 지정. 없으면 경고(젯슨: sudo apt install fonts-nanum).
+def _set_korean_font():
+    try:
+        import matplotlib.font_manager as fm
+        avail = {f.name for f in fm.fontManager.ttflist}
+        for _name in ('NanumGothic', 'NanumBarunGothic', 'Malgun Gothic', 'AppleGothic',
+                      'Noto Sans CJK KR', 'Noto Sans KR', 'UnDotum', 'Baekmuk Gulim'):
+            if _name in avail:
+                matplotlib.rcParams['font.family'] = _name
+                matplotlib.rcParams['axes.unicode_minus'] = False
+                return _name
+    except Exception:
+        pass
+    return None
+KOREAN_FONT = _set_korean_font() if not HEADLESS else None
+if not HEADLESS and KOREAN_FONT is None:
+    print('[FONT] ⚠ 한글 폰트 없음 -> SOP 한글이 깨질 수 있음.  '
+          '젯슨: sudo apt install fonts-nanum && (캐시) rm -rf ~/.cache/matplotlib')
+
 import torch
 import torch.nn as nn
 from torch import optim
@@ -122,6 +143,14 @@ CONN_STR      = 'postgresql://postgres:password@localhost:5432/radar_guard'
 # False면 기존과 100% 동일(검색 전용) -> 시연 안전 기본값.
 USE_LLM_SUMMARY = False
 LLM_MODEL       = 'gemma2:2b'
+# [7/4] 상세 SOP 팝업: 경보 시 Gemma가 상세 초동조치를 생성해 별도 창에 표시.
+#   langchain/pgvector 없이 Ollama REST(/api/generate)를 urllib로 직접 호출 -> 의존성 최소.
+#   메모리: 생성 시 Gemma ~1.6GB 로드(실측 스택 4.4GB + 1.6 = 6.0GB, 여유 1.5GB) 후 즉시 언로드.
+DETAILED_SOP_POPUP = True
+OLLAMA_URL         = 'http://localhost:11434/api/generate'
+# [7/4] SOP 표시 언어: 'ko'(한글, 폰트 필요) / 'en'(영어, 폰트 무관 - 폴백).
+#   한글이 □로 깨지면 젯슨에 `sudo apt install fonts-nanum` 하거나 여기를 'en'으로.
+SOP_LANG           = 'ko'
 
 # ── Baseline 모델 저장/재사용 (7/3) ──
 # 학습 완료 시 자동 저장. 다음 실행에서 파일이 있으면 웜업/학습 생략하고 바로 LIVE.
@@ -197,7 +226,28 @@ EVENT_SHORT = {
 
 # 이벤트 발생 즉시(몇 초 내) 띄우는 하드코딩 첫 조치.
 # 상세 매뉴얼(pgvector 검색 원문, 몇 초)은 그 아래에 나중에 붙는다. 응급 UX용.
-INSTANT_ACTION = {
+INSTANT_ACTION_KO = {
+    'fall_detected': (
+        "[즉시 조치]  낙상 감지\n"
+        "  1. 의식·호흡 확인\n"
+        "  2. 환자를 함부로 움직이지 말 것 (척추 손상 위험)\n"
+        "  3. 주변 위험요소 차단·현장 확보\n"
+        "  4. 119 신고 후 구조 도착까지 관찰\n"
+    ),
+    'stationary_anomaly': (
+        "[즉시 조치]  정지형 이상 (감전/협착 여부 확인)\n"
+        "  1. 접근 전 전원 차단 확인 (LOTO)\n"
+        "     -- 감전 의심 시: 맨손 접촉 금지\n"
+        "  2. 협착 시: 무리하게 잡아당기지 말 것\n"
+        "  3. 119 신고\n"
+        "  4. 현장에서 유형 확인 후 SOP 따를 것\n"
+    ),
+    'vibration_anomaly': (
+        "[점검]  진동 / 경미한 이상\n"
+        "  - 해당 구역 육안 점검\n"
+    ),
+}
+INSTANT_ACTION_EN = {
     'fall_detected': (
         "[IMMEDIATE]  FALL DETECTED\n"
         "  1. Check consciousness / breathing\n"
@@ -219,7 +269,10 @@ INSTANT_ACTION = {
     ),
 }
 def instant_action(ev_type):
-    return INSTANT_ACTION.get(ev_type, f"[ALERT] {EVENT_LABELS.get(ev_type, ev_type)}\n")
+    d = INSTANT_ACTION_KO if SOP_LANG == 'ko' else INSTANT_ACTION_EN
+    fb = f"[경보] {EVENT_LABELS.get(ev_type, ev_type)}\n" if SOP_LANG == 'ko' \
+         else f"[ALERT] {EVENT_LABELS.get(ev_type, ev_type)}\n"
+    return d.get(ev_type, fb)
 
 # ═══════════════════════════════════════════════════════════
 # 2. PIPELINE CLASSES
@@ -475,6 +528,9 @@ state = {
     'rag_running': False,
     'sop_text':    '',
     'instant_sop': '',   # 이벤트 즉시 첫 조치(하드코딩). RAG 상세 SOP가 아래 붙음
+    'detailed_sop':     '',   # [7/4] Gemma 생성 상세 SOP (팝업창 내용)
+    'detailed_sop_ver': 0,    # 새 SOP 생성 시 증가 -> 메인 스레드가 팝업 갱신
+    '_manual_ctx':      '',   # 검색된 매뉴얼 원문(상세 SOP 생성 컨텍스트 재사용)
     'pre_alert':   '',   # 정지형 1차 PRE-ALERT 배너 텍스트 (노란색, 비latch, 카운트다운)
     'scan_left':   None, # 빈 방 클러터 스캔 남은 시간(초). None = 스캔 아님
     'logs': deque(maxlen=20),
@@ -491,9 +547,75 @@ def add_log(msg):
     print(f'[LOG {ts}] {msg}')
 
 # ═══════════════════════════════════════════════════════════
-# 4. RAG THREAD
+# 4. RAG THREAD  (+ [7/4] Gemma 상세 SOP 팝업)
 # ═══════════════════════════════════════════════════════════
+def generate_detailed_sop(ev_type, zone, manual_ctx=''):
+    """Ollama REST(/api/generate) 직접 호출로 상세 SOP 생성 (langchain 불필요, urllib).
+    검색 매뉴얼 원문이 있으면 근거로 넣고, 없으면 이벤트만으로 생성."""
+    import urllib.request
+    label = EVENT_LABELS.get(ev_type, ev_type)
+    if SOP_LANG == 'ko':
+        ctx_block = (f'\n참고 안전매뉴얼 발췌:\n{manual_ctx[:1200]}\n' if manual_ctx else '')
+        prompt = (
+            f'너는 산업 현장 안전관리자다. 방금 "{label}"이(가) Zone {zone}에서 감지됐다.'
+            f'{ctx_block}\n'
+            f'현장 작업자가 지금 즉시 따라야 할 상세 초동 조치를 한국어로 작성하라. '
+            f'번호를 매긴 5~7단계, 각 단계는 한 문장으로 구체적으로. 서론 없이 조치만.'
+        )
+    else:
+        ctx_block = (f'\nSafety manual excerpt:\n{manual_ctx[:1200]}\n' if manual_ctx else '')
+        prompt = (
+            f'You are an industrial safety officer. "{label}" was just detected in Zone {zone}.'
+            f'{ctx_block}\n'
+            f'Write the detailed immediate response actions the on-site worker must take now, '
+            f'as a numbered 5-7 step list, one concise sentence each. No preamble, actions only.'
+        )
+    body = json.dumps({
+        'model': LLM_MODEL, 'prompt': prompt, 'stream': False, 'keep_alive': 0,
+        'options': {'num_ctx': 1024, 'num_predict': 400, 'temperature': 0.2},
+    }).encode('utf-8')
+    req = urllib.request.Request(OLLAMA_URL, data=body,
+                                 headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.loads(r.read().decode('utf-8')).get('response', '').strip()
+
+
+def _sop_status(msg):
+    """메인 SOP 패널 하단에 상세 SOP 진행 상태를 표시(폰트 무관 영어)."""
+    with _lock:
+        base = state.get('sop_text', '').split('\n>> [Detailed SOP]')[0].rstrip()
+        state['sop_text'] = base + f'\n\n>> [Detailed SOP] {msg}'
+
+def _make_detailed_sop(ev_type, zone):
+    """Gemma 상세 SOP를 생성해 state에 저장 (팝업은 메인 스레드가 갱신)."""
+    try:
+        with _lock:
+            ctx = state.get('_manual_ctx', '')
+        _sop_status('generating via Gemma... (first run may take ~20-40s)')
+        add_log('detailed SOP: generating via Gemma...')
+        txt = generate_detailed_sop(ev_type, zone, ctx)
+        if txt:
+            with _lock:
+                state['detailed_sop']     = txt
+                state['detailed_sop_ver'] = state.get('detailed_sop_ver', 0) + 1
+            _sop_status('ready -> shown in separate popup window')
+            add_log('detailed SOP ready -> popup')
+        else:
+            _sop_status('Gemma returned empty response')
+            add_log('detailed SOP empty')
+    except Exception as e:
+        _sop_status(f'FAILED: {e}  (check: ollama serve / gemma2:2b)')
+        add_log(f'detailed SOP failed: {e}')
+
+
 def run_rag(ev_type, zone):
+    """검색(메인 패널) + Gemma 상세 SOP(팝업)를 한 스레드에서 순차 수행."""
+    _rag_retrieve(ev_type, zone)
+    if DETAILED_SOP_POPUP and not HEADLESS:
+        _make_detailed_sop(ev_type, zone)
+
+
+def _rag_retrieve(ev_type, zone):
     situation = f'{EVENT_LABELS.get(ev_type, ev_type)} detected in Zone {zone}'
     category  = EVENT_CATEGORY.get(ev_type)
     add_log(f'RAG started: {situation}')
@@ -531,6 +653,7 @@ def run_rag(ev_type, zone):
         with _lock:
             state['sop_text']    = (instant +
                 f'\n=== Manual (retrieved, top {len(docs)}) ===\n\n{manual}')
+            state['_manual_ctx'] = ' '.join(d.page_content for d in docs)[:1500]  # 상세 SOP 근거 재사용
             state['rag_running'] = False
         add_log(f'Manual retrieved ({len(docs)} chunk) - retrieval-only, no LLM')
 
@@ -1428,8 +1551,48 @@ def make_guide_text(phase, data_ok, ev_active, ev_type, ev_zone, ev_conf, rag_ru
     )
 
 # ═══════════════════════════════════════════════════════════
-# 8. ANIMATION UPDATE
+# 8. ANIMATION UPDATE  (+ [7/4] 상세 SOP 팝업)
 # ═══════════════════════════════════════════════════════════
+_sop_popup = {'fig': None, 'txt': None, 'ver': -1}
+def _refresh_sop_popup():
+    """detailed_sop_ver가 바뀌면 별도 팝업 창을 열거나 내용 갱신 (메인 스레드 전용).
+    Gemma 생성이 백그라운드 스레드에서 끝나면 여기서 창을 띄운다(=Tk는 메인스레드에서만)."""
+    if HEADLESS:
+        return
+    with _lock:
+        ver  = state.get('detailed_sop_ver', 0)
+        body = state.get('detailed_sop', '')
+        ev_t = state.get('ev_type')
+        ev_z = state.get('ev_zone', '')
+    if ver == _sop_popup['ver'] or not body:
+        return
+    _sop_popup['ver'] = ver
+    title   = f"상세 SOP (Gemma) — {EVENT_LABELS.get(ev_t, ev_t)} / Zone {ev_z}"
+    wrapped = '\n'.join(textwrap.fill(ln, width=52) for ln in body.split('\n'))
+    content = f"[ {title} ]\n\n{wrapped}\n\n(이 창을 닫아도 감시는 계속됩니다)"
+    try:
+        f = _sop_popup['fig']
+        if f is None or not plt.fignum_exists(f.number):
+            f = plt.figure('Detailed SOP', figsize=(6.4, 8.2), facecolor='#0a0a1e')
+            ax = f.add_axes([0, 0, 1, 1]); ax.axis('off')
+            ax.add_patch(mpatches.Rectangle((0.02, 0.02), 0.96, 0.96,
+                         transform=ax.transAxes, facecolor='#0d1530',
+                         edgecolor='#ff6644', linewidth=2, zorder=0))
+            _sop_popup['txt'] = ax.text(0.06, 0.95, '', transform=ax.transAxes,
+                         va='top', ha='left', color='#e6f0ff', fontsize=10.5,
+                         family=(KOREAN_FONT or 'DejaVu Sans'), zorder=1)
+            _sop_popup['fig'] = f
+        _sop_popup['txt'].set_text(content)
+        _sop_popup['txt'].set_color('#ffdddd' if ev_t == 'fall_detected' else '#e6f0ff')
+        f.canvas.draw_idle()
+        try:
+            f.show()
+        except Exception:
+            pass
+    except Exception as e:
+        print(f'[SOP-POPUP] error: {e}')
+
+
 def update(_i):
     with _lock:
         phase      = state['phase']
@@ -1585,6 +1748,9 @@ def update(_i):
         alarm_banner.set_visible(True)
     else:
         alarm_banner.set_visible(False)
+
+    # [7/4] Gemma 상세 SOP 팝업 갱신 (백그라운드 생성 완료 시 창 표시)
+    _refresh_sop_popup()
 
     # btn_start label refresh (defined after button creation in main)
     if '_refresh_btn_label' in globals():
