@@ -185,6 +185,19 @@ HISTORY_LEN   = 120
 CONFIRM_FRAMES = 3       # 이상이 이만큼 연속돼야 경보 latch (순간 움직임 디바운스)
 CONFIRM_EVENTS = 3       # non-fall 판정이 이만큼 '연속 동일'해야 latch (전이 오탐 억제, ~수 초)
 FALL_CONFIRM   = 2       # [7/3 6차] 낙상도 2연속 확정 (경계선 오탐 차단, 지연 ~0.3s)
+# [7/8] 낙상 지속확인(post-fall) 게이트: 낙상 확정 후 바로 경보 내지 않고 관찰창 동안
+#   '일어나 정상활동(보행) 재개'가 보이면 취소 -> 순간 wave/빠른앉기 오탐 제거.
+#   취소 신호는 '절대 저높이' 대신 '활동(보행) 재개'를 씀 -- 절대높이는 CEILING_H
+#   의존(환경별 변동)이라 게이트에 안 씀. (참고: clean 실측상 쓰러진 높이는 종료 ~0.75m,
+#   최저 ~0.18m로 실제 낮게 내려감. 구 '~1.4m' 주석은 노이즈 시절 값이라 폐기.)
+#     안전측: 확실한 회복(보행)만 취소, 없으면 latch.
+#   문제 시 POSTFALL_GATE=False 로 즉시 기존(즉시 latch) 동작으로 롤백.
+POSTFALL_GATE  = True
+POSTFALL_HOLD  = 1.2     # 낙상 확정 후 관찰 시간(초). 만료 시 회복없으면 경보 latch.
+RECOVER_NP75   = 15      # 보행 수준 포인트수 하한 +
+RECOVER_DSLO   = 0.30    # 보행 수준 도플러 하한(정지<0.30) ~
+RECOVER_DSHI   = 0.90    #   상한(0.90, 격렬X) 사이가
+RECOVER_FRAMES = 4       # 연속 이만큼(~0.4s) = '일어나 걸어다님' -> 낙상 취소
 # [7/6] z_accel 하한 게이트 — 라이브 검증 결과 '비활성'(0).
 #   근거: 수집데이터는 낙상 zacc 182~1389로 팔흔들기(15~155)와 분리됐으나, 라이브는
 #   포인트 희소로 스케일이 달라 낙상 zacc도 15~155로 팔흔들기와 '겹침'(젯슨 로그 확인).
@@ -401,7 +414,6 @@ def _rf_features(win):
     cx = np.array([float(f[0]) for f in win]); cy = np.array([float(f[1]) for f in win])
     cz = np.array([float(f[2]) for f in win]); ds = np.array([float(f[4]) for f in win])
     n  = np.array([float(f[6]) for f in win]); dop = np.array([float(f[3]) for f in win])
-    h  = CEILING_H - cy
     half = max(1, len(ds) // 2)
     ds_first = ds[:half].mean(); ds_last = ds[half:].mean()
     zvel = np.zeros(len(win))
@@ -415,14 +427,26 @@ def _rf_features(win):
             if a[i] >= t and a[i] >= a[i-1] and a[i] > a[i+1]: p += 1
         return p
     pk = int(np.argmax(ds))
+    # [7/8 환경불변] extract()와 100% 동일: 절대높이/포인트수 -> cy 상대비율.
+    span = float(cy.max() - cy.min()) + 1e-6
+    cy_s = float(cy[:3].mean()); cy_e = float(cy[-3:].mean())
+    end_low_ratio  = (cy_e - float(cy.min())) / span
+    net_drop_ratio = (cy_e - cy_s) / span
+    max_drop_ratio = (float(cy.max()) - cy_s) / span
+    nm = float(n.mean()) + 1e-6
+    nh = max(1, len(n) // 2)
+    n_peak_ratio = float(n.max()) / nm
+    n_cv         = float(n.std()) / nm
+    n_trend      = (float(n[nh:].mean()) - float(n[:nh].mean())) / nm
     return [
         float(ds.max()), float(ds.mean()), float(ds_first), float(ds_last),
         float(ds.max() / max(0.15, ds_first)), int((ds >= 0.8).sum()),
         float(ds_last / (ds.max() + 1e-6)), _pk(ds), zsc,
-        float(cy.max() - cy.min()), float(h.min()), float(h[-3:].mean()), float(h[:3].mean()),
+        float(cy.max() - cy.min()),
+        end_low_ratio, net_drop_ratio, max_drop_ratio,
         float(np.hypot(cx.max()-cx.min(), cz.max()-cz.min())),
         float(np.hypot(cx[pk:].mean()-cx[:max(1,pk)].mean(), cz[pk:].mean()-cz[:max(1,pk)].mean())),
-        float(n.mean()), float(np.percentile(n, 75)), float(n.max()),
+        n_peak_ratio, n_cv, n_trend,
         float(np.abs(dop).mean()),
     ]
 
@@ -441,6 +465,25 @@ def _rf_veto(win):
         return False
 
 
+def _latch_event(et, clf, zn, ts, score_x):
+    """경보 latch. 즉시경보와 낙상 지속확인 게이트가 공유. caller가 _lock 보유 가정
+    (per-frame 게이트에서 호출 시엔 with _lock 로 감쌈 -- RLock이라 재진입 안전)."""
+    instant = instant_action(et)
+    state.update({
+        'ev_active': True, 'ev_type': et,
+        'ev_sev': clf['severity'], 'ev_conf': clf['confidence'], 'ev_zone': zn,
+        'instant_sop': instant,
+        'sop_text': instant + '\n>> Searching safety manual (pgvector)...',
+    })
+    lbl = EVENT_LABELS.get(et, et)
+    state['logs'].append(
+        f'[{ts}] ALERT Zone {zn}: {lbl} (conf={clf["confidence"]:.0%} score={score_x:.1f}x)')
+    state['incidents'].append({'type': et, 'zone': zn, 'detected': ts, 'resolved': None})
+    if not state['rag_running'] and RAG_OK:
+        state['rag_running'] = True
+        threading.Thread(target=run_rag, args=(et, zn), daemon=True).start()
+
+
 def classify(feat_win, score, thr):
     """천장 설치 + 실측 데이터(events_collect.jsonl, 50샘플) 기반 규칙 분류.
 
@@ -455,8 +498,10 @@ def classify(feat_win, score, thr):
       - 진동 경고   : 창 전반부+후반부 dop_std 평균 둘 다 >= 0.40 (지속성 요구)
       - 그 외       : 빠른앉기/정상/일과성 동작 -> 정상
 
-    중요: 낙상은 '높이가 0으로 떨어짐'이 아니라 '도플러 격렬함'으로 잡힘(실측 확인).
-          천장 레이더는 쓰러진 사람 centroid 높이가 ~1.4m로 유지됨.
+    중요: 낙상은 '도플러 격렬함' + '수평 무너짐'으로 잡음(실측 확인).
+          [7/8 재측정] 클러터 도입 후 clean 82샘플: 쓰러진 centroid 종료높이 중앙 0.75m,
+          순간 최저 0.18m (구 주석 '~1.4m 유지'는 노이즈 시절 값이라 폐기).
+          단 절대높이는 CEILING_H 의존이라 판정 피처로 안 쓰고 도플러/상대값 위주 유지.
     """
     win = [f for f in feat_win if float(f[6]) > 0]        # n_pts>0 프레임만 집계
     if not win:
@@ -818,6 +863,8 @@ def pipeline_loop():
     anom_streak = 0           # 연속 이상 프레임 수 (디바운스)
     pend_et     = None        # non-fall 경보 후보 (연속 판정 확인용)
     pend_cnt    = 0           # 같은 판정이 연속으로 나온 횟수
+    fall_pending   = None     # [7/8] 낙상 지속확인 중 (dict) / None
+    recover_streak = 0        # 관찰창 내 '보행 재개' 연속 프레임 수
     stat_since  = None        # 위험 Zone 내 정지 시작 시각 (Zone+지속시간 게이트)
     stat_miss   = 0           # 정지 조건 연속 이탈 프레임 수
     stat_zone   = None        # 현재 정지 중인 Zone id
@@ -923,6 +970,8 @@ def pipeline_loop():
             anom_streak = 0
             pend_et     = None
             pend_cnt    = 0
+            fall_pending   = None
+            recover_streak = 0
             stat_since  = None
             stat_miss   = 0
             stat_zone   = None
@@ -1131,6 +1180,28 @@ def pipeline_loop():
             if len(clf_buf) > CLF_WIN:
                 clf_buf.pop(0)
 
+            # ── [7/8] 낙상 지속확인 게이트 (매 프레임) ──
+            #   낙상 확정 후 POSTFALL_HOLD초 관찰. '일어나 보행'(보행성 신호) 연속 감지 -> 취소.
+            #   관찰창 만료 시 회복 없으면 latch(=진짜 낙상). 천장센서는 쓰러진 centroid도
+            #   ~1.4m라 절대높이로 '누움' 확인이 약함 -> 안전측: 확실한 '활동 재개'만 취소.
+            if POSTFALL_GATE and fall_pending is not None:
+                _nn, _dd = float(feat[6]), float(feat[4])
+                if _nn >= RECOVER_NP75 and RECOVER_DSLO <= _dd <= RECOVER_DSHI:
+                    recover_streak += 1
+                else:
+                    recover_streak = 0
+                _pts = datetime.now().strftime('%H:%M:%S')
+                if recover_streak >= RECOVER_FRAMES:
+                    fall_pending = None; recover_streak = 0
+                    with _lock:
+                        state['logs'].append(f'[{_pts}] Fall 취소: 일어나 이동 감지 (postfall gate)')
+                elif time.time() >= fall_pending['deadline']:
+                    with _lock:
+                        if not state['ev_active']:
+                            _latch_event('fall_detected', fall_pending['clf'],
+                                         fall_pending['zn'], _pts, fall_pending['score_x'])
+                    fall_pending = None; recover_streak = 0
+
             # ── 정지형(협착/감전) Zone+지속시간 게이트 (매 프레임, AE와 독립) ──
             # 조건: 위험 Zone 안 + 사람 존재(n>=4) + 저동작(ds<0.35) 지속.
             _n, _ds = float(feat[6]), float(feat[4])
@@ -1328,25 +1399,18 @@ def pipeline_loop():
 
                     if et == 'normal':
                         pass   # 빈 공간/정지/정상/보행/미확정 -> 경보 만들지 않음 (오탐 방지)
+                    elif et == 'fall_detected' and POSTFALL_GATE:
+                        # [7/8] 낙상 즉시 latch 대신 '지속확인' 시작: POSTFALL_HOLD초 관찰 후
+                        #   회복(일어나 보행) 없으면 latch, 있으면 취소 (순간 wave/앉기 오탐 제거).
+                        zn = EVENT_ZONE.get(et, 'C')
+                        fall_pending = {'deadline': time.time() + POSTFALL_HOLD, 'clf': clf,
+                                        'zn': zn, 'score_x': (score / thr if thr > 0 else 0.0)}
+                        recover_streak = 0
+                        state['logs'].append(
+                            f'[{ts}] Fall 후보 -- 지속확인 중 ({POSTFALL_HOLD:.1f}s, 일어나 걸으면 취소)')
                     else:
-                        zn  = EVENT_ZONE.get(et, 'C')
-                        instant = instant_action(et)          # 즉시 첫 조치(몇 초 내 표시)
-                        state.update({
-                            'ev_active': True, 'ev_type': et,
-                            'ev_sev': clf['severity'],
-                            'ev_conf': clf['confidence'],
-                            'ev_zone': zn,
-                            'instant_sop': instant,
-                            'sop_text': instant + '\n>> Searching safety manual (pgvector)...',
-                        })
-                        lbl = EVENT_LABELS.get(et, et)
-                        msg = f'ALERT Zone {zn}: {lbl} (conf={clf["confidence"]:.0%} score={score/thr:.1f}x)'
-                        state['logs'].append(f'[{ts}] {msg}')
-                        state['incidents'].append({           # 사고 이력 기록
-                            'type': et, 'zone': zn, 'detected': ts, 'resolved': None})
-                        if not state['rag_running'] and RAG_OK:
-                            state['rag_running'] = True
-                            threading.Thread(target=run_rag, args=(et, zn), daemon=True).start()
+                        zn = EVENT_ZONE.get(et, 'C')
+                        _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
 
                 # ── 정지형 2차 경보: PRE-ALERT 후에도 무동작 지속 -> critical latch ──
                 if (stat_since is not None and not state['ev_active']
