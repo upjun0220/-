@@ -134,10 +134,23 @@ STAT_ENTRY_SEC = 8.0
 # 학습 결과는 baseline 파일에 함께 저장돼 다음 실행에서 재사용됨.
 SCAN_SEC        = 12.0   # 빈 방 스캔 시간 (이 동안 전원 시야 밖!)
 SCAN_GRID       = 0.30   # 위치 군집 격자 (m)
-SCAN_MIN_HITS   = 6      # 이 횟수 이상 반복 관측된 격자만 클러터 인정
-SCAN_MAX_SPOTS  = 8      # 최대 스팟 수 (과도 마스킹 방지)
+SCAN_MIN_HITS   = 4      # [7/8] 6->4: 반복 관측된 격자만 클러터 인정(지속성 필터=산발노이즈 배제).
+                         #   낮출수록 흔들리는 선/케이블도 잡음. 단 산발노이즈 마스킹 위험 있어 하한 유지.
+SCAN_MAX_SPOTS  = 30     # [7/8] 8->30: 개수 상한 완화 -> 정적 물체 여러 개인 환경도 스캔 1번에 다 제거.
+                         #   ⚠ 과잉 마스킹 방지 위해 '지속성(SCAN_MIN_HITS)'은 유지 -> 산발 노이즈는 안 잡힘.
 CLUTTER_SPOT_R  = 0.35   # [7/3 9차] 0.30->0.35: 케이블 흔들림의 이탈 반경 커버 (이슈 1,4)
-CLUTTER_SPOTS   = []     # 수동 시드(비상용). 스캔 완료 시 학습 결과가 여기에 더해짐.
+# [7/8 3D] 클러터를 (x,z) 기둥이 아니라 (x,y,z) 복셀로 학습 -> 케이블 '높이대'만 마스킹.
+#   Target Masking 해결: (x,z)에서 모든 높이를 삭제하던 걸 그 높이 밴드로 한정
+#   -> 그 아래 쓰러진 사람 점은 살아남음. 스팟 포맷: (x, y, z, r, dy).
+#   ⚠ dense voxel grid 아님 - most_common(SCAN_MAX_SPOTS)로 뽑은 sparse 리스트(최대 30개)라 RAM ~1KB.
+SCAN_GRID_Y     = 0.30   # 수직(y=천장기준 range) 군집 격자 (m)
+CLUTTER_Y_BAND  = 0.35   # ⚠임시 - 클러터 수직 허용 반밴드(±m). 오늘 STILL 데이터 높이분포로 확정 예정.
+CLUTTER_SPOTS   = []     # 수동 시드(비상용, 5-tuple). 스캔 완료 시 학습 결과가 여기에 더해짐.
+# [7/8] 클러터 처리 모드 토글 (데모 중 롤백 안전망 - Target Masking 우려 시 즉시 OFF).
+#   True  = per-point 삭제 (클러터 복셀 안 점 제거; 선 pre-alert 방어 강함)
+#   False = 점 삭제 안 함 -> 정지형 게이트의 클러터 중립처리만 사용(그 자리 사람 점 살림).
+#           정적 클러터는 낙상/진동 경로엔 남지만, 정적(저도플러)이라 그쪽 오탐 트리거는 안 됨.
+CLUTTER_REMOVE_POINTS = True
 # 2단계 경보 (산업 man-down 장비 표준 방식: pre-alert -> escalation).
 # 설비 앞 정당한 정지 작업의 오경보 방지: 1차는 경고만(움직이면 자동 취소),
 # 계속 무동작이면 2차 critical latch. 상용 장비 무동작 타이머는 1분~수시간 설정형 --
@@ -399,10 +412,11 @@ def train_on_real_data(feature_list):
 
 
 def build_clutter_map(scan_pts):
-    """빈 방 스캔 좌표들을 격자 군집화 -> 반복 관측 격자만 클러터 스팟으로 반환."""
-    cnt = Counter((round(x / SCAN_GRID), round(z / SCAN_GRID)) for x, z in scan_pts)
-    spots = [(gx * SCAN_GRID, gz * SCAN_GRID, CLUTTER_SPOT_R)
-             for (gx, gz), k in cnt.most_common(SCAN_MAX_SPOTS) if k >= SCAN_MIN_HITS]
+    """빈 방 스캔 좌표(x,y,z)를 3D 복셀 군집화 -> 반복 관측 복셀만 클러터 스팟(x,y,z,r,dy)으로 반환."""
+    cnt = Counter((round(x / SCAN_GRID), round(y / SCAN_GRID_Y), round(z / SCAN_GRID))
+                  for x, y, z in scan_pts)
+    spots = [(gx * SCAN_GRID, gy * SCAN_GRID_Y, gz * SCAN_GRID, CLUTTER_SPOT_R, CLUTTER_Y_BAND)
+             for (gx, gy, gz), k in cnt.most_common(SCAN_MAX_SPOTS) if k >= SCAN_MIN_HITS]
     return spots
 
 
@@ -874,6 +888,7 @@ def pipeline_loop():
     stat_hits = stat_tot = 0  # 타이머 진행 중 조건충족/전체 프레임 수 (히트비율용)
     stat_last_hit = 0.0       # 마지막 히트 시각 (중립 프레임만 이어질 때 타이머 정리용)
     last_motion_t = -1e9      # 마지막 '이동 프레임' 시각 (진입 게이트: 이동->정지 시퀀스 확인)
+    motion_run = 0            # [7/9] 진입 게이트: n>=14 연속 프레임 카운터(케이블 도플러 스파이크 배제)
     clutter_spots = list(CLUTTER_SPOTS)   # 클러터 마스크 (스캔으로 학습됨)
     scan_buf      = []        # 빈 방 스캔 좌표 버퍼
     scan_until    = None      # 스캔 종료 시각 (None = 스캔 아님)
@@ -892,7 +907,7 @@ def pipeline_loop():
         scan_until = None
         with _lock:
             state['scan_left'] = None
-        spots_txt = ', '.join(f'({x:+.2f},{z:+.2f})' for x, z, _ in learned) or 'none'
+        spots_txt = ', '.join(f'(x{x:+.2f},y{y:+.2f},z{z:+.2f})' for x, y, z, _, _ in learned) or 'none'
         add_log(f'Scan done: {len(learned)} clutter spot(s) learned [{spots_txt}]')
         add_log('>> NOW step IN and STAND STILL (baseline collection)')
 
@@ -920,12 +935,18 @@ def pipeline_loop():
             model.eval()
             scaler = ck['scaler']
             thr    = float(ck['thr'])
-            clutter_spots = [tuple(s) for s in ck.get('clutter', [])] or list(CLUTTER_SPOTS)
+            _raw_clut = [tuple(s) for s in ck.get('clutter', [])]
+            _old_fmt  = bool(_raw_clut) and any(len(s) != 5 for s in _raw_clut)
+            if _old_fmt:
+                _raw_clut = []   # [7/8 3D] 구 클러터 포맷(3-tuple) -> 무효화. 3D 재스캔 필요.
+            clutter_spots = _raw_clut or list(CLUTTER_SPOTS)
             with _lock:
                 state['threshold'] = thr
                 state['phase']     = PH_LIVE
             add_log(f'Baseline LOADED (thr={thr:.5f}, clutter {len(clutter_spots)} spots) '
                     f'-- LIVE now. Radar moved? press RESET.')
+            if _old_fmt:
+                add_log('⚠ 구 클러터 포맷(2D) 감지 -> 무효화됨. [RESET] 후 재스캔해야 3D 클러터 적용됩니다.')
         except Exception as e:
             model, scaler, thr = None, None, 0.01
             add_log(f'⚠ Baseline load failed: {e}')
@@ -1048,6 +1069,20 @@ def pipeline_loop():
                         _finish_scan()
                 continue
 
+            # [7/8] 클러터 '점 제거' (스캔 완료 후): 학습된 정적 스팟 내 포인트를 실제로 제거.
+            #   -> 선/케이블 등 정적 반사가 point cloud·정지형 게이트·AE에 아예 안 잡힘.
+            #   (스캔 중엔 학습해야 하므로 scan_until is None 일 때만 적용)
+            if CLUTTER_REMOVE_POINTS and scan_until is None and clutter_spots:
+                frame_pts = [p for p in frame_pts
+                             if not any((p['x'] - _sx) ** 2 + (p['z'] - _sz) ** 2 <= _sr * _sr
+                                        and abs(p['y'] - _sy) <= _dy       # [7/8 3D] 그 높이대만 삭제
+                                        for _sx, _sy, _sz, _sr, _dy in clutter_spots)]
+                if not frame_pts:                 # 클러터 제거 후 빈 프레임 = 사람 없음
+                    stat_miss += 1
+                    if stat_miss >= STAT_MISS_TOL:
+                        stat_since = None; stat_zone = None; stat_pre = False
+                    continue
+
             with _lock:
                 state['latest_pts']  = frame_pts
                 state['last_data_t'] = time.time()
@@ -1094,7 +1129,7 @@ def pipeline_loop():
                 # STEP A: 빈 방 클러터 스캔 (사람 들어오기 전)
                 if scan_until is not None:
                     if time.time() < scan_until:
-                        scan_buf.append((float(feat[0]), float(feat[2])))
+                        scan_buf.append((float(feat[0]), float(feat[1]), float(feat[2])))
                         with _lock:
                             state['scan_left'] = scan_until - time.time()
                             state['sc_h'].append(0.0)
@@ -1205,7 +1240,7 @@ def pipeline_loop():
             # ── 정지형(협착/감전) Zone+지속시간 게이트 (매 프레임, AE와 독립) ──
             # 조건: 위험 Zone 안 + 사람 존재(n>=4) + 저동작(ds<0.35) 지속.
             _n, _ds = float(feat[6]), float(feat[4])
-            _cx, _czf = float(feat[0]), float(feat[2])   # 바닥평면 (x, z)
+            _cx, _cy, _czf = float(feat[0]), float(feat[1]), float(feat[2])   # (x, y=높이축, z)
             _zone_hit = None
             for _zid, _zc in DANGER_ZONES.items():
                 if _zc['x'][0] <= _cx <= _zc['x'][1] and _zc['z'][0] <= _czf <= _zc['z'][1]:
@@ -1218,10 +1253,18 @@ def pipeline_loop():
                 _pos_ok = (_cx - stat_ax)**2 + (_czf - stat_az)**2 <= STAT_POS_R**2
             # [7/3 3차] 클러터 스팟(빈 방 스캔으로 학습됨) 프레임 = 중립
             _clutter = any((_cx - _sx)**2 + (_czf - _sz)**2 <= _sr**2
-                           for _sx, _sz, _sr in clutter_spots)
-            # [7/3 4차] 이동 프레임 기록 (사람이 걸어 들어옴 -> 정지 타이머 시작 허가)
-            if _n >= 14 or _ds >= 0.40:
-                last_motion_t = time.time()
+                           and abs(_cy - _sy) <= _dy       # [7/8 3D] 클러터 높이대의 centroid만 중립
+                           for _sx, _sy, _sz, _sr, _dy in clutter_spots)
+            # [7/3 4차 / 7/9] 이동 프레임 기록 (사람이 걸어 들어옴 -> 정지 타이머 시작 허가)
+            #   [7/9] 도플러 트리거(구: or _ds>=0.40) 제거: 흔들리는 케이블은 저-n·고-도플러라
+            #   그 스파이크로 진입 게이트가 열려 케이블 pre-alert가 나던 주 경로를 차단.
+            #   사람=고밀도(n)이므로 n>=14가 3프레임(~0.3s) 연속일 때만 '진입'으로 인정.
+            if _n >= 14:
+                motion_run += 1
+                if motion_run >= 3:
+                    last_motion_t = time.time()
+            else:
+                motion_run = 0
 
             if MAINT_MODE:
                 stat_since = None; stat_zone = None; stat_pre = False   # 계획 정비: 억제
