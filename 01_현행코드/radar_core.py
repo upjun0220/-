@@ -1,0 +1,1953 @@
+"""radar_core.py — Radar-Guard 관제 앱의 로직·공용 위젯 계층 [노트북]
+
+  이 파일은 단독 실행하지 않는다. 화면은 console_ui.py 가 그린다.
+      [내 PC PowerShell]
+      cd "C:\\Users\\82102\\OneDrive\\문서\\Claude\\Projects\\공모전\\01_현행코드"
+      python console_ui.py                        # 데모 모드 (젯슨 불필요)
+      python console_ui.py --live 192.168.0.50    # 젯슨 실데이터
+      python console_ui.py --live 127.0.0.1       # sim_jetson.py 와 루프백 검증
+
+═══ 이 파일이 존재하는 이유 (2026-08-01) ═══
+  원래 console_ui.py 한 파일에 '데이터 수신 · 자세추정 · SOP 검색 · 화면' 이
+  전부 들어 있었다(2,801줄). UI 를 v2 로 다시 그리면서 화면만 갈아끼우려 했는데,
+  화면과 로직이 같은 파일에 있으면 '화면을 바꿨다' 와 '판정 경로를 건드렸다' 를
+  코드로 구분할 수 없다 — 안전 시스템에서 이건 설명 책임의 문제다.
+  → 화면에서 독립적인 것만 여기로 내렸다. console_ui.py 는 이 파일을 import 한다.
+    두 파일이 같은 객체를 쓰므로 로직이 갈라질 수 없다.
+
+═══ 여기 있는 것 ═══
+  RadarLink      젯슨 UDP 수신 스레드 + 제어 명령 송신
+  PoseEstimator  N프레임 누적 + PCA 자세 추정 (표시 전용 — 판정에 되먹이지 않는다)
+  SopEngine      pgvector 매뉴얼 검색 + Gemma 요약 (전부 백그라운드)
+  Track3D        3D 포인트 클라우드 위젯 (OpenGL 없으면 2D 자동 대체)
+  PreparePage    빈방 스캔 → 기준 수집 → AE 학습 화면
+  SettingsPopup / EvidencePopup / PowerPopup / RestorePopup / QueryPopup / GraphPopup
+  lb·btn·panel·titled·confirm·Dialog·md_to_html   공용 위젯 헬퍼
+  _DemoSource    젯슨 없이 화면을 보기 위한 가짜 데이터
+
+═══ 여기 없는 것 (console_ui.py 로 갔다) ═══
+  메인 창, 사이드 네비, 대시보드, 실시간 감시 화면, 조치 가이드 드로어,
+  이벤트 로그·SOP 가이드 페이지, 실행 진입점.
+  v1 의 화면 클래스(Console·StartupPage·FacilityMap·Readout·LiveLog·
+  CheckRow·ZoneCard·SopPopup·EventLogPopup)는 v2 가 대체했으므로 삭제했다.
+  원본은 _구버전보관/코드/console_ui_v1_0801_최종.py 에 있다.
+
+═══ 경보 상태기계 (ISA-18.2) — 상수는 이 파일이 소유한다 ═══
+  NORMAL ──경보──> UNACK(점멸·소리) ──확인함──> ACK(점멸·소리 정지, 상황 지속)
+         <──상황 종료(사람이 누름)──
+  ⚠ 자동 해제는 없다. 작업자가 아직 바닥에 있는데 화면이 초록으로 돌아가면 안 된다.
+  ⚠ '확인함'은 소리를 끄는 것이지 경보를 지우는 것이 아니다.
+
+═══ 이 앱이 하지 않는 것 ═══
+  판정·차단 실행은 전부 젯슨이 한다. 여기는 표시와 '요청'만 한다.
+  링크가 끊겨도 젯슨은 독립적으로 판정·차단을 계속한다(fail-safe).
+"""
+import os
+import time
+import math
+import json
+import re
+import socket
+import threading
+from collections import deque
+from html import escape as html_escape
+
+import numpy as np
+from PyQt5 import QtCore, QtGui, QtWidgets
+import pyqtgraph as pg
+
+from radar_common import (
+    DATA_PORT, CTRL_PORT, HELLO_SEC, LINK_TIMEOUT, SCHEMA_VERSION,
+    CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET,
+    CEILING_H, HISTORY_LEN,
+    PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_LIVE,
+    PHASE_ORDER, PHASE_KO, PHASE_ACTION,
+    EVENT_KO, EVENT_CATEGORY, ZONE_IDS, ZONE_KO, RADAR_ZONE, pg_conn_str,
+    SEV_KO, GATE_META, REJECT_KO, EVIDENCE_KO, SOP_CATEGORIES,
+    CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH,
+    BG, PANEL, PANEL_HI, PANEL_LO, EDGE, TXT, DIM, FAINT,
+    CYAN, GREEN, AMBER, RED, GRID, sev_color,
+    SP_XS, SP_S, SP_M, SP_L, SP_XL,
+    FS_TITLE, FS_BODY, FS_LABEL, FS_CAPTION,
+)
+
+FONT = 'Malgun Gothic'
+pg.setConfigOptions(background=PANEL, foreground=DIM, antialias=True)
+
+# ── 노트북 로컬 RAG / LLM ──
+#  접속 계정은 하드코딩하지 않는다 — 실제 컨테이너 계정은 admin 이었고
+#  'postgres:password' 로는 접속 자체가 안 됐다 (sop_doctor.py 확인).
+CONN_STR = pg_conn_str()
+OLLAMA_URL = 'http://localhost:11434/api/generate'
+LLM_MODEL = 'gemma2:2b'
+EMBED_MODEL = 'bge-m3'          # SOP DB 적재 시와 반드시 동일해야 검색이 맞는다
+USE_LLM_SUMMARY = True          # 노트북이라 젯슨 OOM 위험 없음 → 기본 ON
+WRAP_WIDTH = 64
+
+try:
+    from langchain_ollama import OllamaEmbeddings
+    from langchain_community.vectorstores import PGVector
+    RAG_OK = True
+except Exception:
+    RAG_OK = False
+
+try:
+    import pyqtgraph.opengl as gl
+    HAS_GL = True
+except Exception:
+    HAS_GL = False
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 헬퍼
+# ══════════════════════════════════════════════════════════════════════
+def lb(text, size=11, color=TXT, bold=False, wrap=False, center=False):
+    w = QtWidgets.QLabel(text)
+    f = QtGui.QFont(FONT, size)
+    f.setBold(bold)
+    w.setFont(f)
+    w.setStyleSheet(f'color:{color};border:none;background:transparent;')
+    w.setWordWrap(wrap)
+    if center:
+        w.setAlignment(QtCore.Qt.AlignCenter)
+    return w
+
+
+def btn(text, size=11, accent=False, height=36, primary=False):
+    """accent=위험(빨강) / primary=주 액션(시안) / 기본=보조(회색)
+
+    색은 의미를 갖는다. 빨강은 위험·경보 전용이다 — 시작·확인 버튼에 쓰지 말 것.
+    """
+    b = QtWidgets.QPushButton(text)
+    b.setFont(QtGui.QFont(FONT, size))
+    b.setMinimumHeight(height)
+    b.setCursor(QtCore.Qt.PointingHandCursor)
+    if primary:
+        b.setStyleSheet(
+            f'QPushButton{{border:1px solid {CYAN};border-radius:5px;color:#04121c;'
+            f'background:{CYAN};padding:4px 10px;font-weight:bold;}}'
+            f'QPushButton:hover{{background:#4dd8ff;}}'
+            f'QPushButton:disabled{{color:#556677;background:{PANEL};'
+            f'border-color:{EDGE};font-weight:normal;}}')
+    elif accent:
+        b.setStyleSheet(
+            f'QPushButton{{border:1px solid {RED};border-radius:5px;color:#fff;'
+            f'background:{RED};padding:4px 10px;}}'
+            f'QPushButton:hover{{background:#ff5555;}}'
+            f'QPushButton:disabled{{color:{DIM};background:{PANEL};border-color:{EDGE};}}')
+    else:
+        b.setStyleSheet(
+            f'QPushButton{{border:1px solid {EDGE};border-radius:5px;color:{TXT};'
+            f'background:{PANEL};padding:4px 10px;}}'
+            f'QPushButton:hover{{background:#151530;border-color:{CYAN};}}'
+            f'QPushButton:disabled{{color:#445566;border-color:{GRID};}}')
+    return b
+
+
+def panel(accent=False, hi=False):
+    """영역 구분은 배경 밝기로 한다. 테두리는 accent(경보) 일 때만."""
+    f = QtWidgets.QFrame()
+    bg = PANEL_HI if hi else PANEL
+    if accent:
+        f.setStyleSheet(f'QFrame{{border:1px solid {RED};border-radius:8px;'
+                        f'background:{bg};}}')
+    else:
+        f.setStyleSheet(f'QFrame{{border:none;border-radius:8px;background:{bg};}}')
+    return f
+
+
+def titled(title, accent=False, hi=False):
+    f = panel(accent, hi)
+    v = QtWidgets.QVBoxLayout(f)
+    v.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
+    v.setSpacing(SP_S)
+    t = lb(title.upper(), FS_CAPTION, DIM)
+    t.setStyleSheet(f'color:{DIM};border:none;background:transparent;'
+                    f'letter-spacing:1px;')
+    v.addWidget(t)
+    return f, v
+
+
+TABLE_QSS = (f'QTableWidget{{background:{PANEL};color:{TXT};gridline-color:{GRID};'
+             f'border:1px solid {EDGE};border-radius:5px;}}'
+             f'QHeaderView::section{{background:#12122a;color:{DIM};'
+             f'border:none;padding:5px;}}')
+EDIT_QSS = (f'background:{PANEL};color:{TXT};border:1px solid {EDGE};'
+            f'border-radius:5px;padding:8px;')
+
+
+def confirm(parent, title, text, yes='예', no='아니오', danger=False):
+    """확인 대화. 버튼 라벨을 한글로 쓰고 색을 직접 지정한다.
+
+    ⚠ [7/31] QMessageBox 의 기본 버튼은 우리 다크 테마에서 '어두운 배경 + 어두운
+      글씨' 가 되어 실측 스크린샷에서 Yes/No 가 거의 안 보였다. QMessageBox 에
+      QLabel 색만 주고 QPushButton 을 빼먹으면 이렇게 된다.
+      → 버튼을 직접 만들고 스타일을 지정한다. 라벨도 영문 Yes/No 를 쓰지 않는다.
+    """
+    d = QtWidgets.QDialog(parent)
+    d.setWindowTitle(title)
+    d.setMinimumWidth(460)
+    d.setStyleSheet(f'QDialog{{background:{BG};}}')
+    v = QtWidgets.QVBoxLayout(d)
+    v.setContentsMargins(SP_XL, SP_L, SP_XL, SP_L)
+    v.setSpacing(SP_L)
+    v.addWidget(lb(title, FS_TITLE, RED if danger else TXT, bold=True))
+    v.addWidget(lb(text, FS_BODY, TXT, wrap=True))
+    v.addStretch()
+    row = QtWidgets.QHBoxLayout()
+    row.setSpacing(SP_S)
+    bn = btn(no, FS_BODY, height=42)
+    by = btn(yes, FS_BODY, height=42, accent=danger, primary=not danger)
+    bn.clicked.connect(d.reject)
+    by.clicked.connect(d.accept)
+    row.addStretch()
+    row.addWidget(bn)
+    row.addWidget(by, 1)
+    v.addLayout(row)
+    return d.exec_() == QtWidgets.QDialog.Accepted
+
+
+
+def md_to_html(t):
+    """LLM 출력의 마크다운을 HTML 로 바꾼다.
+
+    ⚠ [7/31] 실측 스크린샷에서 '**낙상 발생 장소를 확인하고**' 처럼 별표가
+      그대로 찍혔다. gemma2 는 지시하지 않아도 마크다운을 쓴다.
+      "쓰지 마라"고 프롬프트로 막는 건 신뢰할 수 없으므로 출력에서 변환한다.
+    """
+    t = html_escape(t)
+    t = re.sub(r'\*\*\*(.+?)\*\*\*', r'<b><i>\1</i></b>', t)
+    t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
+    t = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', t)
+    t = re.sub(r'(?m)^\s*[-•]\s+', '· ', t)      # 불릿 정리
+    t = re.sub(r'(?m)^\s*#{1,6}\s*', '', t)      # 헤딩 기호 제거
+    return t.replace('\n', '<br>')
+
+class Dialog(QtWidgets.QDialog):
+    def __init__(self, parent, title, w=640, h=440):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(w, h)
+        self.setStyleSheet(f'QDialog{{background:{BG};}} QLabel{{color:{TXT};}} '
+                           f'QCheckBox{{color:{TXT};}}')
+        self.v = QtWidgets.QVBoxLayout(self)
+        self.v.setContentsMargins(SP_XL, SP_L, SP_XL, SP_L)
+        self.v.setSpacing(SP_M)
+        self.v.addWidget(lb(title, FS_TITLE, TXT, bold=True))
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 1. 링크 — UDP 수신 QThread  (젯슨 ← HELLO → 노트북)
+# ══════════════════════════════════════════════════════════════════════
+class RadarLink(QtCore.QThread):
+    """젯슨 UDP 패킷 수신 전용 스레드.
+
+    ⚠ 왜 스레드인가:
+      이전 설계는 QTimer(100ms) 안에서 poll(0) 을 했다. 레이더도 100ms 주기라
+      두 주기가 서서히 밀리면서 어떤 tick 엔 0프레임, 다음 tick 엔 2프레임이
+      들어와 화면이 주기적으로 툭툭 끊겼다(앨리어싱).
+      → 수신은 블로킹으로 받고 '도착 즉시' 시그널을 쏜다. 앨리어싱 원천 소멸.
+
+    ⚠ 시계:
+      젯슨은 RTC 배터리가 없어 부팅마다 시계가 틀어진다. 경과시간을 젯슨 ts 로
+      계산하면 배너에 '-3600초 경과'가 뜬다. → 모든 경과시간은 '노트북 수신 시각'
+      기준. 젯슨 ts 는 참고 표시용으로만 쓴다.
+    """
+    packet = QtCore.pyqtSignal(dict)
+    linkstate = QtCore.pyqtSignal(bool)
+
+    def __init__(self, host, parent=None):
+        super().__init__(parent)
+        self.host = host
+        self._run = True
+        self.last_rx = 0.0
+        self.seq = 0
+        self.lost = 0
+        self.peak_bytes = 0
+        self._alive = None
+        self._tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    # ── 노트북 → 젯슨 ──
+    def send_cmd(self, cmd, **kw):
+        """제어 명령. 실패해도 조용히 넘어간다 — 젯슨 로컬 제어가 본체다."""
+        try:
+            self._tx.sendto(json.dumps(dict(kw, cmd=cmd)).encode('utf-8'),
+                            (self.host, CTRL_PORT))
+            return True
+        except OSError:
+            return False
+
+    def _hello_loop(self):
+        """HELLO 를 계속 보내야 젯슨이 이 노트북 주소로 데이터를 보낸다.
+        (IP 하드코딩 불필요 — 젯슨이 HELLO 발신지로 회신)"""
+        while self._run:
+            self.send_cmd(CMD_HELLO)
+            time.sleep(HELLO_SEC)
+
+    def run(self):
+        threading.Thread(target=self._hello_loop, daemon=True).start()
+        sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
+        try:
+            sk.bind(('0.0.0.0', DATA_PORT))
+        except OSError as e:
+            print(f'[LINK] 포트 {DATA_PORT} 바인드 실패: {e}')
+            return
+        sk.settimeout(0.5)
+        print(f'[LINK] {self.host} 구독 시작 (data :{DATA_PORT} / ctrl :{CTRL_PORT})')
+        while self._run:
+            try:
+                data, _ = sk.recvfrom(65535)
+            except socket.timeout:
+                self._emit_link()
+                continue
+            except OSError:
+                continue
+            try:
+                pkt = json.loads(data.decode('utf-8'))
+            except Exception:
+                continue                       # 단편화 손실 등 → 다음 패킷이 복구
+            self.peak_bytes = max(self.peak_bytes, len(data))
+            s = pkt.get('seq')
+            if s is not None:
+                if self.seq and s > self.seq + 1:
+                    self.lost += s - self.seq - 1
+                self.seq = s
+            v = pkt.get('schema_version')
+            if v is not None and v > SCHEMA_VERSION:
+                print(f'[LINK] 경고: 젯슨 schema_version={v} > 노트북 {SCHEMA_VERSION}. '
+                      f'모르는 필드는 무시하고 계속 동작합니다.')
+            self.last_rx = time.time()
+            self._emit_link()
+            self.packet.emit(pkt)
+
+    def _emit_link(self):
+        alive = bool(self.last_rx) and (time.time() - self.last_rx) < LINK_TIMEOUT
+        if alive != self._alive:
+            self._alive = alive
+            self.linkstate.emit(alive)
+
+    def age(self):
+        """마지막 수신 이후 경과 초. 한 번도 못 받았으면 None (아직 '연결 전').
+
+        ⚠ 이전엔 1e9 를 돌려줬는데 그게 화면에 '수신 1000000000초 전' 으로 그대로
+          찍혔다. 센티넬 값을 UI 로 새어나가게 두면 안 된다.
+        """
+        return (time.time() - self.last_rx) if self.last_rx else None
+
+    def stop(self):
+        self._run = False
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 2. 누적 · 자세 추정  (표시 전용 — 판정에 절대 되먹이지 않는다)
+# ══════════════════════════════════════════════════════════════════════
+class PoseEstimator:
+    """N프레임 centroid 정합 누적 + PCA 자세 추정.
+
+    IWR6843ISK-ODS 는 x/y 각 4개 가상안테나 → 각분해능 약 28°.
+    센서 2.3m 에서 가로 약 1.2m 가 한 덩어리로 뭉개진다(어깨너비 0.45m).
+    → 단일 프레임에서 사람 실루엣은 물리적으로 불가능하며 연산 위치와 무관하다.
+      해법은 점을 더 뽑는 게 아니라 이미 받은 점을 시간축으로 쌓는 것.
+
+    ⚠ 표시 전용. 판정에 되먹이지 말 것 — 이 클래스가 판정에 영향을 주지
+      않는다는 점이 "판정 우선 원칙을 지키며 시각화를 개선했다"의 근거다.
+    """
+
+    UP = np.array([0.0, -1.0, 0.0])   # cy = 센서로부터의 거리 → 위쪽은 -y
+    HEAD_PCT = 0.15                   # 상위 15% 를 머리 후보로 본다
+    HEAD_ALIGN_MIN = 0.35             # 축과 머리증거가 이만큼 정렬돼야 신뢰
+
+    # ── 자세 판단 (⚠ PCA 를 쓰지 않는다) ──────────────────────────────
+    #  [8/01 실측으로 폐기] v1~v2 는 PCA 제1주축의 수직도로 서있음/누움을 갈랐다.
+    #    그런데 이 센서는 천장 하방이고 각분해능이 28° 다. 2.3 m 아래의 사람은
+    #    가로로 1.5 m 번져 보이고, 반사는 머리·어깨 윗면에서만 온다.
+    #    → 서 있는 사람의 점군도 '납작한 수평 원반' 이라 주축이 항상 수평이다.
+    #    실측(events_still.jsonl): **보행 중인데도 85.3 % 가 'lying' 으로 나왔다**
+    #      (normal 76.7 / wave 77.9 / fall 76.5 / still 98.3 / vib 88.5 %)
+    #    이 센서로 몸통 방향은 측정되지 않는다. 측정되는 건 '높이' 다.
+    #  → 젯슨 classify 와 같은 근거를 쓴다: 높이. (h_drop 게이트가 그 증거다)
+    STAND_H = 1.15        # 머리 높이가 이 이상이면 서 있음
+    LIE_H = 0.85          # 이 이하면 누움 — 사이 구간은 직전 상태 유지
+    STAND_SPAN_MIN = 0.35  # 서 있다고 하려면 점군 높이 폭이 이만큼은 있어야 한다
+    LIE_BODY_MIN = 0.05    # 누운 몸의 점군 중심이 이 아래면 바닥반사다
+    LIE_BODY_MAX = 0.90    # 이 위면 누운 게 아니다
+
+    # ── 인체 도식을 그려도 되는 최소 조건 ─────────────────────────────
+    #  ⚠ [8/01] 실측 재생에서 누적 점 6~8개, 폭 4 cm 짜리 덩어리 위에 1.4 m
+    #    사람이 그려지는 경우가 나왔다. 그 점군은 사람의 형상이 아니라 그냥
+    #    반사 하나다 — 거기에 사람을 그리면 화면이 없는 것을 지어낸 것이 된다.
+    #    (PCA 도 점 6개로는 방향이 노이즈다. 실제로 그런 표본은 서 있는데도
+    #     verticality 0.12 로 '누움' 이 나왔다)
+    #  실측 분포(events_still.jsonl, 누적 10프레임 기준 p10):
+    #    보행 33 · 낙상 23 · 정지 26 · 팔흔듦 19 · 진동 40  vs  정상(원거리) 8
+    #  → 18점 미만이거나 주축 길이가 0.35 m 미만이면 형상을 그리지 않는다.
+    #    점군과 수치는 그대로 보여 준다. 모르는 것은 안 그리는 게 맞다.
+    MIN_SHAPE_PTS = 18
+    MIN_SHAPE_LEN = 0.35
+
+    def __init__(self, n_frames=10, vertical_deg=45.0):
+        self.n_frames = n_frames
+        self.cos_thr = np.cos(np.deg2rad(vertical_deg))
+        self.buf = deque(maxlen=n_frames)
+        self._head_axis = None        # 마지막으로 '믿을 만하게' 정해진 머리 방향
+        self._posture = None          # 자세 히스테리시스
+
+    @staticmethod
+    def _xyz(points):
+        """젯슨 패킷은 [{'x':..,'y':..,'z':..,'i':..}, ...] 로 온다.
+        구형 ZMQ 스키마는 [[x,y,z], ...] 였다 — 둘 다 받는다."""
+        if isinstance(points[0], dict):
+            return np.asarray([[p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)]
+                               for p in points], dtype=np.float32)
+        return np.asarray(points, dtype=np.float32).reshape(-1, 3)
+
+    def push(self, points, centroid=None):
+        if not points:
+            return
+        p = self._xyz(points)
+        c = (np.asarray([centroid['cx'], centroid['cy'], centroid['cz']], dtype=np.float32)
+             if isinstance(centroid, dict) else
+             (np.asarray(centroid, dtype=np.float32) if centroid is not None
+              else p.mean(axis=0)))
+        # ★ 정합: 각 점을 자기 프레임 centroid 기준 상대좌표로 저장.
+        #   이걸 안 하면 사람이 걸을 때 누적이 궤적으로 길게 늘어져 뭉개진다.
+        self.buf.append((c, p - c))
+
+    def clear(self):
+        self.buf.clear()
+        self._head_axis = None
+        self._posture = None
+
+    def _head_point(self, pts):
+        """머리 추정점 — 누적 점군에서 '가장 높은 쪽' 상위 15% 의 평균.
+
+        ⚠ 왜 이게 성립하나:
+          센서는 천장에 하방(nadir) 설치다. y 는 센서로부터 아래로의 거리이므로
+          y 가 작을수록 높다. 그리고 하방 레이더는 물체의 '윗면' 을 주로 본다 —
+          서 있는 사람이면 반사의 대부분이 머리·어깨에서 온다.
+          → 최고점은 머리로 보는 게 물리적으로 타당하다.
+
+        ⚠ 단일 최고점이 아니라 상위 15% 평균을 쓰는 이유:
+          프레임당 8점이라 최고점 하나는 노이즈에 통째로 흔들린다.
+          누적 80점의 상위 12점 평균이면 팔을 든 순간에도 크게 안 튄다.
+        """
+        k = max(3, int(len(pts) * self.HEAD_PCT))
+        idx = np.argsort(pts[:, 1])[:k]        # y 오름차순 = 높은 쪽부터
+        return pts[idx].mean(axis=0)
+
+    def cloud(self):
+        if not self.buf:
+            return np.empty((0, 3), dtype=np.float32)
+        c_now = self.buf[-1][0]
+        return np.vstack([rel + c_now for _, rel in self.buf])
+
+    def estimate(self):
+        """자세·머리·형상 추정.  ⚠ 표시 전용 — 판정에 되먹이지 않는다."""
+        pts = self.cloud()
+        if len(pts) < 6:
+            return None
+        center = pts.mean(axis=0)
+        heights = CEILING_H - pts[:, 1]
+        h_span = float(heights.max() - heights.min())
+        head = self._head_point(pts)                 # 최고점 상위 15% 평균
+        head_h = float(CEILING_H - head[1])
+
+        # ── ① 자세: 높이로 판단한다 (PCA 아님. 위 주석 참조) ──────────
+        if head_h >= self.STAND_H:
+            posture = 'standing'
+        elif head_h <= self.LIE_H:
+            posture = 'lying'
+        else:
+            posture = self._posture or 'standing'    # 중간대는 직전 상태 유지
+        self._posture = posture
+
+        # ── ② 몸통 축 ────────────────────────────────────────────────
+        #   서 있음: 수직. (측정한 게 아니라 '서 있으면 수직' 이라는 자명한 사실)
+        #   누움   : 바닥평면(x,z) 2D PCA. 이 축은 실제로 측정 가능하다 —
+        #            누운 몸은 바닥에서 한 방향으로 길게 퍼지기 때문.
+        floor = np.column_stack([pts[:, 0], pts[:, 2]])
+        fc = floor - floor.mean(axis=0)
+        try:
+            fw, fv = np.linalg.eigh(np.cov(fc.T) + np.eye(2) * 1e-9)
+            fdir = fv[:, int(np.argmax(fw))]
+        except np.linalg.LinAlgError:
+            fdir = np.array([1.0, 0.0])
+        proj = fc @ fdir
+        floor_len = float(proj.max() - proj.min())
+
+        if posture == 'standing':
+            axis = self.UP.copy()
+            head_src = '최고점'
+            self._head_axis = None
+        else:
+            axis = np.array([fdir[0], 0.0, fdir[1]], dtype=float)
+            # 부호(머리 쪽)는 측정 불가 → 직전 프레임과의 연속성만 지킨다.
+            #   (넘어지기 전 마지막으로 정해진 방향이 그대로 이어진다)
+            if self._head_axis is not None and float(np.dot(axis, self._head_axis)) < 0:
+                axis = -axis
+            self._head_axis = axis.copy()
+            head_src = '바닥축 · 방향 유지'
+
+        vert = abs(float(np.dot(axis, self.UP)))
+
+        # ── ③ 크기와 머리 위치 ────────────────────────────────────────
+        if posture == 'standing':
+            length = float(np.clip(head_h, 1.30, 1.95))
+            # 높이는 최고점, 수평은 점군 중심 — 축마다 가장 안정적인 추정
+            head_pos = np.array([center[0], head[1], center[2]], dtype=float)
+        else:
+            length = float(np.clip(floor_len, 1.30, 1.85))
+            head_pos = center + axis * (0.5 * length)
+
+        # ── ④ 형상을 그려도 되는가 ────────────────────────────────────
+        #  ⚠ [8/01 실측] 낙상 직후 점군은 사람이 아니다. 정지한 사람은 도플러가
+        #    없어 레이더가 놓치고, 그 자리를 '일정 거리 링'(다중경로·바닥반사)이
+        #    채운다 — 실측에서 마지막 프레임 6점 중 5점이 전부 y≈1.00 (높이 1.30 m)
+        #    인데 x·z 만 ±0.8 m 로 흩어져 있었다. 누운 사람이면 높이 0.1~0.4 m 여야
+        #    한다. 그걸 사람으로 그리면 낙상 경보 옆에 '서 있는 사람' 이 뜬다.
+        #  → 높이 폭이 없는(=거리 껍질) 점군에는 형상을 그리지 않는다.
+        #    서 있다고 말하려면 실제로 위아래로 퍼져 있어야 한다.
+        if posture == 'standing':
+            shape_ok = (len(pts) >= self.MIN_SHAPE_PTS
+                        and h_span >= self.STAND_SPAN_MIN)
+        else:
+            # ⚠ 누운 사람은 몸이 바닥 위 0.1~0.4 m 에 있다. 점군 중심이 바닥
+            #   아래이거나 허리 높이보다 높으면 그건 사람이 아니라 바닥반사·
+            #   클러터다 (실측: 보행 표본에서 중심 -0.06 m 짜리 점군에 사람이
+            #   그려져 도식이 바닥을 뚫었다).
+            body_h = float(CEILING_H - center[1])
+            shape_ok = (len(pts) >= self.MIN_SHAPE_PTS
+                        and floor_len >= self.MIN_SHAPE_LEN
+                        and self.LIE_BODY_MIN <= body_h <= self.LIE_BODY_MAX)
+        shape_why = ('' if shape_ok else
+                     ('점 부족' if len(pts) < self.MIN_SHAPE_PTS else '형상 불명확'))
+
+        return {
+            'center': center.tolist(), 'axis': axis.tolist(),
+            'length': round(length, 3),
+            'floor_len': round(floor_len, 3),
+            'h_span': round(h_span, 3),
+            'head_h': round(head_h, 3),
+            'verticality': round(vert, 3),
+            'posture': posture,
+            'n_points': int(len(pts)), 'n_frames': len(self.buf),
+            'head': head_pos.tolist(),
+            'head_top': head.tolist(),
+            'head_src': head_src,
+            'shape_ok': bool(shape_ok),
+            'shape_why': shape_why,
+            # 화면에 반드시 이 라벨을 띄울 것 — 추정임을 숨기지 않는다.
+            'label': (f'추정 형상 · 최근 {len(self.buf)}프레임 누적 '
+                      f'(원시 {len(self.buf[-1][1])}점/프레임) · 머리 {head_src}'
+                      if shape_ok else
+                      f'형상 표시 안 함 ({shape_why}) · 최근 {len(self.buf)}프레임 '
+                      f'{len(pts)}점 · 높이폭 {h_span:.2f} m'),
+        }
+
+
+# ── 인체 도식 (관절 없음) ────────────────────────────────────────────────
+#  ⚠ 이 도형이 주장하는 것과 주장하지 않는 것을 명확히 한다.
+#     주장한다   : 위치(center) · 몸통 축 방향(axis) · 축 방향 길이(length)
+#                  · 머리가 축의 어느 끝인지
+#                  ↑ 전부 누적 점군에서 실제로 계산한 값이다.
+#     주장 안 한다: 관절 각도 · 정면 방향 · 팔다리 위치
+#                  ↑ 프레임당 8점, 각분해능 28° 로는 측정 자체가 불가능하다.
+#                    그래서 팔다리는 '고정 각도'로만 그리고, 절대 움직이지 않는다.
+#                    움직이는 스켈레톤은 측정이 아니라 애니메이션이 된다.
+#  비율은 인체 표준(머리 1/7.5, 어깨너비 0.26H)에 맞춘 값 — t 는 축 방향으로
+#  -0.5(발) ~ +0.5(머리끝), s 는 좌우 방향. 둘 다 length 배율.
+STICK = {
+    'head_t': 0.435, 'head_r': 0.062,
+    'neck': 0.373, 'shoulder': 0.300, 'hip': -0.020,
+    'sh_w': 0.130, 'hand_t': 0.020, 'hand_w': 0.210,
+    'foot_t': -0.500, 'foot_w': 0.110,
+}
+
+
+def stick_segments(center, axis, length, right, spread=1.0):
+    """인체 도식을 선분 쌍 배열 (2N, 3) 로 돌려준다. mode='lines' 용.
+
+    spread — 몸통에 수직인 방향(팔·다리 벌어짐)의 배율.
+      측면도에서 누운 사람은 팔다리가 대부분 '화면 안쪽' 으로 뻗는다.
+      1.0 로 두면 그 벌어짐이 전부 위아래로 그려져 팔이 공중 0.36 m 로 솟고
+      다리가 바닥을 뚫는다(실측: 누운 도식이 0.10~0.82 m 를 차지). → 눌러 준다.
+    """
+    a = np.asarray(axis, dtype=float)
+    a = a / (np.linalg.norm(a) or 1.0)
+    r = np.asarray(right, dtype=float)
+    r = r - a * float(np.dot(a, r))                 # 축과 직교화
+    n = np.linalg.norm(r)
+    r = r / n if n > 1e-6 else np.array([1.0, 0.0, 0.0])
+    C = np.asarray(center, dtype=float)
+    L = float(length)
+    K = STICK
+
+    def P(t, s=0.0):
+        return C + a * (t * L) + r * (s * L * spread)
+
+    segs = []
+
+    def line(p, q):
+        segs.append(p)
+        segs.append(q)
+
+    hc, hr = P(K['head_t']), K['head_r'] * L
+    ring = [hc + a * (hr * np.sin(x)) + r * (hr * np.cos(x))
+            for x in np.linspace(0, 2 * np.pi, 21)]
+    for i in range(len(ring) - 1):
+        line(ring[i], ring[i + 1])
+    line(P(K['neck']), P(K['hip']))                                  # 몸통
+    line(P(K['shoulder'], -K['sh_w']), P(K['shoulder'], K['sh_w']))  # 어깨
+    for sgn in (-1, 1):                                              # 팔
+        line(P(K['shoulder'], sgn * K['sh_w']),
+             P(K['hand_t'], sgn * K['hand_w']))
+    for sgn in (-1, 1):                                              # 다리
+        line(P(K['hip']), P(K['foot_t'], sgn * K['foot_w']))
+    return np.asarray(segs, dtype=np.float32)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 3. SOP 엔진 — pgvector 검색 + Gemma 상세 SOP  (전부 노트북 로컬)
+# ══════════════════════════════════════════════════════════════════════
+# 검색 질의문 — 매뉴얼에 실제로 쓰인 표현에 가깝게 쓴다.
+#   이벤트 라벨('FALL DETECTED')을 그대로 넣으면 한글 코퍼스와 안 맞는다.
+SOP_QUERY = {
+    'fall_detected':       '추락 넘어짐 재해 발생 시 응급처치와 재해자 이송 방법',
+    'stationary_anomaly':  '작업자 무응답 감전 협착 사고 발견 시 초동 대응',
+    'electric_shock_risk': '감전 사고 발생 시 응급조치 및 전원 차단 잠금 표지',
+    'pinching':            '회전기계 끼임 협착 재해 발생 시 구조 및 정지 절차',
+    'vibration_anomaly':   '설비 이상 진동 상태감시 진단 및 점검 조치',
+    'overcurrent':         '과전류 전기 설비 이상 시 차단 및 점검 절차',
+    'voltage_drop':        '전압 강하 전기 설비 이상 시 점검 절차',
+}
+
+INSTANT_ACTION = {
+    'fall_detected': [
+        ('전원', ['해당 구역 전원 차단 완료 (젯슨 자동 실행)', '차단 상태 유지 · 재투입 금지']),
+        ('인력', ['환자를 움직이지 마십시오 — 척추 손상 위험',
+                  '의식과 호흡 확인 후 119 신고', '안전관리자 호출']),
+        ('장비', ['환자 주변 장비 정지 및 반경 확보', '이동식 설비는 전원 분리 후 이격']),
+    ],
+    'stationary_anomaly': [
+        ('확인', ['해당 구역 작업자 상태를 즉시 육안 확인', '무응답 시 감전·협착으로 간주']),
+        ('전원', ['접근 전 해당 설비 전원 차단 및 LOTO']),
+        ('인력', ['맨손 접촉 금지 — 절연 장구 착용 후 접근']),
+    ],
+    'vibration_anomaly': [
+        ('확인', ['해당 구역 설비 육안 점검', '이상 소음·진동원 특정']),
+        ('조치', ['필요 시 설비 정지 후 정비 요청']),
+    ],
+    'electric_shock_risk': [
+        ('전원', ['주 배전반 차단 · LOTO 시행']),
+        ('인력', ['맨손 접촉 절대 금지', '절연봉으로 이격 후 119 신고']),
+    ],
+    'pinching': [
+        ('설비', ['설비 즉시 정지 — 역방향 강제 구동 금지']),
+        ('인력', ['무리한 견인 금지', '119 신고 후 구조대 지시 대기']),
+    ],
+}
+
+
+class SopEngine(QtCore.QObject):
+    """경보 시 매뉴얼 검색 + LLM 요약. 전부 백그라운드 — UI 를 절대 막지 않는다.
+
+    ⚠ LLM 은 안전 조치의 필수 경로가 아니다. 실패해도 즉시조치(하드코딩)와
+      검색 원문은 이미 화면에 있다. 그래서 실패를 조용히 삼키지 않고 표시만 한다.
+    """
+    ready = QtCore.pyqtSignal(str, list, str)     # ev_type, sources, ai_text
+    status = QtCore.pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+        self._cache = {}
+
+    def request(self, ev_type):
+        threading.Thread(target=self._work, args=(ev_type,), daemon=True).start()
+
+    def _work(self, ev_type):
+        srcs, ai = [], ''
+        if not RAG_OK:
+            self.status.emit('매뉴얼 검색 불가 — langchain 미설치 (즉시조치만 표시)')
+            self.ready.emit(ev_type, [], '')
+            return
+        try:
+            self.status.emit('안전 매뉴얼 검색 중…')
+            # ⚠ [7/31] 이전엔 'FALL DETECTED detected' 같은 영문으로 검색했다.
+            #   DB 는 KOSHA 한글 지침이라 질의도 한글이어야 맞는다(bge-m3 가
+            #   다국어라 아주 못 찾는 건 아니지만 품질이 크게 떨어진다).
+            #   매뉴얼에 실제로 쓰인 표현에 가깝게 쓴다.
+            situation = SOP_QUERY.get(ev_type) or f'{EVENT_KO.get(ev_type, ev_type)} 조치'
+            cat = EVENT_CATEGORY.get(ev_type)
+            emb = OllamaEmbeddings(model=EMBED_MODEL)
+            vs = PGVector(connection_string=CONN_STR, embedding_function=emb,
+                          collection_name='safety_manual')
+            # cat 은 문자열 / 튜플 / None 세 형태를 가진다.
+            #   튜플: 사건 유형이 확정되기 전(정지형 이상) — 관련 카테고리마다 1건씩.
+            if isinstance(cat, (list, tuple)):
+                docs = []
+                for c in cat:
+                    docs += vs.similarity_search(situation, k=1,
+                                                 filter={'category': c})
+            elif cat:
+                docs = vs.similarity_search(situation, k=2, filter={'category': cat})
+            else:
+                docs = vs.similarity_search(situation, k=2)
+            for d in docs:
+                srcs.append((d.metadata.get('source_file', '?'),
+                             ' '.join(d.page_content.split())[:360]))
+            ctx = ' '.join(d.page_content for d in docs)[:1500]
+            self.status.emit(f'매뉴얼 {len(docs)}건 검색됨')
+        except Exception as e:
+            self.status.emit(f'매뉴얼 검색 실패: {e}  (docker start radar-guard-db)')
+            ctx = ''
+        # ── LLM 요약: 검색 원문을 이미 띄운 '뒤'에 덧붙인다 ──
+        if USE_LLM_SUMMARY:
+            cached = self._cache.get(ev_type)
+            if cached:
+                ai = cached
+                self.status.emit('AI 요약 (사전 생성분)')
+            else:
+                try:
+                    self.status.emit(f'AI 요약 생성 중… ({LLM_MODEL})')
+                    ai = self._gen(ev_type, ctx)
+                    self._cache[ev_type] = ai
+                    self.status.emit('AI 요약 완료')
+                except Exception as e:
+                    self.status.emit(f'AI 요약 건너뜀: {e}  (ollama serve 확인)')
+        self.ready.emit(ev_type, srcs, ai)
+
+    @staticmethod
+    def _gen(ev_type, ctx):
+        import urllib.request
+        label = EVENT_KO.get(ev_type, ev_type)
+        blk = f'\n참고 안전매뉴얼 발췌:\n{ctx[:1200]}\n' if ctx else ''
+        prompt = (f'너는 산업 현장 안전관리자다. 방금 "{label}"이(가) 감지됐다.{blk}\n'
+                  f'현장 작업자가 지금 즉시 따라야 할 초동 조치를 한국어로 작성하라. '
+                  f'번호를 매긴 4~5단계, 각 단계는 짧은 한 문장. 서론·부연 없이 조치만.')
+        body = json.dumps({'model': LLM_MODEL, 'prompt': prompt, 'stream': False,
+                           'keep_alive': '10m',
+                           'options': {'num_ctx': 1024, 'num_predict': 200,
+                                       'temperature': 0.2}}).encode('utf-8')
+        req = urllib.request.Request(OLLAMA_URL, data=body,
+                                     headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            return json.loads(r.read().decode('utf-8')).get('response', '').strip()
+
+    def prewarm(self):
+        """LIVE 진입 후 유형별 SOP 를 미리 만들어 둔다 → 경보 순간 지연 0."""
+        def _w():
+            for et in ('fall_detected', 'stationary_anomaly', 'vibration_anomaly'):
+                if et in self._cache:
+                    continue
+                try:
+                    self._cache[et] = self._gen(et, '')
+                except Exception:
+                    return                     # ollama 없으면 나머지도 실패 → 중단
+            self.status.emit('AI 요약 사전 생성 완료 (경보 시 즉시 표시)')
+        threading.Thread(target=_w, daemon=True).start()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 4. 3D 포인트 클라우드 — 화면의 메인
+# ══════════════════════════════════════════════════════════════════════
+class Track3D(QtWidgets.QWidget):
+    """점 8개를 10프레임(1초) 누적해 약 80점으로 만들고 자세 캡슐을 씌운다."""
+
+    def __init__(self):
+        super().__init__()
+        self.pose = PoseEstimator(n_frames=10)
+        self.trail = deque(maxlen=60)
+        self.stale = False
+        v = QtWidgets.QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+        self.gl = None
+        if HAS_GL:
+            try:
+                self._build_gl(v)
+            except Exception as e:
+                print(f'[경고] OpenGL 초기화 실패 → 2D 대체: {e}')
+                self.gl = None
+        if self.gl is None:
+            self._build_2d(v)
+        # 데이터 없음 오버레이 — 화면이 조용히 거짓말하지 않게
+        self.veil = QtWidgets.QLabel(self)
+        self.veil.setAlignment(QtCore.Qt.AlignCenter)
+        self.veil.setFont(QtGui.QFont(FONT, 15, QtGui.QFont.Bold))
+        self.veil.setStyleSheet(
+            'color:#ffaa00;background:rgba(8,8,26,215);border:1px solid #ffaa00;'
+            'border-radius:6px;')
+        self.veil.hide()
+
+    def resizeEvent(self, e):
+        self.veil.setGeometry(self.rect())
+        super().resizeEvent(e)
+
+    def set_stale(self, stale, msg=''):
+        """수신이 끊기면 3D 를 덮는다. 마지막 점군을 현재 상황처럼 보여주지 않는다."""
+        self.stale = stale
+        if stale:
+            self.veil.setText(msg)
+            self.veil.setGeometry(self.rect())
+            self.veil.show()
+            self.veil.raise_()
+        else:
+            self.veil.hide()
+
+    def _build_gl(self, v):
+        self.gl = gl.GLViewWidget()
+        self.gl.setBackgroundColor(pg.mkColor(PANEL))
+        self.gl.setCameraPosition(distance=5.2, elevation=16, azimuth=48)
+        self._cam0 = dict(distance=5.2, elevation=16, azimuth=48)
+        g = gl.GLGridItem()
+        g.setSize(4, 4)
+        g.setSpacing(0.5, 0.5)
+        g.setColor(pg.mkColor(GRID))
+        self.gl.addItem(g)
+        z = np.array([[-1.0, -1.0, 0.01], [1.0, -1.0, 0.01], [1.0, 1.0, 0.01],
+                      [-1.0, 1.0, 0.01], [-1.0, -1.0, 0.01]])
+        self.gl.addItem(gl.GLLinePlotItem(pos=z, color=pg.glColor(CYAN), width=1.6,
+                                          antialias=True))
+        # 1 m 높이 눈금 — 캡슐 크기를 눈으로 가늠할 기준
+        for h in (1.0, 2.0):
+            ring = np.column_stack([1.0 * np.cos(np.linspace(0, 2 * np.pi, 48)),
+                                    1.0 * np.sin(np.linspace(0, 2 * np.pi, 48)),
+                                    np.full(48, h)])
+            self.gl.addItem(gl.GLLinePlotItem(pos=ring, color=(0.13, 0.2, 0.3, 0.55),
+                                              width=1.0, antialias=True))
+        self.sc = gl.GLScatterPlotItem(size=6.0, color=pg.glColor(CYAN))
+        self.gl.addItem(self.sc)
+        # 인체 도식 — mode='lines' 로 끊긴 선분들을 한 아이템에 그린다
+        self.cap = gl.GLLinePlotItem(color=pg.glColor(GREEN), width=2.2,
+                                     antialias=True, mode='lines')
+        self.gl.addItem(self.cap)
+        # 머리 추정점 — 도식이 아니라 '실측에서 나온 점' 이므로 따로 강조한다
+        self.hd = gl.GLScatterPlotItem(size=11.0, color=pg.glColor(AMBER))
+        self.gl.addItem(self.hd)
+        self.tr = gl.GLLinePlotItem(color=(0.53, 0.6, 0.73, 0.6), width=1.2,
+                                    antialias=True)
+        self.gl.addItem(self.tr)
+        v.addWidget(self.gl, 1)
+
+    def _build_2d(self, v):
+        self.plot = pg.PlotWidget()
+        self.plot.setAspectLocked(True)
+        self.plot.setXRange(-1.6, 1.6)
+        self.plot.setYRange(-0.15, 2.4)
+        self.plot.showGrid(x=True, y=True, alpha=0.12)
+        self.plot.getPlotItem().hideButtons()
+        self.plot.setLabel('bottom', 'X (m)', color=DIM)
+        self.plot.setLabel('left', 'Height (m)', color=DIM)
+        self.sc = pg.ScatterPlotItem(size=6, brush=pg.mkBrush(0, 204, 255, 160), pen=None)
+        self.cap = pg.PlotCurveItem(pen=pg.mkPen(GREEN, width=2.2), connect='pairs')
+        self.hd = pg.ScatterPlotItem(size=11, brush=pg.mkBrush(AMBER), pen=None)
+        floor = pg.PlotCurveItem(pen=pg.mkPen(EDGE, width=1.5))
+        floor.setData([-1.6, 1.6], [0, 0])
+        for it in (floor, self.sc, self.cap, self.hd):
+            self.plot.addItem(it)
+        v.addWidget(self.plot, 1)
+
+    def reset_camera(self):
+        if self.gl is not None:
+            self.gl.setCameraPosition(**self._cam0)
+
+    # ── 경보 등급별 색 ────────────────────────────────────────────────
+    #  ⚠ v1 은 bool(alert) 하나로 '빨강이냐 아니냐' 만 정했다. 그래서 정지형
+    #    이상(주의)도 낙상(위험)과 똑같이 빨갛게 나왔다 — 색만 봐서는 무슨
+    #    일이 난 건지 구분할 수 없었다. 등급을 그대로 받아 색을 나눈다.
+    #      정상 초록 · 주의 주황 · 위험 빨강
+    @staticmethod
+    def sev_colors(sev):
+        """(점 색, 도식 색, 머리점 색) 을 돌려준다."""
+        if sev in ('warning', 'critical'):
+            c = sev_color(sev)
+            return c, c, c
+        return CYAN, GREEN, AMBER
+
+    def push(self, st, sev='normal', hide_shape=False):
+        self.pose.push(st.get('points') or [], st.get('centroid'))
+        pts = self.pose.cloud()
+        c = st.get('centroid') or {}
+        self.trail.append([c.get('cx', 0), c.get('cz', 0),
+                           CEILING_H - c.get('cy', CEILING_H)])
+        p = self.pose.estimate()
+        pt_c, fig_c, hd_c = self.sev_colors(sev)
+        if self.gl is not None:
+            if len(pts):
+                arr = np.column_stack([pts[:, 0], pts[:, 2], CEILING_H - pts[:, 1]])
+                self.sc.setData(pos=arr, color=pg.glColor(pt_c), size=6.0)
+            if len(self.trail) > 2:
+                self.tr.setData(pos=np.array(self.trail))
+            if p and p['shape_ok'] and not hide_shape:
+                self.cap.setData(pos=self._stick3d(p), color=pg.glColor(fig_c))
+                self.hd.setData(pos=np.array([self.to_disp(p['head'])]),
+                                color=pg.glColor(hd_c))
+            else:
+                self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32))
+                self.hd.setData(pos=np.zeros((0, 3), dtype=np.float32))
+        else:
+            if len(pts):
+                self.sc.setData(pts[:, 0], CEILING_H - pts[:, 1])
+                b = QtGui.QColor(pt_c)
+                b.setAlpha(165)
+                self.sc.setBrush(pg.mkBrush(b))
+            if p and p['shape_ok'] and not hide_shape:
+                seg = self.stick2d(p)
+                self.cap.setData(seg[:, 0], seg[:, 1])
+                self.cap.setPen(pg.mkPen(fig_c, width=2.2))
+                hx, hy = p['head'][0], CEILING_H - p['head'][1]
+                self.hd.setData([hx], [hy])
+                self.hd.setBrush(pg.mkBrush(hd_c))
+            else:
+                self.cap.setData([], [])
+                self.hd.setData([], [])
+        return p
+
+    # ── 좌표 변환 ─────────────────────────────────────────────────────
+    #  레이더 원좌표 (x, y=센서로부터의 거리, z) → 화면 (x, z, 바닥기준 높이)
+    #  y 축이 뒤집히므로 벡터는 부호까지 같이 바꿔야 한다.
+    @staticmethod
+    def to_disp(p):
+        return np.array([p[0], p[2], CEILING_H - p[1]], dtype=float)
+
+    @staticmethod
+    def vec_disp(v):
+        return np.array([v[0], v[2], -v[1]], dtype=float)
+
+    @staticmethod
+    def body_length(p):
+        """도식 길이.
+
+        ⚠ 서 있을 때는 PCA 길이가 아니라 '머리 높이' 를 쓴다.
+          하방 레이더는 머리·어깨에서 반사가 몰려 점군이 상반신에 치우친다.
+          그래서 PCA 로 잰 퍼짐(length)은 실제 키보다 짧게 나온다.
+          반면 머리 높이는 바닥부터의 실측값이고, 서 있는 사람에게 그건 곧 키다.
+        """
+        if p['posture'] == 'standing':
+            return float(np.clip(CEILING_H - p['head'][1], 1.30, 1.95))
+        return float(np.clip(p['length'], 1.30, 1.85))
+
+    @staticmethod
+    def figure_center(head_disp, axis_disp, length):
+        """도식의 기준점.
+
+        ⚠ 점군 중심(centroid)에 도식을 걸면 안 된다. 위 이유로 centroid 가
+          몸 중심보다 위에 있어서, 대칭으로 그리면 발이 바닥에서 0.5 m 뜬다
+          (실측 스크린샷에서 확인). 우리가 '직접 측정한' 것은 머리이므로
+          머리 끝(t=+0.5)을 실측 머리점에 맞추고 거기서 아래로 편다.
+        """
+        return np.asarray(head_disp, dtype=float) - np.asarray(axis_disp) * (0.5 * length)
+
+    def _stick3d(self, p):
+        a = self.vec_disp(p['axis'])
+        a = a / (np.linalg.norm(a) or 1.0)
+        L = self.body_length(p)
+        C = self.figure_center(self.to_disp(p['head']), a, L)
+        up = np.array([0.0, 0.0, 1.0])
+        if p['posture'] == 'standing':
+            # 서 있음 — 축 중심 회전(정면 방향)은 측정할 수 없다.
+            #   임의 방향으로 두면 카메라를 돌릴 때마다 옆모습·정면이 바뀌어
+            #   '측정된 방향' 처럼 오해된다. → 항상 카메라를 향하게 고정한다.
+            az = np.deg2rad(self.gl.opts.get('azimuth', 48.0)) if self.gl else 0.0
+            right = np.array([-np.sin(az), np.cos(az), 0.0])
+        else:
+            # 누움 — 몸통 축이 수평이므로 팔다리는 바닥면에 편다(위에서 잘 읽힌다)
+            right = np.cross(a, up)
+        return stick_segments(C, a, L, right)
+
+    @staticmethod
+    def stick2d(p):
+        """측면도(x-높이 평면)용. 3D 축을 평면에 투영해 쓴다.
+
+        ⚠ 3D 축을 그대로 투영하면 안 된다. 측면도는 깊이축(z)을 접으므로,
+          몸이 z 방향으로 누워 있으면 투영된 축의 x 성분이 0 에 가까워지고
+          정규화 과정에서 높이 성분이 지배해 '비스듬히 선 사람' 이 된다
+          (실측: 누운 사람의 도식이 0.11~0.86 m 에 걸쳐 세워짐).
+          → 측면도에서는 자세(standing/lying)로 축을 직접 잡는다. 좌우 방향만
+            3D 축의 x 부호를 따라가 점군이 퍼진 쪽과 맞춘다.
+        """
+        L = Track3D.body_length(p)
+        head = np.array([p['head'][0], CEILING_H - p['head'][1]])
+        if p['posture'] == 'standing':
+            a = np.array([0.0, 1.0])
+        else:
+            a = np.array([1.0 if p['axis'][0] >= 0 else -1.0, 0.0])
+        C = Track3D.figure_center(head, a, L)
+        right = np.array([a[1], -a[0]])
+        seg = stick_segments(np.append(C, 0.0), np.append(a, 0.0), L,
+                             np.append(right, 0.0),
+                             spread=1.0 if p['posture'] == 'standing' else 0.40)
+        return seg[:, :2]
+
+
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 5. 준비 화면 · 팝업 (v2 가 그대로 재사용한다)
+# ══════════════════════════════════════════════════════════════════════
+class PreparePage(QtWidgets.QWidget):
+    """[2] 현장 준비 — 빈방 스캔 → 기준 수집 → AE 학습.
+
+    ⚠ [7/31] 이전에는 팝업(QDialog)이었다. 팝업은 "잠깐 보고 닫는 것"에 쓰는
+      물건인데 이 절차는 스캔 12초 + 수집 15초 + 학습 30초에, 중간에 사람이
+      감지 구역을 나갔다 들어와야 하는 1분짜리 '모드'다.
+      → 전체 화면으로 분리한다. 흐름이 화면 단위로 읽힌다:
+          [1] 연결·세션  →  [2] 현장 준비  →  [3] 관제
+      LIVE 가 되면 관제 화면으로 자동 전환된다.
+    """
+    back = QtCore.pyqtSignal()
+
+    def __init__(self, link):
+        super().__init__()
+        self.link = link
+        self.phase = None
+        # True = 학습이 끝나면 관제로 자동 복귀. 사용자가 '빈방 스캔'을 눌러
+        #   들어온 경우에만 켠다(이미 LIVE 인 상태로 구경하러 온 것과 구분).
+        self.autoback = False
+        outer = QtWidgets.QHBoxLayout(self)
+        outer.addStretch()
+        holder = QtWidgets.QWidget()
+        holder.setFixedWidth(760)
+        v = QtWidgets.QVBoxLayout(holder)
+        v.setContentsMargins(0, SP_XL, 0, SP_XL)
+        v.setSpacing(SP_L)
+        outer.addWidget(holder)
+        outer.addStretch()
+
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(lb('현장 준비', 20, CYAN, bold=True))
+        head.addWidget(lb('정상 상태를 학습시켜야 이상을 판별할 수 있습니다',
+                          FS_BODY, DIM))
+        head.addStretch()
+        self.zone_lb = lb('', FS_LABEL, TXT)
+        head.addWidget(self.zone_lb)
+        v.addLayout(head)
+
+        # ── 단계 표시 ──
+        self.steps = []
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(SP_S)
+        for i, ph in enumerate(PHASE_ORDER):
+            f = panel(hi=True)
+            fv = QtWidgets.QVBoxLayout(f)
+            fv.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
+            fv.setSpacing(SP_XS)
+            num = lb(f'{i + 1}', FS_LABEL, FAINT, center=True)
+            t = lb(PHASE_KO[ph], FS_BODY, DIM, center=True)
+            fv.addWidget(num)
+            fv.addWidget(t)
+            self.steps.append((ph, f, t, num))
+            row.addWidget(f)
+        v.addLayout(row)
+
+        # ── 지금 해야 할 행동 (화면의 주인) ──
+        act = panel(hi=True)
+        av = QtWidgets.QVBoxLayout(act)
+        av.setContentsMargins(SP_XL, SP_XL, SP_XL, SP_XL)
+        av.setSpacing(SP_M)
+        self.big = lb('젯슨 연결을 기다리는 중…', 22, TXT, bold=True,
+                      center=True, wrap=True)
+        self.big.setMinimumHeight(72)
+        self.sub = lb('', FS_TITLE, CYAN, center=True, wrap=True)
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(8)
+        self.bar.setStyleSheet(
+            f'QProgressBar{{background:{PANEL_LO};border:none;border-radius:4px;}}'
+            f'QProgressBar::chunk{{background:{CYAN};border-radius:4px;}}')
+        for w in (self.big, self.sub, self.bar):
+            av.addWidget(w)
+        v.addWidget(act)
+
+        # ── 주의 ──
+        warn = panel()
+        wv = QtWidgets.QVBoxLayout(warn)
+        wv.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
+        wv.addWidget(lb('⚠  빈 방 스캔 중에는 반드시 감지 구역 밖에 있어야 합니다. '
+                        '사람이 남아 있으면 그 사람이 "정상 배경"으로 학습되어 '
+                        '이후 낙상을 놓칩니다.', FS_BODY, AMBER, wrap=True))
+        v.addWidget(warn)
+        v.addStretch()
+
+        self.go = btn('기준 수집 시작', FS_TITLE, primary=True, height=60)
+        self.go.clicked.connect(self._go)
+        v.addWidget(self.go)
+
+        r2 = QtWidgets.QHBoxLayout()
+        r2.setSpacing(SP_S)
+        self.rst = btn('기준 초기화', FS_BODY, height=38)
+        self.rst.clicked.connect(self._confirm_reset)
+        bk = btn('←  개요', FS_BODY, height=38)
+        bk.clicked.connect(self.back.emit)
+        self.skip = btn('관제 화면으로', FS_BODY, height=38)
+        for b in (bk, self.rst):
+            r2.addWidget(b)
+        r2.addStretch()
+        r2.addWidget(self.skip)
+        v.addLayout(r2)
+
+    def set_zone(self, z):
+        self.zone_lb.setText(f'{z} {ZONE_KO.get(z, "")} · 레이더 #1')
+
+    def _go(self):
+        cmd = CMD_TRAIN if self.phase == PH_WAIT_TRAIN else CMD_START
+        self.autoback = True          # 이 절차가 끝나면 관제로 돌아간다
+        self.link.send_cmd(cmd)
+        self.go.setEnabled(False)
+        QtCore.QTimer.singleShot(1500, lambda: self.go.setEnabled(True))
+
+    def _confirm_reset(self):
+        if confirm(self, '기준 초기화',
+                   '학습한 정상 기준을 버리고 처음부터 다시 수집합니다.\n'
+                   '초기화 후에는 빈 방 스캔부터 다시 진행해야 합니다.',
+                   yes='초기화', no='취소', danger=True):
+            self.autoback = True
+            self.link.send_cmd(CMD_RESET)
+
+    def update_phase(self, pkt):
+        ph = pkt.get('phase') or PH_READY
+        self.phase = ph
+        idx = PHASE_ORDER.index(ph) if ph in PHASE_ORDER else 0
+        for i, (p, f, t, num) in enumerate(self.steps):
+            done, cur = i < idx, (i == idx)
+            col = CYAN if cur else (GREEN if done else FAINT)
+            f.setStyleSheet(
+                f'QFrame{{border:{"2px solid " + CYAN if cur else "none"};'
+                f'border-radius:8px;'
+                f'background:{"#0d2436" if cur else (PANEL_HI if done else PANEL_LO)};}}')
+            t.setStyleSheet(f'color:{col};border:none;background:transparent;')
+            num.setText('✓' if done else str(i + 1))
+            num.setStyleSheet(f'color:{col};border:none;background:transparent;')
+        self.big.setText(PHASE_ACTION.get(ph, ''))
+        wc = pkt.get('warmup_count') or 0
+        nw = ((pkt.get('cfg') or {}).get('N_WARMUP')) or 150
+        left = pkt.get('scan_left')
+        if left is not None:
+            self.sub.setText(f'빈 방 스캔  {left:.0f}초 남음')
+            self.bar.setRange(0, 100)
+            sec = ((pkt.get('cfg') or {}).get('SCAN_SEC')) or 12.0
+            self.bar.setValue(int(100 * (1 - left / max(sec, 1e-6))))
+        elif ph == PH_WARMUP:
+            self.sub.setText(f'정상 기준 수집  {wc} / {nw} 프레임')
+            self.bar.setRange(0, nw)
+            self.bar.setValue(wc)
+        elif ph == PH_TRAINING:
+            self.sub.setText('LSTM-AE 학습 중 — 20~30초')
+            self.bar.setRange(0, 0)
+        elif ph == PH_LIVE:
+            self.sub.setText('관제 화면으로 전환합니다')
+            self.bar.setRange(0, 100)
+            self.bar.setValue(100)
+        else:
+            self.sub.setText('')
+            self.bar.setRange(0, 100)
+            self.bar.setValue(0)
+        self.go.setText('학습 시작' if ph == PH_WAIT_TRAIN else '기준 수집 시작')
+        self.go.setVisible(ph in (PH_READY, PH_WAIT_TRAIN))
+        # 관제로 나가는 길은 항상 열어 둔다 (기준이 없으면 화면이 그걸 알린다)
+        self.skip.setEnabled(True)
+
+
+class SettingsPopup(Dialog):
+    """설정.
+
+    ⚠ 판정 임계값(h_drop 0.43, 임펄스비 2.2, STAT_MISS_TOL …)은 여기 넣지 않는다.
+      세 가지 이유:
+        1. 실측 데이터로 캘리브레이션한 값이라 근무자가 슬라이더로 만질 성질이 아니다
+        2. 노트북에서 바꿀 수 있게 하면 "판정은 젯슨이 독립 수행" 이라는
+           fail-safe 논리가 코드로 거짓이 된다
+        3. 사고 조사에서 "누가 언제 문턱을 바꿨나" 가 추적 불가능해진다
+      대신 젯슨이 보낸 현재 값을 '읽기 전용' 으로 보여준다.
+    """
+    # 백그라운드 스레드 → UI 스레드 (Qt 위젯은 워커 스레드에서 만지면 안 된다)
+    sop_prescanned = QtCore.pyqtSignal(int, int, str)
+    sop_progress = QtCore.pyqtSignal(int, str, int)
+    sop_loaded = QtCore.pyqtSignal(list, str)
+
+    def __init__(self, parent=None, link=None, console=None):
+        super().__init__(parent, '설정', 820, 620)
+        self.link, self.console = link, console
+        self.sop_prescanned.connect(self._on_prescan)
+        self.sop_progress.connect(self._on_progress)
+        self.sop_loaded.connect(self._on_loaded)
+        tabs = QtWidgets.QTabWidget()
+        tabs.setFont(QtGui.QFont(FONT, FS_BODY))
+        tabs.setStyleSheet(
+            f'QTabWidget::pane{{border:1px solid {EDGE};border-radius:6px;'
+            f'background:{PANEL};}}'
+            f'QTabBar::tab{{background:{PANEL_LO};color:{DIM};padding:8px 16px;'
+            f'border-top-left-radius:6px;border-top-right-radius:6px;}}'
+            f'QTabBar::tab:selected{{background:{PANEL};color:{CYAN};}}')
+        self.v.addWidget(tabs, 1)
+
+        # ── 연결 ──
+        w1, f1 = self._form()
+        self.host = self._line(link.host if link else '192.168.0.50')
+        f1.addRow(self._lab('젯슨 IP'), self.host)
+        f1.addRow(self._lab('데이터 포트'), self._ro(str(DATA_PORT)))
+        f1.addRow(self._lab('제어 포트'), self._ro(str(CTRL_PORT)))
+        f1.addRow(self._lab('HELLO 주기'), self._ro(f'{HELLO_SEC:.0f} 초'))
+        f1.addRow(self._lab('링크 타임아웃'), self._ro(f'{LINK_TIMEOUT:.0f} 초'))
+        tb = btn('연결 테스트', FS_BODY, height=34)
+        tb.clicked.connect(self._test_link)
+        self.link_res = lb('', FS_LABEL, DIM, wrap=True)
+        f1.addRow(tb, self.link_res)
+        tabs.addTab(w1, '연결')
+
+        # ── 경보 ──
+        w2, f2 = self._form()
+        self.snd = QtWidgets.QCheckBox('미확인 경보에 소리 사용')
+        self.snd.setChecked(True)
+        self.snd.setStyleSheet(f'color:{TXT};')
+        self.blink_cb = QtWidgets.QCheckBox('미확인 경보 배너 점멸')
+        self.blink_cb.setChecked(True)
+        self.blink_cb.setStyleSheet(f'color:{TXT};')
+        self.autopop = QtWidgets.QCheckBox('경보 시 조치 가이드 자동 표시')
+        self.autopop.setChecked(True)
+        self.autopop.setStyleSheet(f'color:{TXT};')
+        for c in (self.snd, self.blink_cb, self.autopop):
+            f2.addRow(c)
+        f2.addRow(self._lab('위험 · 주의 색'),
+                  self._ro(f'critical {RED}   warning {AMBER}'))
+        tabs.addTab(w2, '경보')
+
+        # ── AI · SOP ──
+        w3, f3 = self._form()
+        f3.addRow(self._lab('Ollama URL'), self._ro(OLLAMA_URL))
+        f3.addRow(self._lab('생성 모델'), self._ro(LLM_MODEL))
+        f3.addRow(self._lab('임베딩 모델'), self._ro(EMBED_MODEL))
+        f3.addRow(self._lab('SOP DB'), self._ro(CONN_STR.split('@')[-1]))
+        f3.addRow(self._lab('langchain'), self._ro('설치됨' if RAG_OK else '미설치'))
+        ab = btn('AI 연결 테스트', FS_BODY, height=34)
+        ab.clicked.connect(self._test_ai)
+        self.ai_res = lb('', FS_LABEL, DIM, wrap=True)
+        f3.addRow(ab, self.ai_res)
+        f3.addRow(self._lab(''),
+                  lb('임베딩 모델은 SOP DB 적재 때와 반드시 같아야 검색이 맞습니다.',
+                     FS_CAPTION, AMBER, wrap=True))
+        tabs.addTab(w3, 'AI · SOP')
+
+        # ── SOP 관리 ──
+        tabs.addTab(self._sop_tab(), 'SOP 관리')
+
+        # ── 판정 (읽기 전용) ──
+        w4, f4 = self._form()
+        f4.addRow(lb('아래 값은 젯슨이 소유합니다. 노트북에서 바꿀 수 없습니다 — '
+                     '판정과 차단은 링크가 끊겨도 젯슨이 독립 수행해야 하기 때문입니다.',
+                     FS_LABEL, AMBER, wrap=True))
+        self.thr_rows = {}
+        for k, name in (('threshold', '이상점수 임계 (AE)'),
+                        ('n_warmup', '기준 수집 프레임'),
+                        ('scan_sec', '빈 방 스캔 시간'),
+                        ('ceiling', '천장 높이'),
+                        ('curr', '과전류 임계'),
+                        ('volt', '전압강하 임계'),
+                        ('vib', '설비진동 임계')):
+            r = self._ro('—')
+            self.thr_rows[k] = r
+            f4.addRow(self._lab(name), r)
+        tabs.addTab(w4, '판정 (읽기 전용)')
+
+        # ── 진단 ──
+        w5, f5 = self._form()
+        self.diag = {}
+        for k, name in (('seq', '수신 seq'), ('lost', '패킷 유실'),
+                        ('peak', '최대 패킷 크기'), ('schema', '스키마 버전'),
+                        ('gl', '3D 렌더')):
+            r = self._ro('—')
+            self.diag[k] = r
+            f5.addRow(self._lab(name), r)
+        eb = btn('경보 기록 CSV 내보내기', FS_BODY, height=34)
+        eb.clicked.connect(lambda: console.evlog._export() if console else None)
+        f5.addRow(eb)
+        tabs.addTab(w5, '진단')
+
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch()
+        cl = btn('닫기', FS_BODY, height=38)
+        cl.clicked.connect(self.accept)
+        row.addWidget(cl)
+        self.v.addLayout(row)
+
+        self.tick = QtCore.QTimer(self)
+        self.tick.timeout.connect(self.refresh)
+        self.tick.start(1000)
+
+    # ══════════════════════════════════════════════════════════════════
+    # SOP 관리 — PDF 를 올려 청킹·색인한다
+    # ══════════════════════════════════════════════════════════════════
+    #  ⚠ 청킹에 LLM 을 쓰지 않는다. 경계 결정은 결정론적으로 해결된 문제이고
+    #    (RecursiveCharacterTextSplitter), LLM 으로 하면 같은 파일이 매번 다르게
+    #    쪼개져 재현이 안 되고 13 tok/s 로는 몇십 분이 걸린다.
+    #    LLM 이 쓸모 있는 건 '분류' 인데, 그것도 키워드 규칙을 먼저 태우고
+    #    애매한 것만 넘긴다. 그리고 최종 확정은 사람이 드롭다운으로 한다 —
+    #    안전 문서에서 자동 분류를 고칠 수 없으면 쓸 수 없다.
+    def _sop_tab(self):
+        w = QtWidgets.QWidget()
+        v = QtWidgets.QVBoxLayout(w)
+        v.setContentsMargins(SP_L, SP_L, SP_L, SP_L)
+        v.setSpacing(SP_M)
+
+        head = QtWidgets.QHBoxLayout()
+        head.addWidget(lb('안전 매뉴얼 PDF', FS_BODY, TXT, bold=True))
+        head.addStretch()
+        self.sop_meta = lb('', FS_LABEL, DIM)
+        head.addWidget(self.sop_meta)
+        v.addLayout(head)
+
+        drop = btn('＋  PDF 파일 선택  (여러 개 가능)', FS_BODY, height=48)
+        drop.clicked.connect(self._sop_pick)
+        v.addWidget(drop)
+
+        self.sop_tbl = QtWidgets.QTableWidget(0, 4)
+        self.sop_tbl.setHorizontalHeaderLabels(['문서', '청크', '카테고리', '상태'])
+        self.sop_tbl.horizontalHeader().setStretchLastSection(True)
+        self.sop_tbl.setColumnWidth(0, 300)
+        self.sop_tbl.verticalHeader().setVisible(False)
+        self.sop_tbl.setFont(QtGui.QFont(FONT, FS_LABEL))
+        self.sop_tbl.setStyleSheet(TABLE_QSS)
+        self.sop_tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        v.addWidget(self.sop_tbl, 1)
+
+        self.sop_stat = lb('', FS_LABEL, DIM, wrap=True)
+        v.addWidget(self.sop_stat)
+        self.sop_bar = QtWidgets.QProgressBar()
+        self.sop_bar.setTextVisible(False)
+        self.sop_bar.setFixedHeight(6)
+        self.sop_bar.setStyleSheet(
+            f'QProgressBar{{background:{PANEL_LO};border:none;border-radius:3px;}}'
+            f'QProgressBar::chunk{{background:{CYAN};border-radius:3px;}}')
+        self.sop_bar.hide()
+        v.addWidget(self.sop_bar)
+
+        row = QtWidgets.QHBoxLayout()
+        row.setSpacing(SP_S)
+        b1 = btn('DB 현황 새로고침', FS_BODY, height=36)
+        b1.clicked.connect(self._sop_refresh)
+        row.addWidget(b1)
+        row.addStretch()
+        self.sop_go = btn('색인 실행', FS_BODY, primary=True, height=36)
+        self.sop_go.setEnabled(False)
+        self.sop_go.clicked.connect(self._sop_ingest)
+        row.addWidget(self.sop_go)
+        v.addLayout(row)
+        v.addWidget(lb('색인은 기존 문서를 지우지 않고 추가합니다. 같은 파일을 다시 올리면 '
+                       '중복되므로, 교체할 때는 해당 문서를 먼저 삭제하세요.',
+                       FS_CAPTION, DIM, wrap=True))
+        self._sop_pending = []
+        QtCore.QTimer.singleShot(400, self._sop_refresh)
+        return w
+
+    _KW = {                       # 키워드 규칙 — LLM 부르기 전에 먼저 태운다
+        '01_감전_LOTO': ['감전', 'LOTO', '활선', '전로', '정전작업', '절연', '접지'],
+        '02_협착_끼임': ['협착', '끼임', '회전기계', '절단', '방호덮개', '컨베이어'],
+        '03_낙상_응급처치': ['추락', '넘어짐', '전도', '응급처치', '안전대', '골절'],
+        '04_예지보전': ['진동', '상태감시', '수명예측', '베어링', '열화', '진단'],
+        '05_위험성평가_비상': ['위험성평가', '비상', '대피', '비상계획'],
+    }
+
+    def _guess_cat(self, text):
+        sc = {c: sum(text.count(k) for k in ks) for c, ks in self._KW.items()}
+        best = max(sc, key=sc.get)
+        return best if sc[best] > 0 else None
+
+    def _sop_pick(self):
+        fs, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, '안전 매뉴얼 PDF 선택', '', 'PDF (*.pdf)')
+        if not fs:
+            return
+        for f in fs:
+            r = self.sop_tbl.rowCount()
+            self.sop_tbl.insertRow(r)
+            self.sop_tbl.setItem(r, 0, QtWidgets.QTableWidgetItem(os.path.basename(f)))
+            self.sop_tbl.setItem(r, 1, QtWidgets.QTableWidgetItem('—'))
+            cb = QtWidgets.QComboBox()
+            cb.addItems(SOP_CATEGORIES)
+            cb.setStyleSheet(f'QComboBox{{background:{PANEL_HI};color:{TXT};'
+                             f'border:1px solid {EDGE};border-radius:4px;padding:2px 6px;}}'
+                             f'QComboBox QAbstractItemView{{background:{PANEL_HI};'
+                             f'color:{TXT};selection-background-color:{CYAN};}}')
+            self.sop_tbl.setCellWidget(r, 2, cb)
+            it = QtWidgets.QTableWidgetItem('대기 — 분류 중')
+            it.setForeground(QtGui.QColor(AMBER))
+            self.sop_tbl.setItem(r, 3, it)
+            self._sop_pending.append({'path': f, 'row': r, 'combo': cb})
+        self.sop_go.setEnabled(True)
+        threading.Thread(target=self._sop_prescan, daemon=True).start()
+
+    def _sop_prescan(self):
+        """PDF 를 읽어 청크 수를 세고 카테고리를 규칙으로 추정한다(색인 전 미리보기)."""
+        for p in list(self._sop_pending):
+            if p.get('chunks') is not None:
+                continue
+            try:
+                from langchain_community.document_loaders import PyPDFLoader
+                from langchain_text_splitters import RecursiveCharacterTextSplitter
+                docs = PyPDFLoader(p['path']).load()
+                sp = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=80)
+                ch = [c for c in sp.split_documents(docs)
+                      if len(c.page_content.strip()) >= 50]      # 머리말·꼬리말 제거
+                p['chunks'] = ch
+                cat = self._guess_cat(' '.join(c.page_content for c in ch[:60]))
+                self.sop_prescanned.emit(p['row'], len(ch), cat or '')
+            except Exception as e:
+                p['chunks'] = []
+                self.sop_prescanned.emit(p['row'], -1, f'ERR:{type(e).__name__}')
+
+    def _on_prescan(self, row, n, cat):
+        if n < 0:
+            it = QtWidgets.QTableWidgetItem(f'읽기 실패 ({cat})')
+            it.setForeground(QtGui.QColor(RED))
+            self.sop_tbl.setItem(row, 3, it)
+            return
+        self.sop_tbl.setItem(row, 1, QtWidgets.QTableWidgetItem(str(n)))
+        cb = self.sop_tbl.cellWidget(row, 2)
+        if cb and cat in SOP_CATEGORIES:
+            cb.setCurrentText(cat)
+        it = QtWidgets.QTableWidgetItem('대기' + ('' if cat else ' — 분류 확인 필요'))
+        it.setForeground(QtGui.QColor(AMBER if cat else RED))
+        self.sop_tbl.setItem(row, 3, it)
+
+    def _sop_ingest(self):
+        todo = [p for p in self._sop_pending if p.get('chunks')]
+        if not todo:
+            self.sop_stat.setText('색인할 문서가 없습니다 (PDF 읽기가 끝나길 기다리세요)')
+            return
+        total = sum(len(p['chunks']) for p in todo)
+        if not confirm(self, 'SOP 색인',
+                       f'{len(todo)}개 문서 · {total:,}청크를 색인합니다.\n'
+                       f'임베딩({EMBED_MODEL}) 생성에 수 분이 걸릴 수 있습니다.\n'
+                       f'기존 문서는 지워지지 않습니다.', yes='색인 시작', no='취소'):
+            return
+        for p in todo:
+            cb = p['combo']
+            p['cat'] = cb.currentText()
+        self.sop_go.setEnabled(False)
+        self.sop_bar.setRange(0, 0)
+        self.sop_bar.show()
+        threading.Thread(target=self._sop_worker, args=(todo,), daemon=True).start()
+
+    def _sop_worker(self, todo):
+        try:
+            from langchain_ollama import OllamaEmbeddings
+            from langchain_community.vectorstores import PGVector
+            emb = OllamaEmbeddings(model=EMBED_MODEL)
+            vs = PGVector(connection_string=CONN_STR, embedding_function=emb,
+                          collection_name='safety_manual')
+            for p in todo:
+                name = os.path.basename(p['path'])
+                self.sop_progress.emit(p['row'], f'색인 중… ({len(p["chunks"])}청크)', 0)
+                for c in p['chunks']:
+                    c.page_content = c.page_content.replace('\x00', '')
+                    c.metadata['category'] = p['cat']
+                    c.metadata['source_file'] = name
+                vs.add_documents(p['chunks'])
+                self.sop_progress.emit(p['row'], '색인됨', 1)
+            self.sop_progress.emit(-1, '색인 완료', 2)
+        except Exception as e:
+            self.sop_progress.emit(-1, f'색인 실패: {type(e).__name__}: {e}', -1)
+
+    def _on_progress(self, row, msg, code):
+        if row >= 0:
+            it = QtWidgets.QTableWidgetItem(('● ' if code == 1 else '') + msg)
+            it.setForeground(QtGui.QColor(GREEN if code == 1 else AMBER))
+            self.sop_tbl.setItem(row, 3, it)
+            return
+        self.sop_bar.hide()
+        self.sop_stat.setText(msg)
+        self.sop_stat.setStyleSheet(f'color:{RED if code < 0 else GREEN};border:none;')
+        self.sop_go.setEnabled(code < 0)
+        if code == 2:
+            self._sop_pending = []
+            self._sop_refresh()
+
+    def _sop_refresh(self):
+        """DB 에 실제로 들어 있는 문서 목록을 SQL 로 읽어 표를 채운다."""
+        def _w():
+            try:
+                import psycopg2
+                cn = psycopg2.connect(CONN_STR)
+                cu = cn.cursor()
+                cu.execute("SELECT uuid FROM langchain_pg_collection WHERE name=%s",
+                           ('safety_manual',))
+                r = cu.fetchone()
+                if not r:
+                    self.sop_loaded.emit([], '컬렉션이 없습니다 — 아래에서 PDF 를 올리세요')
+                    return
+                cu.execute("""SELECT cmetadata->>'source_file', cmetadata->>'category',
+                                     count(*)
+                              FROM langchain_pg_embedding WHERE collection_id=%s
+                              GROUP BY 1,2 ORDER BY 3 DESC""", (r[0],))
+                rows = cu.fetchall()
+                cu.execute("SELECT count(*) FROM langchain_pg_embedding "
+                           "WHERE collection_id=%s", (r[0],))
+                n = cu.fetchone()[0]
+                cn.close()
+                self.sop_loaded.emit(rows,
+                                     f'{len(rows)}개 문서 · {n:,}청크 · {EMBED_MODEL}')
+            except Exception as e:
+                self.sop_loaded.emit([], f'DB 조회 실패: {type(e).__name__} '
+                                         f'(docker start radar-guard-db)')
+        threading.Thread(target=_w, daemon=True).start()
+
+    def _on_loaded(self, rows, meta):
+        self.sop_meta.setText(meta)
+        self.sop_tbl.setRowCount(0)
+        self._sop_pending = []
+        for f, cat, k in rows:
+            r = self.sop_tbl.rowCount()
+            self.sop_tbl.insertRow(r)
+            eng = (f or '').lower().startswith('osha')
+            self.sop_tbl.setItem(r, 0, QtWidgets.QTableWidgetItem(f or '(없음)'))
+            self.sop_tbl.setItem(r, 1, QtWidgets.QTableWidgetItem(str(k)))
+            self.sop_tbl.setItem(r, 2, QtWidgets.QTableWidgetItem(cat or '(미분류)'))
+            it = QtWidgets.QTableWidgetItem('⚠ 영문 — 한글 질의 오염' if eng else '● 색인됨')
+            it.setForeground(QtGui.QColor(AMBER if eng else GREEN))
+            self.sop_tbl.setItem(r, 3, it)
+        self.sop_go.setEnabled(False)
+
+    # ── 위젯 헬퍼 ──
+    def _form(self):
+        w = QtWidgets.QWidget()
+        f = QtWidgets.QFormLayout(w)
+        f.setContentsMargins(SP_L, SP_L, SP_L, SP_L)
+        f.setSpacing(SP_M)
+        return w, f
+
+    def _lab(self, t):
+        return lb(t, FS_LABEL, DIM)
+
+    def _line(self, val=''):
+        e = QtWidgets.QLineEdit(val)
+        e.setFont(QtGui.QFont(FONT, FS_BODY))
+        e.setMinimumHeight(32)
+        e.setStyleSheet(f'background:{PANEL_HI};color:{TXT};border:1px solid {EDGE};'
+                        f'border-radius:6px;padding:2px 8px;')
+        return e
+
+    def _ro(self, val):
+        l = lb(val, FS_BODY, TXT)
+        l.setStyleSheet(f'color:{TXT};background:{PANEL_LO};border:none;'
+                        f'border-radius:4px;padding:4px 8px;')
+        return l
+
+    # ── 동작 ──
+    def _test_link(self):
+        if not self.link:
+            self.link_res.setText('링크 미설정 — --live 로 실행하세요')
+            return
+        age = self.link.age()
+        if age is None:
+            self.link_res.setText(f'{self.link.host} 로 HELLO 발신 중 · 아직 응답 없음')
+            self.link_res.setStyleSheet(f'color:{AMBER};border:none;')
+        elif age > LINK_TIMEOUT:
+            self.link_res.setText(f'끊김 — 마지막 수신 {int(age)}초 전')
+            self.link_res.setStyleSheet(f'color:{RED};border:none;')
+        else:
+            self.link_res.setText(f'정상 · {int(age * 1000)}ms · seq {self.link.seq}')
+            self.link_res.setStyleSheet(f'color:{GREEN};border:none;')
+
+    def _test_ai(self):
+        self.ai_res.setText('확인 중…')
+        self.ai_res.setStyleSheet(f'color:{DIM};border:none;')
+
+        def _w():
+            import urllib.request
+            try:
+                urllib.request.urlopen(
+                    OLLAMA_URL.replace('/api/generate', '/api/tags'), timeout=4).read()
+                msg, col = f'Ollama 응답 정상 · {LLM_MODEL}', GREEN
+            except Exception as e:
+                msg, col = f'실패: {type(e).__name__} — ollama serve 확인', RED
+            self.ai_res.setText(msg)
+            self.ai_res.setStyleSheet(f'color:{col};border:none;')
+
+        threading.Thread(target=_w, daemon=True).start()
+
+    def refresh(self):
+        if not self.isVisible():
+            return
+        pkt = (self.console.pkt if self.console else {}) or {}
+        cfg = pkt.get('cfg') or {}
+        thr = pkt.get('threshold')
+        self.thr_rows['threshold'].setText(
+            '규칙 전용 (AE 비활성)' if (thr is not None and thr < 0)
+            else (f'{thr:.5f}' if thr else '—'))
+        self.thr_rows['n_warmup'].setText(str(cfg.get('N_WARMUP', '—')))
+        self.thr_rows['scan_sec'].setText(f"{cfg.get('SCAN_SEC', '—')} 초")
+        self.thr_rows['ceiling'].setText(f"{cfg.get('CEILING_H', CEILING_H)} m")
+        self.thr_rows['curr'].setText(f"{cfg.get('CURR_LIMIT', CURR_LIMIT)} A")
+        self.thr_rows['volt'].setText(f"{cfg.get('VOLT_MIN', VOLT_MIN)} V")
+        self.thr_rows['vib'].setText(str(cfg.get('VIB_DS_THRESH', VIB_DS_THRESH)))
+        if self.link:
+            self.diag['seq'].setText(str(self.link.seq))
+            self.diag['lost'].setText(str(self.link.lost))
+            self.diag['peak'].setText(
+                f'{self.link.peak_bytes} B'
+                + ('  (MTU 초과 — 단편화)' if self.link.peak_bytes > 1472 else ''))
+        self.diag['schema'].setText(
+            f"젯슨 {pkt.get('schema_version', '—')} / 노트북 {SCHEMA_VERSION}")
+        self.diag['gl'].setText(
+            'OpenGL' if (self.console and self.console.track.gl) else '2D 대체')
+
+
+class EvidencePopup(Dialog):
+    """L2 판단 근거 — 젯슨 classify() 가 사실로 확정해 보낸 수치만 표시.
+
+    ⚠ 이 화면의 숫자는 LLM 이 만들지 않는다. 전부 젯슨이 계산해 보낸 값이다.
+      LLM 이 근거를 지어낼 여지를 구조적으로 없앤 것이 이 설계의 핵심이다.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent, '판단 근거', 720, 560)
+        self.head = lb('최근 경보 없음', FS_BODY, DIM)
+        self.v.addWidget(self.head)
+        self.tbl = QtWidgets.QTableWidget(0, 4)
+        self.tbl.setHorizontalHeaderLabels(['항목', '측정값', '기준', '의미'])
+        self.tbl.horizontalHeader().setStretchLastSection(True)
+        self.tbl.verticalHeader().setVisible(False)
+        self.tbl.setFont(QtGui.QFont(FONT, FS_BODY))
+        self.tbl.setStyleSheet(TABLE_QSS)
+        self.tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.v.addWidget(self.tbl, 2)
+        self.rej = lb('', FS_LABEL, DIM, wrap=True)
+        self.v.addWidget(self.rej)
+        self.v.addWidget(lb('원시 측정값', FS_LABEL, DIM))
+        self.raw = QtWidgets.QTextEdit()
+        self.raw.setReadOnly(True)
+        self.raw.setFont(QtGui.QFont(FONT, FS_CAPTION))
+        self.raw.setStyleSheet(EDIT_QSS)
+        self.raw.setMaximumHeight(120)
+        self.v.addWidget(self.raw)
+        b = btn('닫기')
+        b.clicked.connect(self.accept)
+        self.v.addWidget(b)
+
+    def set_event(self, ev, rx_ts):
+        et = ev.get('type') or ev.get('event_type')
+        self.head.setText(
+            f"{EVENT_KO.get(et, '-')} · Zone {ev.get('zone')} · "
+            f"{SEV_KO.get(ev.get('sev'), '')} · 확신도 {ev.get('conf', 0):.0%} · "
+            f"{time.strftime('%H:%M:%S', time.localtime(rx_ts))}")
+        self.head.setStyleSheet(f'color:{RED};border:none;')
+        g = ev.get('gates') or {}
+        self.tbl.setRowCount(len(g))
+        if not g:
+            self.tbl.setRowCount(1)
+            it = QtWidgets.QTableWidgetItem(
+                '판단 근거 없음 — 피처 계산 전 조기 판정 경로 (evidence=None)')
+            it.setForeground(QtGui.QColor(AMBER))
+            self.tbl.setItem(0, 0, it)
+            self.tbl.setSpan(0, 0, 1, 4)
+        for r, (k, d) in enumerate(g.items()):
+            meta = GATE_META.get(k, {})
+            unit = d.get('unit', '')
+            cells = (meta.get('ko', k),
+                     f"{d.get('value')} {unit}".strip(),
+                     f"{d.get('cmp', '>=')} {d.get('thr')}  "
+                     f"{'통과' if d.get('pass') else '미달'}",
+                     meta.get('why', ''))
+            for c, t in enumerate(cells):
+                it = QtWidgets.QTableWidgetItem(str(t))
+                it.setForeground(QtGui.QColor(
+                    (GREEN if d.get('pass') else RED) if c == 2
+                    else (DIM if c == 3 else TXT)))
+                if c == 0 and meta.get('src'):
+                    it.setToolTip(f"실측 근거: {meta['src']}")
+                self.tbl.setItem(r, c, it)
+        self.tbl.resizeColumnsToContents()
+        rj = ev.get('rejected') or []
+        self.rej.setText(
+            '제외한 후보 · ' + ' · '.join(
+                f"{REJECT_KO.get(r.get('candidate'), r.get('candidate'))} "
+                f"({r.get('reason')})" for r in rj) if rj else '')
+        e = ev.get('evidence') or {}
+        self.raw.setPlainText(
+            '  '.join(f'{EVIDENCE_KO.get(k, k)}={v}' for k, v in e.items()
+                      if v is not None) or '(없음)')
+
+
+class PowerPopup(Dialog):
+    BUF = 300
+
+    def __init__(self, parent=None, link=None):
+        super().__init__(parent, '전기 설비', 730, 590)
+        self.link = link
+        self.buf = {'curr': [], 'volt': []}
+        self.snap = {}
+        self.src = lb('', FS_CAPTION, AMBER)
+        self.v.addWidget(self.src)
+        self.p1 = pg.PlotWidget(title=f'전류 (A) · 임계 {CURR_LIMIT}')
+        self.p2 = pg.PlotWidget(title=f'전압 (V) · 임계 {VOLT_MIN}')
+        for p, y in ((self.p1, CURR_LIMIT), (self.p2, VOLT_MIN)):
+            p.showGrid(x=True, y=True, alpha=0.12)
+            p.addLine(y=y, pen=pg.mkPen(RED, style=QtCore.Qt.DashLine))
+            p.setMinimumHeight(130)
+            self.v.addWidget(p)
+        self.c1 = self.p1.plot(pen=pg.mkPen(AMBER, width=1.6))
+        self.c2 = self.p2.plot(pen=pg.mkPen(CYAN, width=1.6))
+        self.tbl = QtWidgets.QTableWidget(len(ZONE_IDS), 3)
+        self.tbl.setHorizontalHeaderLabels(['구역', '차단기', '비고'])
+        self.tbl.horizontalHeader().setStretchLastSection(True)
+        self.tbl.verticalHeader().setVisible(False)
+        self.tbl.setFont(QtGui.QFont(FONT, FS_BODY))
+        self.tbl.setStyleSheet(TABLE_QSS)
+        self.tbl.setMaximumHeight(128)
+        self.tbl.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.v.addWidget(self.tbl)
+        self.restore_btn = btn('전력 복구', 12, height=42)
+        self.restore_btn.setEnabled(False)
+        self.v.addWidget(self.restore_btn)
+        self.v.addWidget(lb('차단·재투입 실행은 젯슨이 합니다. 이 화면은 상태 표시와 '
+                            '복구 요청만 합니다 (링크가 끊겨도 차단은 유지됩니다).',
+                            9, DIM, wrap=True))
+
+    def push(self, st):
+        p = st.get('power') or {}
+        for k in ('curr', 'volt'):
+            self.buf[k].append(p.get(k, 0.0))
+            del self.buf[k][:-self.BUF]
+        self.snap = (st.get('breaker') or {}).get('state') or {}
+        self.src.setText('⚠ 전류·전압은 모의값입니다 (스마트 차단기 하드웨어 미연결)'
+                         if p.get('src') == 'sim' else '실측 (Modbus)')
+        if self.isVisible():
+            self.c1.setData(self.buf['curr'])
+            self.c2.setData(self.buf['volt'])
+            self.refresh()
+
+    def tripped(self):
+        return [z for z, s in self.snap.items() if s != 'ON']
+
+    def refresh(self):
+        for r, z in enumerate(ZONE_IDS):
+            off = self.snap.get(z, 'ON') != 'ON'
+            for c, t in enumerate((f'Zone {z} · {ZONE_KO.get(z, "")}',
+                                   '차단됨' if off else '투입',
+                                   '수동 복구 대기' if off else '')):
+                it = QtWidgets.QTableWidgetItem(t)
+                it.setForeground(QtGui.QColor((RED if off else GREEN) if c == 1 else TXT))
+                self.tbl.setItem(r, c, it)
+        self.restore_btn.setEnabled(bool(self.tripped()))
+
+
+class RestorePopup(Dialog):
+    def __init__(self, parent=None):
+        super().__init__(parent, '전력 복구 확인', 490, 340)
+        self.v.addWidget(lb('아래 구역의 전원을 다시 투입합니다', FS_BODY, RED, bold=True))
+        self.zones = lb('', FS_BODY, TXT, bold=True)
+        self.v.addWidget(self.zones)
+        self.checks = []
+        for t in ('작업자 안전을 직접 확인했습니다', '설비 이상 원인이 해소됐습니다',
+                  '주변 인원에게 재투입을 알렸습니다'):
+            c = QtWidgets.QCheckBox(t)
+            c.setFont(QtGui.QFont(FONT, FS_BODY))
+            c.setStyleSheet(f'color:{TXT};')
+            c.stateChanged.connect(self._sync)
+            self.checks.append(c)
+            self.v.addWidget(c)
+        self.v.addStretch()
+        row = QtWidgets.QHBoxLayout()
+        self.ok = btn('전원 투입', 12, accent=True, height=42)
+        self.ok.setEnabled(False)
+        self.ok.clicked.connect(self.accept)
+        no = btn('취소', 12, height=42)
+        no.clicked.connect(self.reject)
+        row.addWidget(no)
+        row.addWidget(self.ok, 2)
+        self.v.addLayout(row)
+
+    def _sync(self):
+        self.ok.setEnabled(all(c.isChecked() for c in self.checks))
+
+    def ask(self, zones):
+        self.zones.setText(', '.join(f'Zone {z} · {ZONE_KO.get(z, "")}' for z in zones))
+        for c in self.checks:
+            c.setChecked(False)
+        return self.exec_() == QtWidgets.QDialog.Accepted
+
+
+class QueryPopup(Dialog):
+    """L4 질의 — 이벤트 이력 자연어 질의.
+
+    ⚠ 숫자는 LLM 이 만들지 않는다. 아래 순서를 지킨다:
+        자연어 → (LLM) 조회 조건 → (파이썬) 실제 집계 → (LLM) 문장 연결
+      LLM 이 숫자를 지어내는 것이 구조적으로 불가능해진다.
+      지금은 1·3단계가 미연동 — 로컬 집계(2단계)만 동작한다.
+    """
+
+    def __init__(self, parent=None, console=None):
+        super().__init__(parent, '문의', 660, 480)
+        self.console = console
+        self.log = QtWidgets.QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setFont(QtGui.QFont(FONT, FS_BODY))
+        self.log.setStyleSheet(EDIT_QSS)
+        self.v.addWidget(self.log, 1)
+        row = QtWidgets.QHBoxLayout()
+        self.inp = QtWidgets.QLineEdit()
+        self.inp.setFont(QtGui.QFont(FONT, FS_BODY))
+        self.inp.setMinimumHeight(36)
+        self.inp.setStyleSheet(EDIT_QSS)
+        self.inp.setPlaceholderText('예: 오늘 경보 몇 건이야?')
+        self.inp.returnPressed.connect(self._send)
+        row.addWidget(self.inp, 1)
+        b = btn('보내기', 11, height=36)
+        b.clicked.connect(self._send)
+        row.addWidget(b)
+        self.v.addLayout(row)
+        q = QtWidgets.QHBoxLayout()
+        for s in ('오늘 경보 몇 건', '마지막 경보 언제', '지금 차단된 구역'):
+            c = btn(s, 9, height=30)
+            c.clicked.connect(lambda _, x=s: (self.inp.setText(x), self._send()))
+            q.addWidget(c)
+        self.v.addLayout(q)
+        self.v.addWidget(lb('숫자는 전부 로컬 집계 결과입니다. LLM 은 문장 연결만 합니다.',
+                            9, DIM))
+
+    def _send(self):
+        s = self.inp.text().strip()
+        if not s:
+            return
+        self.inp.clear()
+        self.log.append(f'<span style="color:{CYAN}"><b>나</b></span> · '
+                        f'<span style="color:{TXT}">{s}</span>')
+        self.log.append(f'<span style="color:{AMBER}">{self._answer(s)}</span><br>')
+
+    def _answer(self, q):
+        """로컬 집계 — 여기서 나온 숫자만 신뢰할 수 있다."""
+        c = self.console
+        if c is None:
+            return '연결된 데이터가 없습니다.'
+        incs = c.incidents
+        if '차단' in q:
+            tz = c.pwr.tripped()
+            return (f'현재 차단된 구역: {", ".join(tz)} (재투입은 전기 설비 화면에서)'
+                    if tz else '차단된 구역이 없습니다. 전 구역 투입 상태입니다.')
+        if '마지막' in q or '언제' in q:
+            if not incs:
+                return '오늘 기록된 경보가 없습니다.'
+            last = incs[-1]
+            return (f"마지막 경보는 {last.get('detected')} "
+                    f"Zone {last.get('zone')} "
+                    f"{EVENT_KO.get(last.get('type'), last.get('type'))}입니다.")
+        if '몇' in q or '건' in q:
+            done = sum(1 for i in incs if i.get('resolved'))
+            return (f'오늘 경보 {len(incs)}건입니다. '
+                    f'{done}건은 종료 처리됐고 {len(incs) - done}건이 진행 중입니다.'
+                    if incs else '오늘 경보는 0건입니다.')
+        return ('아직 답할 수 없는 질문입니다. (LLM 질의 연동 예정 — '
+                '지금은 경보 건수·시각·차단 구역만 답합니다)')
+
+
+class GraphPopup(Dialog):
+    BUF = HISTORY_LEN
+
+    def __init__(self, parent=None):
+        super().__init__(parent, '신호 그래프', 760, 560)
+        self.p1 = pg.PlotWidget(title=f'움직임 세기 dop_std · 진동 임계 {VIB_DS_THRESH}')
+        self.p2 = pg.PlotWidget(title='바닥 기준 높이 (m)')
+        self.p3 = pg.PlotWidget(title='이상 점수 (LSTM-AE)')
+        for p in (self.p1, self.p2, self.p3):
+            p.showGrid(x=True, y=True, alpha=0.12)
+            p.setMinimumHeight(120)
+            self.v.addWidget(p)
+        self.p1.addLine(y=VIB_DS_THRESH, pen=pg.mkPen(AMBER, style=QtCore.Qt.DashLine))
+        self.thr_line = self.p3.addLine(y=0.025, pen=pg.mkPen(RED,
+                                                              style=QtCore.Qt.DashLine))
+        self.c1 = self.p1.plot(pen=pg.mkPen(RED, width=1.6))
+        self.c2 = self.p2.plot(pen=pg.mkPen(CYAN, width=1.6))
+        self.c3 = self.p3.plot(pen=pg.mkPen(AMBER, width=1.6))
+
+    def push(self, st):
+        if not self.isVisible():
+            return
+        self.c1.setData(st.get('ds') or [])
+        self.c2.setData(st.get('cz') or [])
+        self.c3.setData(st.get('sc') or [])
+        if st.get('threshold'):
+            self.thr_line.setValue(st['threshold'])
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 6. 경보 상태기계 상수 (ISA-18.2)
+# ══════════════════════════════════════════════════════════════════════
+ST_NORMAL, ST_UNACK, ST_ACK = 'NORMAL', 'UNACK', 'ACK'
+# ══════════════════════════════════════════════════════════════════════
+# 7. 데모 소스 (젯슨 없이 화면만 보고 싶을 때)
+# ══════════════════════════════════════════════════════════════════════
+class _DemoSource:
+    """14초 주기: 정상 보행(0~6s) → 낙상(6s) → 누움 유지.
+    ⚠ 프로토콜 검증용이 아니다. 그건 sim_jetson.py 로 한다.
+
+    ⚠ [8/01] 이벤트·zone_state·breaker 가 전부 'C' 로 고정돼 있었다. 레이더
+      실물은 RADAR_ZONE('A') 한 대뿐이고 C 는 '장비 미설치' 다 — 즉 데모를
+      돌리면 장비가 없는 구역에서 사람이 넘어지고, 정작 사람이 있는 A 는
+      '전원 투입' 인 화면이 나왔다. radar_common 의 EVENT_ZONE 주석이 지적한
+      것과 같은 버그가 데모 경로에 남아 있었다."""
+
+    def __init__(self):
+        self.t0 = time.time()
+        self.eid = 0
+        self.fired = False
+        self.hist = {'cz': deque([1.15] * HISTORY_LEN, maxlen=HISTORY_LEN),
+                     'ds': deque([0.1] * HISTORY_LEN, maxlen=HISTORY_LEN),
+                     'sc': deque([0.008] * HISTORY_LEN, maxlen=HISTORY_LEN)}
+
+    def read(self):
+        t = (time.time() - self.t0) % 14.0
+        if t < 1.0:
+            self.fired = False
+        fallen = t > 6.0
+        sx, sy, sz = (0.42, 0.08, 0.24) if fallen else (0.10, 0.30, 0.10)
+        cx, cz = 0.45 * math.sin(t * 0.7), 0.30 * math.cos(t * 0.5)
+        cy = 1.20 if not fallen else 1.95
+        ds = 0.05 + (1.8 if 6.0 < t < 7.2 else 0.18)
+        self.hist['cz'].append(CEILING_H - cy)
+        self.hist['ds'].append(ds)
+        self.hist['sc'].append(0.041 if fallen else 0.008)
+        ev = {'active': False, 'type': None, 'sev': 'normal', 'conf': 0.0,
+              'zone': RADAR_ZONE, 'id': self.eid, 'ts': time.time(),
+              'evidence': None, 'gates': None, 'rejected': []}
+        if fallen:
+            if not self.fired:
+                self.fired = True
+                self.eid += 1
+            ev.update({
+                'active': True, 'type': 'fall_detected', 'sev': 'critical',
+                'conf': 0.87, 'id': self.eid,
+                'evidence': {'height_start': 1.62, 'height_end': 0.31,
+                             'impulse_ratio': 8.9, 'h_drop': 1.37,
+                             'horiz_range': 1.12, 'ds_last': 0.44, 'ds_broad': 4,
+                             'ae_score': 0.0412, 'ae_thr': 0.0250},
+                'gates': {
+                    'impulse': {'value': 8.90, 'thr': 2.2, 'cmp': '>=', 'unit': '비율', 'pass': True},
+                    'h_drop': {'value': 1.37, 'thr': 0.43, 'cmp': '>=', 'unit': 'm', 'pass': True},
+                    'horiz': {'value': 1.12, 'thr': 0.6, 'cmp': '>=', 'unit': 'm', 'pass': True},
+                    'ds_last': {'value': 0.44, 'thr': 1.0, 'cmp': '<=', 'unit': 'm/s', 'pass': True},
+                    'ds_broad': {'value': 4, 'thr': 2, 'cmp': '>=', 'unit': '프레임', 'pass': True}},
+                'rejected': [
+                    {'candidate': 'fast_sit', 'reason': 'horiz_range 1.12 >= 0.6'},
+                    {'candidate': 'vibration', 'reason': 'h_drop 1.37 >= 0.5'}]})
+        return {
+            'schema_version': SCHEMA_VERSION, 'seq': 0, 'ts': time.time(),
+            'phase': PH_LIVE, 'warmup_count': 150, 'threshold': 0.025,
+            'data_ok': True, 'data_age': 0.1, 'scan_left': None, 'pre_alert': '',
+            'centroid': {'cx': cx, 'cy': cy, 'cz': cz},
+            'height': round(CEILING_H - cy, 2), 'n_pts': 8, 'dop_std': round(ds, 3),
+            'zone_state': {z: ('ALERT' if (z == RADAR_ZONE and fallen) else 'NORMAL')
+                           for z in ZONE_IDS},
+            'points': [{'x': cx + np.random.normal(0, sx),
+                        'y': cy + np.random.normal(0, sy),
+                        'z': cz + np.random.normal(0, sz), 'i': 20.0} for _ in range(8)],
+            'power': {'curr': float(np.random.normal(1.0, 0.04)),
+                      'volt': float(np.random.normal(220.0, 0.4)), 'src': 'sim'},
+            'breaker': {'state': {z: ('TRIPPED' if (z == RADAR_ZONE and fallen)
+                                      else 'ON') for z in ZONE_IDS},
+                        'reason': {}},
+            'cz': list(self.hist['cz']), 'ds': list(self.hist['ds']),
+            'sc': list(self.hist['sc']),
+            'logs': [], 'incidents': [], 'ev': ev,
+            'cfg': {'N_WARMUP': 150, 'SCAN_SEC': 12.0, 'CEILING_H': CEILING_H},
+        }

@@ -1,0 +1,68 @@
+# ══════════════════════════════════════════════════════════════
+# Radar-Guard .gitignore
+#   목적: 코드와 문서만 버전 관리한다. 대용량 바이너리·실측 데이터는 제외.
+#   ⚠ 이 폴더는 OneDrive 동기화 폴더 안에 있다. .git/ 이 OneDrive 와 동시에
+#     같은 파일을 만지면 인덱스가 깨질 수 있으므로, 큰 작업 전에는
+#     OneDrive 를 일시중지하는 편이 안전하다.
+# ══════════════════════════════════════════════════════════════
+
+# ── 실측 데이터 (약 75MB) — 재수집 비용이 크므로 OneDrive 로만 보관한다 ──
+03_데이터/
+*.jsonl
+
+# ── 대용량 산출물 ──
+05_발표자료/
+07_중간보고서_7.14/
+*.zip
+*.mp4
+*.mov
+*.psd
+*.ai
+
+# ── 3D 출력물 (STL/3MF 는 gen_housing.py 로 재생성된다) ──
+06_부스_하우징/**/*.stl
+06_부스_하우징/**/*.3mf
+06_부스_하우징/**/*.gcode
+
+# ── 모델 가중치 ──
+*.joblib
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# ── 정리 대상 폴더 ──
+_삭제후보/
+_구버전보관/
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ── OS / 편집기 ──
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+*.tmp
+*.bak
+*.swp
+~$*
+.vscode/
+.idea/
+
+# ── 비밀 정보 ──
+.env
+*.key
+*.pem
+secrets.*
+
+# ── 로그 ──
+*.log
+logs/

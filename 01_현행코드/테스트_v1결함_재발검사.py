@@ -1,0 +1,207 @@
+# -*- coding: utf-8 -*-
+"""v1 에서 고쳤던 결함이 v2 에 재발했는지 런타임으로 검사한다."""
+import os, sys, time, traceback
+os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+sys.argv=['console_ui.py']
+import console_ui as ui
+import radar_core as core
+from PyQt5 import QtWidgets, QtGui, QtCore
+
+OK, NG = [], []
+def check(name, cond, detail=''):
+    (OK if cond else NG).append(f'{name}' + (f'  → {detail}' if detail else ''))
+
+app, w, link = ui.build_app([])
+w.resize(1440,900); w.show()
+
+def pump(n=10):
+    for _ in range(n):
+        w.on_packet(w.demo_src.read()); app.processEvents()
+
+# ── 1. confirm() 버튼이 다크테마에서 보이는가 (v1 7/31) ──
+d_txt = []
+orig = QtWidgets.QDialog.exec_
+def fake_exec(self):
+    for b in self.findChildren(QtWidgets.QPushButton):
+        d_txt.append((b.text(), b.styleSheet()))
+    return QtWidgets.QDialog.Rejected
+QtWidgets.QDialog.exec_ = fake_exec
+core.confirm(w, 'T', 'body', yes='해소 확인', no='취소', danger=True)
+QtWidgets.QDialog.exec_ = orig
+check('1. confirm 버튼 한글 + 명시적 스타일',
+      any(t == '해소 확인' for t,_ in d_txt) and all(s for _,s in d_txt),
+      f'{[t for t,_ in d_txt]}')
+
+# ── 2. link.age() 가 센티넬(1e9) 을 UI 로 흘리지 않는가 ──
+lk = core.RadarLink('127.0.0.1')
+check('2. age() 미수신 시 None', lk.age() is None, repr(lk.age()))
+
+# ── 3. SOP 검색 질의가 한글인가 ──
+q = core.SOP_QUERY.get('fall_detected','')
+check('3. SOP 질의 한글', any('가' <= c <= '힣' for c in q), q[:30])
+
+# ── 4. LLM 마크다운 별표 제거 ──
+h = core.md_to_html('**굵게** 그리고 *기울임*\n- 불릿')
+check('4. 마크다운 → HTML', '*' not in h and '<b>' in h, h[:50])
+
+# ── 5. 미설치 구역을 '투입'으로 칠하지 않는가 ──
+pump(20)
+w.dash.refresh(); app.processEvents()
+plan = w.dash.plan
+import facility as fac
+check('5. 미설치 구역을 감시중으로 칠하지 않음',
+      all(not plan.state[z]['live'] for z in ('B', 'C')),
+      {z: plan.state[z]['live'] for z in ('B', 'C')})
+check('6. 감지영역은 레이더 있는 구역만',
+      fac.coverage(ui.RADAR_ZONE) is not None
+      and all(fac.coverage(z) is None for z in ('B', 'C')))
+check('7. 작업자 점은 레이더 설치 구역에만',
+      plan.worker is not None and plan.worker[0] == ui.RADAR_ZONE,
+      f'{plan.worker[0] if plan.worker else None}')
+
+# ── 8. 링크 끊김인데 '이상 없음' 이라고 하지 않는가 (v1 최대 결함) ──
+w2 = ui.ConsoleV2(core.RadarLink('127.0.0.1'), demo=False)
+w2.resize(1440,900); w2.show()
+w2._navigate(ui.PG_MON); w2.tick_ui(); app.processEvents()
+t = w2.monitor.h_t.text()
+check('8. 미연결 시 "이상 없음" 금지', t != '이상 없음', f'표시="{t}"')
+check('9. 미연결 시 무경보 시간 숨김', w2.monitor.h_quiet.text() == '',
+      w2.monitor.h_quiet.text())
+check('10. 미연결 시 계측 —', w2.monitor.tiles['height'].val.text() == '—')
+check('11. 미연결 시 장면 베일', w2.monitor.scene.veil.isVisible())
+# 기준 미학습(READY) 인데 '이상 없음' 이라고 하지 않는가
+w2.pkt = {'phase': ui.PH_READY}
+w2.link.last_rx = time.time()          # 링크는 살아 있게
+w2.tick_ui(); app.processEvents()
+check('12. 기준 미학습 시 "이상 없음" 금지',
+      w2.monitor.h_t.text() != '이상 없음', f'표시="{w2.monitor.h_t.text()}"')
+w2.close()
+
+# ── 13. 판정 임계값이 편집 불가(읽기 전용)인가 ──
+ro = [not isinstance(r,(QtWidgets.QLineEdit,QtWidgets.QSpinBox,QtWidgets.QDoubleSpinBox)) for r in w.cfg.thr_rows.values()]
+check('13. 판정 임계값 읽기 전용', all(ro), f'{ro}')
+
+# ── 14. 경보 상태기계 ──
+#   ⚠ 위젯 가시성을 보려면 감시 화면이 떠 있어야 한다. 자동 전환은 1.5초
+#     지연이므로 여기서는 직접 이동해 둔다(전환 자체는 19b 에서 검사).
+w.begin_session({'zone': ui.RADAR_ZONE, 'shift': '주간조', 'operator': '홍유빈'})
+app.processEvents()
+w.demo_src.t0 = time.time()-7; pump(20); w.tick_ui()
+check('14. 경보 발생 → UNACK', w.alarm == ui.ST_UNACK, w.alarm)
+b = w.monitor.b_right.text()
+w.do_ack()
+check('15. 확인함 = ACK (경보 유지)',
+      w.alarm == ui.ST_ACK and w.monitor.alert_box.isVisible())
+pump(6)
+check('16. 자동 해제 없음 (경보 지속)',
+      w.alarm == ui.ST_ACK and w.monitor.banner.isVisible())
+
+# ── 17. 젯슨 시계가 아니라 노트북 수신 시각 기준 경과 ──
+check('17. 경과시간 = 노트북 기준', abs(w.alert_t0 - time.time()) < 30,
+      f'alert_t0 diff={time.time()-w.alert_t0:.1f}s')
+
+# ── 18. 미확인 경보 중 화면 이탈 차단 ──
+w.clear_alarm(); w.last_ev_id = 0; w.alarm = ui.ST_NORMAL
+w.demo_src.t0 = time.time()-7; pump(20)
+nav = [b.isEnabled() for b in w.nav.buttons]
+check('18. UNACK 중 네비 잠금', nav == [False,True,False,False,False,False], f'{nav}')
+w._navigate(ui.PG_DASH); pump(3)
+check('19a. 자동 전환 전에는 평면도를 보여 준다',
+      w.stack.currentIndex() == ui.PG_DASH, f'page={w.stack.currentIndex()}')
+_t0 = time.time()
+while time.time() - _t0 < (ui.AUTO_NAV_MS / 1000.0 + 1.0):
+    w.on_packet(w.demo_src.read()); app.processEvents(); time.sleep(0.02)
+check(f'19b. {ui.AUTO_NAV_MS}ms 뒤 감시 화면으로 자동 전환',
+      w.stack.currentIndex() == ui.PG_MON, f'page={w.stack.currentIndex()}')
+
+# ── 20. 전력 복구는 체크 3개 + 확인 ──
+r = core.RestorePopup(w)
+check('20. 전력복구 체크 3개 · 기본 비활성',
+      len(r.checks) == 3 and not r.ok.isEnabled())
+for c in r.checks: c.setChecked(True)
+check('21. 체크 완료 시에만 활성', r.ok.isEnabled())
+
+# ── 22. 폰트 8pt 금지 (radar_common 지침) ──
+small = []
+for wd in w.findChildren(QtWidgets.QWidget):
+    if isinstance(wd,(QtWidgets.QLabel,QtWidgets.QPushButton)) and wd.isVisible():
+        ps = wd.font().pointSize()
+        if 0 < ps < 9: small.append((type(wd).__name__, wd.text()[:16], ps))
+check('22. 8pt 미만 텍스트 없음', not small, f'{small[:4]}')
+
+# ── 23. full 패킷 히스토리 이어붙이기 ──
+w.pkt = dict(w.pkt); w.pkt['cz'] = [1,2,3]
+p = w.demo_src.read(); p.pop('cz', None); p['full'] = False
+w.on_packet(p)
+check('23. full 아닌 패킷의 히스토리 승계', w.pkt.get('cz') == [1,2,3], w.pkt.get('cz'))
+
+# ── 24. 구역 일관성 ──
+d = w.demo_src.read()
+alert_z = [z for z,v in d['zone_state'].items() if v=='ALERT']
+trip_z  = [z for z,v in d['breaker']['state'].items() if v!='ON']
+check('24. 데모 구역 = RADAR_ZONE',
+      d['ev']['zone']==ui.RADAR_ZONE and alert_z==[ui.RADAR_ZONE] and trip_z==[ui.RADAR_ZONE],
+      f"ev={d['ev']['zone']} alert={alert_z} trip={trip_z}")
+
+# ── 25. 자동조치 문구가 본 패널/드로어에서 일치 ──
+check('25. 자동조치 문구 일치',
+      w.monitor.auto_lb.text() == w.drawer.sop.done.text())
+
+# ── 26. 조치 가이드가 별도 OS 창이 아닌가 ──
+check('26. 조치 가이드 = 인앱 위젯', not w.drawer.isWindow() and w.drawer.parent() is not None)
+
+# ── 27. 빨강 사용 제한 (경보 중에도 계측은 흰색) ──
+w.demo_src.t0 = time.time()-7; pump(10); w.tick_ui()
+col = w.monitor.tiles['height'].val.styleSheet()
+check('27. 경보 중 계측 수치는 빨강 아님', ui.RED not in col, col)
+
+# ══════════════════════════════════════════════════════════════════════
+# 인체 도식 (8/01 추가) — 도식이 '측정한 것' 과 어긋나지 않는지
+# ══════════════════════════════════════════════════════════════════════
+import numpy as _np
+w.clear_alarm(); w.last_ev_id = 0
+w._navigate(ui.PG_MON)
+w.demo_src.t0 = time.time()          # 서 있는 구간
+w.scene.track.pose.clear()
+pump(40)
+ps = w.scene.track.pose.estimate()
+assert ps is not None, '자세 추정 실패 — 데모 데이터 확인'
+seg = core.Track3D.stick2d(ps)
+cl = w.scene.track.pose.cloud()
+check('28. 서 있는 도식의 발이 바닥에 닿음',
+      abs(seg[:, 1].min()) < 0.12, f'발 높이 {seg[:,1].min():+.2f} m')
+check('29. 머리 추정점이 몸 중심보다 위',
+      ps['head'][1] < ps['center'][1],
+      f"머리 {core.CEILING_H-ps['head'][1]:.2f} m / 중심 {core.CEILING_H-ps['center'][1]:.2f} m")
+ov = min(seg[:,0].max(), cl[:,0].max()) - max(seg[:,0].min(), cl[:,0].min())
+check('30. 도식이 점군 위에 얹힘(서 있음)', ov > 0.15, f'겹침 {ov:.2f} m')
+
+w.demo_src.t0 = time.time()-7        # 누운 구간
+pump(40)
+pl = w.scene.track.pose.estimate()
+segl = core.Track3D.stick2d(pl)
+cll = w.scene.track.pose.cloud()
+ovl = min(segl[:,0].max(), cll[:,0].max()) - max(segl[:,0].min(), cll[:,0].min())
+check('31. 도식이 점군 위에 얹힘(누움)', ovl > 0.5, f'겹침 {ovl:.2f} m')
+check('32. 누운 도식이 바닥 근처', segl[:,1].max() < 0.9,
+      f'최고 {segl[:,1].max():.2f} m')
+prev, flips = None, 0
+for _ in range(120):
+    w.on_packet(w.demo_src.read()); app.processEvents()
+    r = w.scene.track.pose.estimate()
+    if r:
+        if prev is not None and float(_np.dot(r['axis'], prev)) < 0:
+            flips += 1
+        prev = _np.array(r['axis'])
+check('33. 누운 상태 축 부호 반전 없음', flips == 0, f'{flips}회/120프레임')
+check('34. 도식에 관절 자유도가 없음(고정 비율)',
+      set(core.STICK) == {'head_t','head_r','neck','shoulder','hip',
+                          'sh_w','hand_t','hand_w','foot_t','foot_w'})
+
+print('\n' + '='*62)
+print(f'통과 {len(OK)} / 실패 {len(NG)}')
+print('='*62)
+for x in OK: print('  OK  ', x)
+if NG:
+    print()
+    for x in NG: print('  NG  ', x)
