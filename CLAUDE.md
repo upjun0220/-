@@ -96,22 +96,21 @@
 
 ## 5. 수정 후 반드시 실행 (환경: **내 PC PowerShell**)
 
-`console_ui.py` / `radar_core.py` / `radar_common.py`를 건드렸으면:
+`console_ui.py` / `radar_core.py` / `radar_common.py`를 건드렸으면(`cd` 불필요 — 검증 스크립트는 실행 위치와 무관하게 자기 위치 기준으로 돈다):
 
 ```powershell
-cd "C:\Users\82102\OneDrive\문서\Claude\Projects\공모전\01_현행코드"
-python -m pyflakes console_ui.py radar_core.py radar_common.py facility.py
-python 테스트_v1결함_재발검사.py
-python 테스트_레이아웃_검증.py
-python 테스트_실데이터_재생.py
-python 테스트_평면도_경보흐름.py
+python -m pyflakes 01_현행코드\console_ui.py 01_현행코드\radar_core.py 01_현행코드\radar_common.py 01_현행코드\facility.py
+python 01_현행코드\테스트_v1결함_재발검사.py
+python 01_현행코드\테스트_레이아웃_검증.py
+python 01_현행코드\테스트_실데이터_재생.py
+python 01_현행코드\테스트_평면도_경보흐름.py
 ```
 
 `jetson_sender.py` / `radar_common.py`를 건드렸으면 추가로:
 
 ```powershell
-python verify_port.py
-python verify_jetson_safe.py
+python 01_현행코드\verify_port.py
+python 01_현행코드\verify_jetson_safe.py
 ```
 
 **통과 기준은 전부 0건 / 종료코드 0이다.** 하나라도 NG면 완료라고 보고하지 않는다.
@@ -163,7 +162,7 @@ LLM은 4레이어로 쓴다 — L1 브리핑 / L2 XAI 근거 / L3 RAG / L4 질�
 - **예외를 조용히 삼키지 않는다.** 실패는 화면이나 로그에 표시한다.
 - **센티넬 값을 UI로 흘리지 않는다.** (`1e9` 대신 `None` → "연결 전")
 - 새 기능은 **필요한 최소만** 쓴다. 추측 기반 추상화·미래 대비 스캐폴딩 금지. 단, **검증 스크립트와 안전 방어 코드는 이 규칙의 예외**다 — 중복이라도 남긴다.
-- **git 명령에 `cd`를 붙이지 않는다.** 세션은 이미 저장소 루트다. `cd …; git status` 는 매번 훅 실행 경고를 띄운다. `cd` 가 필요한 것은 상대 경로를 쓰는 `01_현행코드/` 의 파이썬 스크립트뿐이다.
+- **`cd`를 붙이지 않는다.** git 명령은 세션이 이미 저장소 루트다. `01_현행코드/`의 검증 스크립트(테스트 4종 · `replay_jsonl.py` · `sim_jetson.py` · `verify_port.py` 등)도 전부 자기 위치 기준으로 돌게 돼 있어 `cd` 없이 `python 01_현행코드\파일.py` 형태로 바로 실행한다. `cd A; python B` 형태는 매번 훅 실행 경고를 띄운다.
 
 ---
 

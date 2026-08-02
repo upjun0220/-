@@ -1,8 +1,7 @@
 """테스트_실데이터_재생.py — 실측 jsonl 을 UDP 로 흘려 UI 전 경로를 검증한다
 
-  실행: [내 PC PowerShell]
-      cd "C:\\Users\\82102\\OneDrive\\문서\\Claude\\Projects\\공모전\\01_현행코드"
-      python 테스트_실데이터_재생.py
+  실행: [내 PC PowerShell] — cd 불필요, 어디서 실행해도 자기 위치 기준으로 돈다.
+      python 01_현행코드\테스트_실데이터_재생.py
 
   창을 띄우지 않고(offscreen) 돌며, 각 상황마다 화면 상태를 실제로 읽어 검사한다.
   화면을 눈으로 보려면 replay_jsonl.py + console_ui.py 두 창을 쓰면 된다.
@@ -33,6 +32,10 @@ if sys.platform == 'win32':
         'QT_QPA_FONTDIR',
         os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts'))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# ⚠ [8/03] cd 없이 어디서 실행해도 같은 결과가 나오게 한다. os.chdir() 없이는
+#   grab().save('replay_*.png')(233행)가 실행 위치 기준으로 저장돼, 프로젝트
+#   루트에서 그냥 돌리면 스크린샷이 01_현행코드가 아니라 루트에 쌓인다.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import replay_jsonl as rp                                    # noqa: E402
 import radar_core as core                                    # noqa: E402

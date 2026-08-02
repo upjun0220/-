@@ -13,24 +13,20 @@ description: console_ui.py / radar_core.py / radar_common.py / facility.py 를 �
 
 ## 실행 (환경: 내 PC PowerShell)
 
-검증 스크립트들은 상대 경로(`../03_데이터/…`)를 쓰므로 **반드시 `01_현행코드/` 안에서** 실행한다.
-
-```powershell
-cd "C:\Users\82102\OneDrive\문서\Claude\Projects\공모전\01_현행코드"
-```
+`cd` 불필요 — 검증 스크립트는 전부 자기 위치(`__file__`) 기준으로 경로를 찾으므로 어디서 실행해도 같은 결과가 나온다.
 
 ### 1단계 — 정적 검사 (실패하면 여기서 멈춘다)
 ```powershell
-python -m pyflakes console_ui.py radar_core.py radar_common.py facility.py
+python -m pyflakes 01_현행코드\console_ui.py 01_현행코드\radar_core.py 01_현행코드\radar_common.py 01_현행코드\facility.py
 ```
 기준: **출력 없음**. 경고가 하나라도 나오면 고치고 다시 돌린다.
 
 ### 2단계 — 자동 테스트 4종
 ```powershell
-python 테스트_v1결함_재발검사.py
-python 테스트_레이아웃_검증.py
-python 테스트_실데이터_재생.py
-python 테스트_평면도_경보흐름.py
+python 01_현행코드\테스트_v1결함_재발검사.py
+python 01_현행코드\테스트_레이아웃_검증.py
+python 01_현행코드\테스트_실데이터_재생.py
+python 01_현행코드\테스트_평면도_경보흐름.py
 ```
 
 | 스크립트 | 무엇을 보나 | 통과 기준 |
@@ -45,8 +41,8 @@ python 테스트_평면도_경보흐름.py
 ### 3단계 — 젯슨을 건드렸다면 추가
 `jetson_sender.py` 또는 `radar_common.py`를 수정했으면:
 ```powershell
-python verify_port.py
-python verify_jetson_safe.py
+python 01_현행코드\verify_port.py
+python 01_현행코드\verify_jetson_safe.py
 ```
 기준: 둘 다 **종료코드 0**. `verify_port.py`는 `classify()` 이식이 무손실인지, `verify_jetson_safe.py`는 노트북용 수정이 젯슨을 깨지 않는지 증명한다.
 
@@ -60,7 +56,7 @@ python verify_jetson_safe.py
 | pyflakes | 경고 0 |
 | v1 결함 재발 | 35항목 0건 |
 | 레이아웃 (4해상도) | 잘림·겹침 0건 |
-| 실데이터 재생 | 57항목 0건 |
+| 실데이터 재생 | 64항목 0건 |
 | 평면도 경보흐름 | 16항목 0건 |
 ```
 
@@ -73,11 +69,11 @@ python verify_jetson_safe.py
 
 ## 눈으로 볼 때
 
-자동 테스트는 창을 안 띄운다. 실제 화면을 봐야 하면 PowerShell 창 2개:
+자동 테스트는 창을 안 띄운다. 실제 화면을 봐야 하면 PowerShell 창 2개(역시 `cd` 불필요):
 ```powershell
 # 창1
-python replay_jsonl.py
+python 01_현행코드\replay_jsonl.py
 # 창2
-python console_ui.py --live 127.0.0.1
+python 01_현행코드\console_ui.py --live 127.0.0.1
 ```
-젯슨 없이 프로토콜만 볼 때는 `replay_jsonl.py` 대신 `python sim_jetson.py`.
+젯슨 없이 프로토콜만 볼 때는 `replay_jsonl.py` 대신 `python 01_현행코드\sim_jetson.py`.
