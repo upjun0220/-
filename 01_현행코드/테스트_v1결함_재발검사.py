@@ -2,6 +2,15 @@
 """v1 에서 고쳤던 결함이 v2 에 재발했는지 런타임으로 검사한다."""
 import os, sys, time, traceback
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+# ⚠ [8/02 실측] offscreen 플러그인이 번들 Qt5/lib/fonts 를 못 찾아 families()=0 →
+#   resolve_font() 가 매칭 못 하고 초기값이 유지되며 합성 폰트 메트릭이 글자 폭을
+#   부풀려 허위 잘림을 만든다. 근거: ① offscreen families 0 / 실제 창 349
+#   ② QT_QPA_FONTDIR 지정 시 offscreen 도 0→251, 잘림 9→0건 ③ 실제 창(Noto Sans KR)
+#   에서 잘림 0건(스크린샷 확인). 젯슨(Linux)에서 돌 수 있으므로 win32 에서만 설정한다.
+if sys.platform == 'win32':
+    os.environ.setdefault(
+        'QT_QPA_FONTDIR',
+        os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts'))
 sys.argv=['console_ui.py']
 import console_ui as ui
 import radar_core as core

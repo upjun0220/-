@@ -112,6 +112,13 @@ def resolve_font():
     """설치된 폰트 중 우선순위가 가장 높은 것을 고른다. QApplication 생성 후 호출."""
     global FONT
     fams = set(QtGui.QFontDatabase().families())
+    if not fams:
+        # ⚠ [8/02 실측] families() 가 비면 아래 루프가 한 번도 매칭되지 않아 108줄
+        #   초기값이 조용히 유지된다. 데모 PC 에서 폰트 캐시가 깨지거나 Noto Sans KR
+        #   이 빠지면 지금 구조로는 아무 신호 없이 글자가 밀린다 — 그래서 경고만
+        #   남긴다. 동작(초기값 유지)은 바꾸지 않는다.
+        print(f'⚠ QFontDatabase 가 폰트를 하나도 찾지 못함 — {FONT}(초기값)로 진행',
+              file=sys.stderr)
     for f in FONT_CANDIDATES:
         if f in fams:
             FONT = f
@@ -592,6 +599,20 @@ class SceneView(QtWidgets.QWidget):
 
     def push(self, st, sev='normal', hide_shape=False):
         pose = self.track.push(st, sev, hide_shape)  # 3D 갱신 + 자세 추정
+        if self._mode == self.MODE_2D:
+            self.side.render(self.track.pose.cloud(), pose, sev, hide_shape)
+        return pose
+
+    def redraw(self, sev='normal', hide_shape=False):
+        """새 패킷 없이 이미 누적된 값으로 두 위젯을 다시 그린다.
+
+        ⚠ [8/02] set_mode() 는 모드만 바꾸고 렌더는 안 했다 — 3D(track)는
+          push() 가 모드와 무관하게 매 패킷 갱신하지만 2D(side)는
+          MODE_2D 일 때만 갱신돼서, 전환 직후엔 다음 패킷이 올 때까지
+          죽은 색(생성 시 기본값)이 그대로 보였다. ConsoleV2._refresh_scene
+          가 모드 전환 직후 이걸 불러 즉시 맞춘다.
+        """
+        pose = self.track.redraw(sev, hide_shape)
         if self._mode == self.MODE_2D:
             self.side.render(self.track.pose.cloud(), pose, sev, hide_shape)
         return pose
@@ -1530,6 +1551,7 @@ class MonitorPage(QtWidgets.QWidget):
     ack = QtCore.pyqtSignal()
     resolve = QtCore.pyqtSignal()
     prepare = QtCore.pyqtSignal()
+    mode_changed = QtCore.pyqtSignal()   # 3D↔2D 전환 — ConsoleV2 가 즉시 재렌더
 
     def __init__(self, has_prepare=True):
         super().__init__()
@@ -1824,6 +1846,7 @@ class MonitorPage(QtWidgets.QWidget):
     def _set_mode(self, mode):
         if self.scene.set_mode(mode):
             self._sync_seg()
+            self.mode_changed.emit()
 
     def _sync_seg(self):
         m = self.scene.mode()
@@ -2320,6 +2343,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.monitor.ack.connect(self.do_ack)
         self.monitor.resolve.connect(self.do_resolve)
         self.monitor.prepare.connect(self.go_prepare)
+        self.monitor.mode_changed.connect(self._refresh_scene)
         self.stack.addWidget(as_page(self.monitor))
         self.scene = self.monitor.scene
         self.track = self.scene.track          # SettingsPopup 진단 탭이 참조한다
@@ -2424,6 +2448,24 @@ class ConsoleV2(QtWidgets.QMainWindow):
         if ev.get('active'):
             return ev.get('sev') or event_sev(ev.get('type'))
         return 'normal'
+
+    def _refresh_scene(self):
+        """3D↔2D 전환 직후, 새 패킷을 기다리지 않고 즉시 다시 그린다.
+
+        ⚠ [8/02] set_mode() 는 렌더를 안 하고 다음 패킷을 기다렸다. 젯슨
+          링크가 끊긴 뒤에도 LINK_TIMEOUT(3초, radar_common.py)까지는 아직
+          stale 베일이 안 뜨는데, 그 창 안에서 경보 중 모드를 바꾸면 다음
+          패킷이 영영 안 와 방금 활성화된 위젯이 예전 색에 멈춰 있을 수
+          있었다. 새 상태를 만들지 않고 이미 있는 self.pkt/self.alarm/
+          self.alert 로만 다시 그린다(§1의 '상태를 새로 늘리지 않는다').
+        """
+        if not self.pkt:
+            return
+        sev = self.cur_sev()
+        lost = (self.alarm != ST_NORMAL
+                and (self.alert or {}).get('type') in ('fall_detected',
+                                                       'stationary_anomaly'))
+        self.scene.redraw(sev, hide_shape=lost)
 
     def _lock_nav(self):
         """미확인(UNACK) 경보 중에는 감시 화면만 남긴다.

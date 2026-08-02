@@ -743,8 +743,12 @@ class SopEngine(QtCore.QObject):
                     continue
                 try:
                     self._cache[et] = self._gen(et, '')
-                except Exception:
-                    return                     # ollama 없으면 나머지도 실패 → 중단
+                except Exception as e:
+                    # ollama 없으면 나머지도 실패 → 중단. 단, 조용히 넘어가지 않는다 —
+                    #   CLAUDE.md §9. 실패해도 경보 시 그때 생성해 화면은 정상 동작한다.
+                    self.status.emit(f'AI 요약 사전 생성 실패: {e}  (ollama serve 확인) '
+                                     f'— 경보 시 그때 생성합니다')
+                    return
             self.status.emit('AI 요약 사전 생성 완료 (경보 시 즉시 표시)')
         threading.Thread(target=_w, daemon=True).start()
 
@@ -868,10 +872,19 @@ class Track3D(QtWidgets.QWidget):
 
     def push(self, st, sev='normal', hide_shape=False):
         self.pose.push(st.get('points') or [], st.get('centroid'))
-        pts = self.pose.cloud()
         c = st.get('centroid') or {}
         self.trail.append([c.get('cx', 0), c.get('cz', 0),
                            CEILING_H - c.get('cy', CEILING_H)])
+        return self.redraw(sev, hide_shape)
+
+    def redraw(self, sev='normal', hide_shape=False):
+        """새 프레임을 먹지 않고 이미 누적된 값으로만 다시 그린다.
+
+        ⚠ [8/02] push() 를 다시 부르면 pose.push() 가 같은 프레임을 누적
+          버퍼에 중복 적재한다. 모드 전환처럼 새 패킷 없이 화면만 맞춰야
+          할 때(ConsoleV2._refresh_scene) 는 이 쪽을 쓴다.
+        """
+        pts = self.pose.cloud()
         p = self.pose.estimate()
         pt_c, fig_c, hd_c = self.sev_colors(sev)
         if self.gl is not None:

@@ -23,6 +23,15 @@ import threading
 import time
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+# ⚠ [8/02 실측] offscreen 플러그인이 번들 Qt5/lib/fonts 를 못 찾아 families()=0 →
+#   resolve_font() 가 매칭 못 하고 초기값이 유지되며 합성 폰트 메트릭이 글자 폭을
+#   부풀려 허위 잘림을 만든다. 근거: ① offscreen families 0 / 실제 창 349
+#   ② QT_QPA_FONTDIR 지정 시 offscreen 도 0→251, 잘림 9→0건 ③ 실제 창(Noto Sans KR)
+#   에서 잘림 0건(스크린샷 확인). 젯슨(Linux)에서 돌 수 있으므로 win32 에서만 설정한다.
+if sys.platform == 'win32':
+    os.environ.setdefault(
+        'QT_QPA_FONTDIR',
+        os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts'))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import replay_jsonl as rp                                    # noqa: E402
@@ -36,6 +45,31 @@ OK, NG = [], []
 def check(name, cond, detail=''):
     (OK if cond else NG).append(name + (f'  → {detail}' if detail else ''))
     print(('  OK   ' if cond else '  NG   ') + name + (f'  → {detail}' if detail else ''))
+
+
+# ⚠ [8/02] 인체 도식 위젯은 두 종류다 — 3D(scene.track.cap, GLLinePlotItem)와
+#   2D(scene.side.cap, PlotCurveItem). 색·선분 표현이 서로 달라 그대로 비교할 수
+#   없다. 예전엔 2D 쪽만 검사했는데, 앱 기본 모드가 3D라 2D는 명시 전환 없이는
+#   갱신되지 않는 죽은 위젯이었다(vib NG로 발견) — 그래서 두 위젯 모두 같은
+#   기준으로 비교할 수 있게 여기서 통일한다.
+def cap_n_seg(cap):
+    """그려진 선분 점 개수. 3D(.pos)·2D(.getData()) 표현 차이를 없앤다."""
+    if hasattr(cap, 'getData'):
+        d = cap.getData()[0]
+        return 0 if d is None else len(d)
+    pos = getattr(cap, 'pos', None)
+    return 0 if pos is None else len(pos)
+
+
+def cap_color_hex(cap):
+    """도식 색을 #RRGGBB 로 통일한다. 3D는 .color(0~1 실수 튜플), 2D는 pen 객체."""
+    if hasattr(cap, 'opts') and cap.opts.get('pen') is not None:
+        return cap.opts['pen'].color().name().upper()
+    c = getattr(cap, 'color', None)
+    if c is None:
+        return None
+    r, g, b = c[0], c[1], c[2]
+    return '#{:02X}{:02X}{:02X}'.format(round(r * 255), round(g * 255), round(b * 255))
 
 
 def pump(app, w, sec):
@@ -129,30 +163,50 @@ def main():
             check(f'{label}: 배너 표시', w.monitor.banner.isVisible())
             check(f'{label}: 구역 = {RADAR_ZONE}',
                   (w.alert or {}).get('zone') == RADAR_ZONE)
-            _d = w.monitor.scene.side.cap.getData()[0]
-            n_seg = 0 if _d is None else len(_d)
+
+            # ⚠ [8/02] 3D(기본 모드, 이미 갱신됨)와 2D(명시 전환 후 다음 패킷으로
+            #   갱신됨) 둘 다 검사한다 — 한쪽만 보면 이번 vib 사각지대처럼 다른
+            #   쪽이 죽어 있어도 못 잡는다.
+            p = w.scene.track.pose.estimate()
+            w.scene.set_mode(w.scene.MODE_2D)
+            pump(app, w, 0.3)
+            w.tick_ui()
+            widgets = (('3D', w.scene.track.cap), ('2D', w.monitor.scene.side.cap))
+
             if et in ('fall_detected', 'stationary_anomaly'):
                 # 사람 경보 중에는 형상을 지운다 — 정지한 사람은 레이더가 놓치고
                 #   그 자리에 남는 반사를 사람으로 그리면 화면이 거짓말을 한다
-                check(f'{label}: 사람 경보 중 형상 숨김', n_seg == 0,
-                      f'선분 {n_seg}개')
+                # ⚠ shape_ok 가 애초에 False 면 그릴 게 없어 "숨김" 검사가 아무것도
+                #   증명 못 하는 공검사가 된다 — 숨길 대상이 실제로 있었는지 먼저 본다.
+                check(f'{label}: 형상이 원래 존재했음(숨김 검사가 공검사 아님)',
+                      bool(p and p['shape_ok']),
+                      'shape_ok=False — 이 검사는 아무것도 증명 못 함'
+                      if not (p and p['shape_ok']) else 'shape_ok=True')
+                for tag, cap in widgets:
+                    n_seg = cap_n_seg(cap)
+                    check(f'{label}: 사람 경보 중 형상 숨김 [{tag}]', n_seg == 0,
+                          f'선분 {n_seg}개')
                 check(f'{label}: 캡션에 추적 소실 명시',
                       '추적 소실' in w.monitor._pose_text, w.monitor._pose_text[:60])
             else:
-                check(f'{label}: 인체 도식 색',
-                      w.monitor.scene.side.cap.opts['pen'].color().name().upper()
-                      == want_col.upper(),
-                      w.monitor.scene.side.cap.opts['pen'].color().name())
+                for tag, cap in widgets:
+                    col = cap_color_hex(cap)
+                    check(f'{label}: 인체 도식 색 [{tag}]', col == want_col.upper(),
+                          f'{col} (기대 {want_col.upper()})')
         else:
             pump(app, w, 3.0)
             w.tick_ui()
             check(f'{label}: 경보 없음', w.alarm == ui.ST_NORMAL, w.alarm)
             check(f'{label}: 히어로 = 이상 없음',
                   w.monitor.h_t.text() == '이상 없음', w.monitor.h_t.text())
-            check(f'{label}: 도식 색 = 초록',
-                  w.monitor.scene.side.cap.opts['pen'].color().name().upper()
-                  == GREEN.upper(),
-                  w.monitor.scene.side.cap.opts['pen'].color().name())
+            w.scene.set_mode(w.scene.MODE_2D)
+            pump(app, w, 0.3)
+            w.tick_ui()
+            for tag, cap in (('3D', w.scene.track.cap),
+                             ('2D', w.monitor.scene.side.cap)):
+                col = cap_color_hex(cap)
+                check(f'{label}: 도식 색 = 초록 [{tag}]', col == GREEN.upper(),
+                      f'{col} (기대 {GREEN.upper()})')
 
         # 인체 도식이 실제로 그려졌는지 (모든 상황 공통)
         p = w.scene.track.pose.estimate()
