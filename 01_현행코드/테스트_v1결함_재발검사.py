@@ -61,6 +61,9 @@ check('0g. 대화 말풍선은 사용자·AI 좌우 구분',
       'width="18%"' in w.assistant._bubble('질문', True, '나')
       and w.assistant._bubble('질문', True, '나')
       != w.assistant._bubble('답변', False, 'AI'))
+check('0h. 입력창 Enter가 추천 질문 버튼을 함께 누르지 않음',
+      all(not b.autoDefault() and not b.isDefault()
+          for b in w.assistant.findChildren(QtWidgets.QPushButton)))
 
 # ── 1. confirm() 버튼이 다크테마에서 보이는가 (v1 7/31) ──
 d_txt = []

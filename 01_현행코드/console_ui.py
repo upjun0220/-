@@ -2095,6 +2095,10 @@ class AssistantDrawer(QtWidgets.QDialog):
         chips = hbox(s=SP2)
         for text in ('왜 레이더를 쓰나요?', '현재 상태 알려줘', '낙상 조치 근거는?'):
             b = button(text, 'quiet', F_CAP, 30)
+            # QDialog는 첫 QPushButton을 기본 버튼으로 승격할 수 있다. 입력창에서
+            # Enter를 누른 같은 키 이벤트로 추천 질문까지 실행되는 것을 막는다.
+            b.setAutoDefault(False)
+            b.setDefault(False)
             b.clicked.connect(lambda _, q=text: self.ask(q))
             chips.addWidget(b)
         v.addLayout(chips)
@@ -2108,6 +2112,8 @@ class AssistantDrawer(QtWidgets.QDialog):
         self.inp.returnPressed.connect(self._send)
         row.addWidget(self.inp, 1)
         send = button('보내기', 'primary', F_LABEL, 38, 72)
+        send.setAutoDefault(False)
+        send.setDefault(False)
         send.clicked.connect(self._send)
         row.addWidget(send)
         v.addLayout(row)
