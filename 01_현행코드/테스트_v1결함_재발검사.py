@@ -29,6 +29,28 @@ def pump(n=10):
     for _ in range(n):
         w.on_packet(w.demo_src.read()); app.processEvents()
 
+# ── 0. 접힌 메뉴·원래 사이드바·SOP 폭 전환이 서로 겹치지 않는가 ──
+app.processEvents()
+closed_width = w.stack.width()
+check('0a. 사이드바 기본 숨김 · 햄버거 표시',
+      not w.nav.isVisible() and w.menu_gutter.isVisible()
+      and w.menu_btn.isVisible())
+w._toggle_nav(); app.processEvents()
+check('0b. 열린 메뉴는 원래 사이드바 레이아웃 복원',
+      w.nav.isVisible() and not w.menu_gutter.isVisible()
+      and w.stack.width() == w.width() - w.NAV_WIDTH,
+      f'closed={closed_width} open={w.stack.width()}px')
+w.drawer.open_at(0); app.processEvents()
+check('0c. 경보 드로어는 사이드바 224px를 SOP에 추가',
+      w.stack.width() == w.width()
+      and w.drawer._extra_width == w.NAV_WIDTH,
+      f'stack={w.stack.width()} drawer+={w.drawer._extra_width}')
+w.drawer.close_drawer(); app.processEvents()
+check('0d. 안전 질문은 사건별 RAG로 라우팅',
+      w.assistant._event_for('낙상 조치 근거는?') == 'fall_detected')
+check('0e. 핵심 시스템 질문은 검증된 명세로 즉시 응답',
+      '개인정보' in w.assistant._local_answer('왜 카메라 대신 레이더를 쓰나요?'))
+
 # ── 1. confirm() 버튼이 다크테마에서 보이는가 (v1 7/31) ──
 d_txt = []
 orig = QtWidgets.QDialog.exec_
@@ -50,6 +72,13 @@ check('2. age() 미수신 시 None', lk.age() is None, repr(lk.age()))
 # ── 3. SOP 검색 질의가 한글인가 ──
 q = core.SOP_QUERY.get('fall_detected','')
 check('3. SOP 질의 한글', any('가' <= c <= '힣' for c in q), q[:30])
+check('3-1. 낙상 SOP가 응급처치 원문 우선',
+      '응급처치' in core.SOP_RESPONSE_SOURCE['fall_detected']['03_낙상_응급처치'],
+      core.SOP_RESPONSE_SOURCE['fall_detected'])
+check('3-2. 정지형 감전 SOP가 2021 응급처치 원문 우선',
+      '산업재해 형태별 응급처치' in
+      core.SOP_RESPONSE_SOURCE['stationary_anomaly']['01_감전_LOTO'],
+      core.SOP_RESPONSE_SOURCE['stationary_anomaly'])
 
 # ── 4. LLM 마크다운 별표 제거 ──
 h = core.md_to_html('**굵게** 그리고 *기울임*\n- 불릿')
@@ -168,6 +197,9 @@ check('27. 경보 중 계측 수치는 빨강 아님', ui.RED not in col, col)
 
 # ── 28. 경보 첫 패킷부터 사람 형상을 숨기는가 ──
 w.clear_alarm(); w.last_ev_id = 0; w._navigate(ui.PG_MON)
+# 100ms 데모 타이머가 검사 패킷 사이에 끼면 push 호출 수가 2회가 되어
+# 첫 패킷 검사가 비결정적이므로, 이 한 호출만 직접 주입한다.
+w.demo_timer.stop()
 first = w.demo_src.read()
 first['ev'] = dict(first.get('ev') or {}, active=True, id=999999,
                    type='fall_detected', sev='critical', zone=ui.RADAR_ZONE,
@@ -180,6 +212,7 @@ def capture_push(pkt, sev='normal', hide_shape=False):
 w.scene.push = capture_push
 w.on_packet(first); app.processEvents()
 w.scene.push = orig_push
+w.demo_timer.start(100)
 check('28. 경보 첫 패킷부터 사람 형상 숨김', hide_args == [True], hide_args)
 
 # ══════════════════════════════════════════════════════════════════════

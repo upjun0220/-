@@ -67,11 +67,12 @@
   ⚠ 자동 해제는 없다. ⚠ '확인함'은 소리를 끄는 것이지 경보를 지우는 것이 아니다.
 """
 import sys
-import json
 import time
+import json
 import threading
 import argparse
 from collections import deque
+from html import escape as html_escape
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
@@ -81,8 +82,8 @@ import facility as fac
 import radar_core as core
 from radar_core import (
     RadarLink, INSTANT_ACTION,
-    PowerPopup, RestorePopup, QueryPopup, GraphPopup, SettingsPopup,
-    RAG_OK, LLM_MODEL, EMBED_MODEL, HAS_GL,
+    PowerPopup, RestorePopup, GraphPopup, SettingsPopup,
+    RAG_OK, EMBED_MODEL, HAS_GL,
     ST_NORMAL, ST_UNACK, ST_ACK,
 )
 from radar_common import (
@@ -478,8 +479,8 @@ class SideView(QtWidgets.QWidget):
       측면도는 '바닥 0m — 지금 0.57m — 서있음 1.6m' 가 그림 자체로 읽힌다.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         self.plot = pg.PlotWidget()
@@ -1035,12 +1036,12 @@ class Timeline(QtWidgets.QFrame):
 # 5. 조치 가이드 · 판단 근거  (드로어 내용 — 별도 창이 아니다)
 # ══════════════════════════════════════════════════════════════════════
 class SopView(QtWidgets.QWidget):
-    """즉시조치(하드코딩·즉시) → 검색된 매뉴얼 원문 → AI 요약(참고) 순.
+    """즉시조치 → 공식 매뉴얼 → 실측 브리핑 → AI 생성 SOP 순.
 
     ⚠ 순서가 곧 권위 순서다. v1 은 AI 요약이 매뉴얼과 같은 위계로 붙어 있었고,
       실제로 SOP('환자를 움직이지 마십시오')와 AI 문장('움직여야 합니다')이
-      한 화면에서 충돌했다. AI 블록에는 '참고 · 확정 지시 아님' 을 명시하고
-      매뉴얼 아래로 내린다.
+      한 화면에서 충돌했다. AI 생성문은 맨 아래 참고용으로만 두고, 그보다
+      먼저 즉시조치·공식 원문·젯슨 실측값을 결정적으로 표시한다.
     """
 
     def __init__(self):
@@ -1061,7 +1062,7 @@ class SopView(QtWidgets.QWidget):
         v.addWidget(self.body, 3)
         self.stat = lb('', F_CAP, DIM, wrap=True)
         v.addWidget(self.stat)
-        v.addWidget(lb('검색된 안전 매뉴얼 · AI 요약(참고)', F_LABEL, DIM))
+        v.addWidget(lb('검색된 안전 매뉴얼 · 실측 브리핑 · AI 생성', F_LABEL, DIM))
         self.src = QtWidgets.QTextEdit()
         self.src.setReadOnly(True)
         self.src.setFont(f(F_LABEL))
@@ -1086,9 +1087,6 @@ class SopView(QtWidgets.QWidget):
         self.src.setHtml(f'<p style="color:{DIM}">매뉴얼 검색 중…</p>')
 
     def set_status(self, msg):
-        # 사전 생성 완료 같은 시스템 내부 사정은 근무자에게 보고하지 않는다
-        if msg.startswith('AI 요약 사전 생성'):
-            return
         self.stat.setText(msg)
 
     def set_sources(self, et, srcs, ai):
@@ -1098,12 +1096,17 @@ class SopView(QtWidgets.QWidget):
         for n, t in srcs:
             h.append(f'<p style="color:{CYAN};margin:0 0 3px"><b>{n}</b></p>'
                      f'<p style="color:{DIM};margin:0 0 12px">{t}</p>')
-        if ai:
+        brief, sep, generated = ai.partition('\n---AI_SOP---\n')
+        if brief:
             h.append(f'<p style="color:{AMBER};margin:8px 0 3px">'
-                     f'<b>AI 요약 — 참고용. 위 [즉시 조치]와 다르면 즉시 조치를 '
-                     f'따르십시오.</b></p>'
+                     f'<b>실측 상황 브리핑</b></p>'
                      f'<p style="color:{DIM};margin:0 0 10px">'
-                     f'{core.md_to_html(ai)}</p>')
+                     f'{core.md_to_html(brief)}</p>')
+        if sep and generated:
+            h.append(f'<p style="color:{CYAN};margin:8px 0 3px">'
+                     f'<b>AI 생성 SOP · 참고용</b></p>'
+                     f'<p style="color:{TXT};margin:0 0 10px">'
+                     f'{core.md_to_html(generated)}</p>')
         if not h:
             h.append(f'<p style="color:{DIM}">검색 결과 없음 — '
                      f'위 [즉시 조치]를 따르십시오.</p>')
@@ -1203,6 +1206,7 @@ class ActionDrawer(QtWidgets.QFrame):
       된다. 드로어는 부모 레이아웃 안에 있으므로 그럴 수 없다.
     """
     WIDTH = 420
+    visibility_changed = QtCore.pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1251,6 +1255,10 @@ class ActionDrawer(QtWidgets.QFrame):
         self.anim.setDuration(170)
         self.anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
         self._open = False
+        self._extra_width = 0
+
+    def set_extra_width(self, width):
+        self._extra_width = max(0, int(width))
 
     def open_at(self, idx):
         self.stack.setCurrentIndex(idx)
@@ -1275,9 +1283,10 @@ class ActionDrawer(QtWidgets.QFrame):
 
     def _animate(self, opening):
         self._open = opening
+        self.visibility_changed.emit(opening)
         self.anim.stop()
         self.anim.setStartValue(self.maximumWidth())
-        self.anim.setEndValue(self.WIDTH if opening else 0)
+        self.anim.setEndValue(self.WIDTH + self._extra_width if opening else 0)
         self.anim.start()
 
 
@@ -1316,6 +1325,9 @@ class DashboardPage(QtWidgets.QWidget):
         self.alarm_chip.setMinimumWidth(96)
         self.alarm_chip.setMinimumHeight(30)
         head.addWidget(self.alarm_chip)
+        self.ai_anchor = QtWidgets.QWidget()
+        self.ai_anchor.setFixedSize(50, 46)
+        head.addWidget(self.ai_anchor)
         self.clock = lb('', F_H2, TXT, bold=True)
         self.clock.setAlignment(QtCore.Qt.AlignCenter)
         self.clock.setMinimumWidth(104)
@@ -1583,6 +1595,9 @@ class MonitorPage(QtWidgets.QWidget):
         head.addWidget(self.seg3d)
         self.cam = button('시점 초기화', 'ghost', F_LABEL, 30, 96)
         head.addWidget(self.cam)
+        self.ai_anchor = QtWidgets.QWidget()
+        self.ai_anchor.setFixedSize(50, 46)
+        head.addWidget(self.ai_anchor)
         self.link_lb = lb('연결 확인 중', F_LABEL, DIM)
         head.addWidget(self.link_lb)
         self.clock = lb('', F_LABEL, DIM)
@@ -1982,7 +1997,7 @@ class SopGuidePage(QtWidgets.QWidget):
         row.addStretch()
         v.addLayout(row, 1)
         v.addWidget(lb('이 절차는 코드에 고정돼 있어 네트워크·AI 상태와 무관하게 '
-                       '항상 표시됩니다. 검색된 안전 매뉴얼 원문과 AI 요약은 '
+                       '항상 표시됩니다. 검색된 안전 매뉴얼 원문과 실측 브리핑은 '
                        '경보 시 우측 패널에 함께 붙습니다.', F_CAP, FAINT, wrap=True))
         self.list.setCurrentRow(0)
 
@@ -2001,6 +2016,260 @@ class SopGuidePage(QtWidgets.QWidget):
         self.body.setHtml(''.join(html))
 
 
+class AiIconButton(QtWidgets.QToolButton):
+    """말풍선과 AI 배지를 결합한 전역 보조 AI 아이콘."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(46, 46)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setToolTip('Radar-Guard AI 열기')
+        self.setAccessibleName('Radar-Guard AI')
+
+    def paintEvent(self, _event):
+        p = QtGui.QPainter(self)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        bg = QtGui.QColor('#1A2742' if self.underMouse() else '#111B31')
+        p.setPen(QtGui.QPen(QtGui.QColor(EDGE), 1))
+        p.setBrush(bg)
+        p.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 10, 10)
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(QtGui.QColor('#34466E'))
+        p.drawRoundedRect(8, 20, 24, 15, 6, 6)
+        p.drawPolygon(QtGui.QPolygon([QtCore.QPoint(12, 34),
+                                     QtCore.QPoint(10, 39),
+                                     QtCore.QPoint(18, 35)]))
+        p.setBrush(QtGui.QColor('#253658'))
+        p.drawRoundedRect(14, 14, 21, 14, 6, 6)
+        for x in (14, 20, 26):
+            p.setBrush(QtGui.QColor('#91A4CA'))
+            p.drawEllipse(x, 26, 3, 3)
+        p.setBrush(QtGui.QColor('#526A9A'))
+        p.drawEllipse(25, 4, 17, 17)
+        p.setPen(QtGui.QColor('#DCE8FF'))
+        p.setFont(f(7, bold=True))
+        p.drawText(QtCore.QRect(25, 4, 17, 17), QtCore.Qt.AlignCenter, 'AI')
+        p.end()
+
+
+class AssistantDrawer(QtWidgets.QDialog):
+    """전역 시스템 보조 AI 팝업. 차단·복구 명령은 실행하지 않는다."""
+    visibility_changed = QtCore.pyqtSignal(bool)
+    answer_ready = QtCore.pyqtSignal(str, str, float)
+    answer_failed = QtCore.pyqtSignal(str)
+
+    SYSTEM_CONTEXT = (
+        'Radar-Guard는 IWR6843 mmWave 레이더의 포인트 클라우드를 Jetson Orin '
+        'Nano가 판정하고, Windows 노트북은 UDP 수신·관제 UI·SOP RAG를 담당한다. '
+        '낙상·감전·협착 판정과 차단은 젯슨에서 끝나며 LLM은 판정하거나 차단하지 '
+        '않는다. 카메라 대신 레이더를 써 개인정보와 조도·연기 제약을 줄인다. '
+        '정지한 사람은 도플러가 0에 가까워 추적을 놓칠 수 있고, 각분해능 약 28도로 '
+        '포인트가 적어 최근 10프레임을 누적한다. 젯슨에는 RTC가 없어 경과시간은 '
+        '노트북 수신 시각을 쓴다. 위험 경보 중 확정 즉시조치와 공식 SOP가 LLM보다 '
+        '우선하며 전원 재투입은 확인 절차를 거친다.')
+
+    def __init__(self, parent=None, console=None):
+        super().__init__(parent)
+        self.console = console
+        self.setWindowTitle('Radar-Guard AI')
+        self.setModal(False)
+        self.resize(720, 620)
+        self.setMinimumSize(620, 520)
+        self.setStyleSheet(
+            f'QDialog{{background:{PANEL};}}QWidget{{color:{TXT};}}')
+        v = vbox(self, SP4, SP3)
+        head = hbox(s=SP2)
+        head.addWidget(lb('Radar-Guard AI', F_H1, TXT, bold=True))
+        head.addStretch()
+        close = QtWidgets.QToolButton()
+        close.setText('✕')
+        close.setFont(f(F_BODY))
+        close.setStyleSheet(f'border:none;background:transparent;color:{DIM};')
+        close.clicked.connect(self.close_drawer)
+        head.addWidget(close)
+        v.addLayout(head)
+        v.addWidget(lb('시스템 안내 · 현재 상황 · 안전 매뉴얼', F_CAP, DIM))
+
+        self.log = QtWidgets.QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setFont(f(F_BODY))
+        self.log.setStyleSheet(TEXT_QSS)
+        self.log.setHtml(
+            f'<p style="color:{DIM}">Radar-Guard의 기능이나 현재 상황을 물어보세요. '
+            f'안전 조작은 실행하지 않습니다.</p>')
+        v.addWidget(self.log, 1)
+
+        chips = hbox(s=SP2)
+        for text in ('왜 레이더를 쓰나요?', '현재 상태 알려줘', '낙상 조치 근거는?'):
+            b = button(text, 'quiet', F_CAP, 30)
+            b.clicked.connect(lambda _, q=text: self.ask(q))
+            chips.addWidget(b)
+        v.addLayout(chips)
+
+        row = hbox(s=SP2)
+        self.inp = QtWidgets.QLineEdit()
+        self.inp.setFont(f(F_BODY))
+        self.inp.setMinimumHeight(38)
+        self.inp.setPlaceholderText('Radar-Guard에 질문하기')
+        self.inp.setStyleSheet(core.EDIT_QSS)
+        self.inp.returnPressed.connect(self._send)
+        row.addWidget(self.inp, 1)
+        send = button('보내기', 'primary', F_LABEL, 38, 72)
+        send.clicked.connect(self._send)
+        row.addWidget(send)
+        v.addLayout(row)
+        self.answer_ready.connect(self._show_answer)
+        self.answer_failed.connect(self._show_error)
+
+    def open_drawer(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.inp.setFocus()
+        self.visibility_changed.emit(True)
+
+    def close_drawer(self):
+        if self.isVisible():
+            self.close()
+
+    def closeEvent(self, event):
+        self.visibility_changed.emit(False)
+        super().closeEvent(event)
+
+    def _send(self):
+        question = self.inp.text().strip()
+        if question:
+            self.inp.clear()
+            self.ask(question)
+
+    def ask(self, question):
+        self.log.append(
+            f'<p style="color:{CYAN}"><b>나</b> · {html_escape(question)}</p>')
+        local = self._local_answer(question)
+        if local is not None:
+            self._show_answer(local, '실시간 로컬 집계', 0.0)
+            return
+        self.log.append(f'<p style="color:{AMBER}">근거를 확인하고 있습니다…</p>')
+        threading.Thread(target=self._work, args=(question,), daemon=True).start()
+
+    def _local_answer(self, question):
+        c = self.console
+        if c is None:
+            return '연결된 관제 데이터가 없습니다.'
+        if '무슨 시스템' in question or '뭐 하는' in question:
+            return ('Radar-Guard는 카메라 대신 mmWave 레이더로 작업자 낙상·무동작과 '
+                    '설비 이상을 감지하고, 젯슨 차단과 RAG 대응 가이드를 결합한 '
+                    '산업 안전 관제 시스템입니다.')
+        if '레이더' in question and ('왜' in question or '카메라' in question):
+            return ('카메라 제한 구역에서도 개인정보를 촬영하지 않고 작업자의 위치와 '
+                    '움직임을 감지하며, 조도·분진·연기의 영향을 줄이기 위해 mmWave '
+                    '레이더를 사용합니다.')
+        if ('젯슨' in question or '노트북' in question) and '역할' in question:
+            return ('젯슨은 위험 판정과 차단을 독립 수행하고, 노트북은 UDP 수신·화면·'
+                    'SOP RAG를 담당합니다. 노트북 연결이 끊겨도 젯슨 판정은 계속됩니다.')
+        if ('정지' in question or '형상' in question) and (
+                '사라' in question or '안 보' in question or '왜' in question):
+            return ('정지한 사람은 도플러가 0에 가까워 레이더 반사가 줄어 추적을 놓칠 '
+                    '수 있습니다. 이때 UI는 거짓 자세를 그리지 않고 추적 소실을 표시합니다.')
+        if 'LLM' in question or 'AI 역할' in question:
+            return ('AI는 공식 SOP와 젯슨 실측값을 결합해 설명·대응 가이드를 작성하지만 '
+                    '위험 판정, 차단, 경보 해제, 전원 복구를 실행하지 않습니다.')
+        if '차단' in question:
+            zones = c.pwr.tripped()
+            return (f'현재 차단된 구역: {", ".join(zones)}. 재투입은 전기 설비 '
+                    f'확인 절차에서만 가능합니다.' if zones
+                    else '현재 차단된 구역이 없습니다.')
+        if '몇' in question or '건' in question:
+            return f'오늘 기록된 경보는 {len(c.incidents)}건입니다.'
+        if '마지막' in question or '언제' in question:
+            if not c.incidents:
+                return '오늘 기록된 경보가 없습니다.'
+            last = c.incidents[-1]
+            return (f"마지막 경보는 {last.get('detected')} Zone {last.get('zone')} "
+                    f"{EVENT_KO.get(last.get('type'), last.get('type'))}입니다.")
+        if '현재 상태' in question:
+            age = c.link.age() if c.link else None
+            link = f'마지막 수신 {age:.1f}초 전' if age is not None else '젯슨 미수신'
+            return f'{link} · 경보 {len(c.incidents)}건 · 차단 구역 {len(c.pwr.tripped())}곳'
+        return None
+
+    def _work(self, question):
+        import urllib.request
+        started = time.perf_counter()
+        try:
+            event = self._event_for(question)
+            sources, context = [], ''
+            if event:
+                category = core.EVENT_CATEGORY.get(event)
+                vectorstore = core.PGVector(
+                    connection_string=core.CONN_STR,
+                    embedding_function=core.OllamaEmbeddings(model=EMBED_MODEL),
+                    collection_name='safety_manual')
+                docs = core.search_sop_documents(
+                    vectorstore, event, core.SOP_QUERY[event], category)
+                context = '\n'.join(d.page_content for d in docs)[:1400]
+                sources = sorted({d.metadata.get('source_file', '?') for d in docs})
+            live = ''
+            c = self.console
+            if c and c.alert:
+                facts = SopEngineV2.build_facts(c.alert, c.pkt, 0)
+                live = SopEngineV2._fact_block(facts)
+            task_rule = (
+                '공식 매뉴얼에 근거한 조치를 번호로 답하되, 확정 즉시조치와 현장 '
+                '책임자 지시가 우선임을 지켜라.' if event else
+                '질문의 주어와 이유를 첫 문장에 포함해 2~4문장으로 직접 답하라. '
+                '질문을 되묻거나 질문 예시를 만들지 마라.')
+            live_section = f'[현재 젯슨 실측]\n{live}\n' if live else ''
+            prompt = (
+                '너는 Radar-Guard 관제 시스템 전용 보조 AI다. 아래 시스템 명세와 '
+                '공식 매뉴얼, 현재 실측값에 있는 내용만 사용해 한국어로 간결하게 '
+                '답하라. 모르면 모른다고 말하고 차단·경보해제·전원복구를 실행했다고 '
+                f'말하지 마라. {task_rule}\n'
+                f'[시스템 명세]\n{self.SYSTEM_CONTEXT}\n'
+                f'[공식 매뉴얼]\n{context or "해당 없음"}\n'
+                f'{live_section}'
+                f'[질문]\n{question}')
+            body = json.dumps({
+                'model': core.LLM_MODEL, 'prompt': prompt, 'stream': False,
+                'keep_alive': '30m',
+                'options': {'num_ctx': 2048, 'num_predict': 180,
+                            'temperature': 0.2},
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                core.OLLAMA_URL, data=body,
+                headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=120) as response:
+                answer = json.loads(response.read().decode('utf-8')).get(
+                    'response', '').strip()
+            source_text = ' · '.join(sources) if sources else 'Radar-Guard 내장 시스템 명세'
+            self.answer_ready.emit(answer, source_text,
+                                   time.perf_counter() - started)
+        except Exception as e:
+            self.answer_failed.emit(str(e))
+
+    @staticmethod
+    def _event_for(question):
+        for words, event in (
+            (('낙상', '추락', '넘어짐'), 'fall_detected'),
+            (('감전',), 'electric_shock_risk'),
+            (('협착', '끼임'), 'pinching'),
+            (('정지형', '무동작'), 'stationary_anomaly'),
+            (('진동',), 'vibration_anomaly')):
+            if any(word in question for word in words):
+                return event
+        return None
+
+    def _show_answer(self, answer, source, elapsed):
+        self.log.append(
+            f'<p style="color:{TXT}"><b>AI</b> · {core.md_to_html(answer)}</p>'
+            f'<p style="color:{FAINT}">근거: {html_escape(source)} · '
+            f'{elapsed:.1f}초</p>')
+
+    def _show_error(self, error):
+        self.log.append(
+            f'<p style="color:{AMBER}">AI 응답 실패: {html_escape(error)}</p>')
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 9. 좌측 네비게이션
 # ══════════════════════════════════════════════════════════════════════
@@ -2009,8 +2278,8 @@ class SideNav(QtWidgets.QFrame):
     ITEMS = [('▦', '대시보드'), ('◉', '실시간 감시'), ('▤', '이벤트 로그'),
              ('⌂', '현장 준비'), ('⊞', 'SOP 가이드'), ('⚙', '설정')]
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setFixedWidth(224)
         self.setStyleSheet(f'QFrame{{background:{PANEL};border:none;'
                            f'border-right:1px solid {EDGE};}}')
@@ -2078,8 +2347,8 @@ NAV_SETTINGS = 5
 # ══════════════════════════════════════════════════════════════════════
 # 9-B. SOP 엔진 — 프롬프트에 '레이더 실측값' 을 주입한다
 # ══════════════════════════════════════════════════════════════════════
-#  구역별 위험 성격. LLM 이 "왜 이 구역에서 이 조치인가"를 쓰려면 필요하다.
-#  ⚠ 판정에는 쓰지 않는다. 문장 생성용 배경지식일 뿐이다.
+#  구역별 위험 성격. 실측 브리핑에 위치의 의미를 덧붙일 때만 쓴다.
+#  ⚠ 판정에는 쓰지 않는다. 표시용 배경정보일 뿐이다.
 ZONE_HAZARD = {
     'A': '활선 고압 배전 설비가 있는 변전실',
     'B': '회전·절삭 기계가 있는 가공 구역',
@@ -2088,7 +2357,7 @@ ZONE_HAZARD = {
 
 
 class SopEngineV2(core.SopEngine):
-    """v1 SopEngine 의 '검색' 은 그대로 쓰고 '생성' 만 사실 기반으로 바꾼다.
+    """공식 대응 문서를 검색하고 젯슨 실측값을 결정적으로 표시한다.
 
     ═══ 왜 바꾸나 ═══
       v1 출력 실측:
@@ -2098,19 +2367,11 @@ class SopEngineV2(core.SopEngine):
       → 레이더가 준 정보(높이 0.31m, 1.31m 하강, 이후 정지, 변전실=활선구역)가
         한 글자도 안 들어갔다. 이 문장은 LLM 없이 하드코딩해도 똑같이 나온다.
         즉 "왜 LLM을 넣었나"를 설명할 수 없는 상태였다.
-      → 프롬프트에 젯슨이 계산해 보낸 evidence 를 그대로 넣는다.
+      → 경보 안전 경로에서 생성형 모델을 빼고 evidence 를 그대로 표시한다.
 
     ═══ 숫자를 지어내지 못하게 하는 장치 ═══
-      · 프롬프트에 넣는 값은 전부 젯슨 classify() 가 계산한 실측치다.
-        LLM 은 '주어진 숫자를 인용'할 뿐 새로 만들 자리가 없다.
-      · 화면에서도 AI 블록은 [즉시 조치](하드코딩) 와 [매뉴얼 원문] 아래에 붙고
-        '참고용' 이라고 명시된다. 안전 조치의 필수 경로가 아니다.
-
-    ═══ 캐시 정책 ═══
-      v1 은 ev_type 별로 캐시했다. 사건마다 수치가 다르므로 이제 캐시하면
-      틀린 숫자를 보여주게 된다 → 생성 결과는 캐시하지 않는다.
-      대신 prewarm 은 '모델을 메모리에 올려두는 것' 으로 역할을 바꾼다
-      (원래 지연의 대부분은 생성이 아니라 모델 로드였다).
+      · 표시값은 전부 젯슨 classify() 가 계산해 보낸 값이다.
+      · 생성 지연·환각·문장 잘림 없이 매 사건의 현재 값이 즉시 반영된다.
     """
 
     def request(self, ev_type, facts=None):
@@ -2131,15 +2392,7 @@ class SopEngineV2(core.SopEngine):
             vs = core.PGVector(connection_string=core.CONN_STR,
                                embedding_function=emb,
                                collection_name='safety_manual')
-            if isinstance(cat, (list, tuple)):
-                docs = []
-                for c in cat:
-                    docs += vs.similarity_search(situation, k=1,
-                                                 filter={'category': c})
-            elif cat:
-                docs = vs.similarity_search(situation, k=2, filter={'category': cat})
-            else:
-                docs = vs.similarity_search(situation, k=2)
+            docs = core.search_sop_documents(vs, ev_type, situation, cat)
             srcs = [(d.metadata.get('source_file', '?'),
                      ' '.join(d.page_content.split())[:360]) for d in docs]
             self.status.emit(f'매뉴얼 {len(docs)}건 검색됨')
@@ -2155,25 +2408,26 @@ class SopEngineV2(core.SopEngine):
         #   → 무슨 일이 있어도 이 스레드는 조용히 끝난다.
         try:
             self._work_body(ev_type, facts)
-        except Exception:
-            pass
+        except Exception as e:
+            self.status.emit(f'SOP 처리 실패: {e}  (즉시조치는 계속 표시)')
 
     def _work_body(self, ev_type, facts):
         srcs, ctx = self._search(ev_type)
-        # 매뉴얼 원문을 먼저 띄운다 — LLM 을 기다리게 하지 않는다.
-        #   (검색 결과가 없을 때는 굳이 '결과 없음'을 깜빡이지 않는다)
-        if srcs:
-            self.ready.emit(ev_type, srcs, '')
+        brief = self._fact_block(facts).replace('\n- ', ' · ').removeprefix('- ')
+        self.status.emit('공식 매뉴얼 표시 · AI 생성 중…')
+        self.ready.emit(ev_type, srcs, brief)
         if not core.USE_LLM_SUMMARY:
-            self.ready.emit(ev_type, srcs, '')
             return
         try:
-            self.status.emit(f'현장 수치를 반영한 요약 생성 중… ({LLM_MODEL})')
-            ai = self._gen_facts(ev_type, ctx, facts)
-            self.status.emit('AI 요약 완료 · 아래 매뉴얼과 실측값 기반')
-            self.ready.emit(ev_type, srcs, ai)
+            started = time.perf_counter()
+            generated = self._gen_facts(ev_type, ctx, facts)
+            elapsed = time.perf_counter() - started
+            self.status.emit(f'AI 생성 SOP 표시 · {elapsed:.1f}초 · 공식 매뉴얼 기반')
+            self.ready.emit(
+                ev_type, srcs,
+                f'{brief}\n---AI_SOP---\n{generated}\n\n생성 {elapsed:.1f}초')
         except Exception as e:
-            self.status.emit(f'AI 요약 건너뜀: {e}  (ollama serve 확인)')
+            self.status.emit(f'AI SOP 생성 실패: {e}  (공식 원문은 계속 표시)')
 
     # ── 사실 블록 ──
     @staticmethod
@@ -2231,51 +2485,45 @@ class SopEngineV2(core.SopEngine):
     def _gen_facts(ev_type, ctx, facts):
         import urllib.request
         label = EVENT_KO.get(ev_type, ev_type)
-        fb = SopEngineV2._fact_block(facts)
-        blocks = ''
-        if fb:
-            blocks += f'\n[감지 사실 — 레이더 실측값]\n{fb}\n'
-        if ctx:
-            blocks += f'\n[참고 안전매뉴얼 발췌]\n{ctx[:1100]}\n'
+        fact_block = SopEngineV2._fact_block(facts)
         prompt = (
-            f'너는 산업 현장 안전관리자다. 방금 "{label}"이(가) 감지됐다.\n{blocks}\n'
-            f'위 [감지 사실]의 숫자와 장소를 반드시 인용해서, 현장 작업자가 지금 '
-            f'즉시 따라야 할 초동 조치를 한국어로 작성하라.\n'
-            f'규칙:\n'
-            f'- 번호를 매긴 4단계, 각 단계는 짧은 한 문장.\n'
-            f'- [감지 사실]에 없는 수치를 지어내지 마라.\n'
-            f'- 이미 차단된 전원을 다시 차단하라고 하지 마라.\n'
-            f'- "안전하게", "적절히" 같은 막연한 말 대신 구체적 행동을 써라.\n'
-            f'- 서론·맺음말 없이 조치만.')
-        body = json.dumps({'model': LLM_MODEL, 'prompt': prompt, 'stream': False,
-                           'keep_alive': '30m',
-                           'options': {'num_ctx': 2048, 'num_predict': 220,
-                                       'temperature': 0.2}}).encode('utf-8')
-        req = urllib.request.Request(core.OLLAMA_URL, data=body,
-                                     headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.loads(r.read().decode('utf-8')).get('response', '').strip()
+            f'너는 산업 현장 안전관리 보조자다. "{label}" 경보에 대해 아래 '
+            f'젯슨 실측값과 공식 매뉴얼 발췌만 근거로 초동 조치 SOP를 작성하라.\n'
+            f'[젯슨 실측값]\n{fact_block or "—"}\n'
+            f'[공식 매뉴얼 발췌]\n{ctx[:1100] or "검색 결과 없음"}\n'
+            f'규칙: 번호를 매긴 4단계, 각 단계는 짧은 한 문장. 없는 수치를 '
+            f'만들지 말고 이미 차단된 전원을 다시 차단하라고 하지 마라. '
+            f'환자 이동·응급처치는 위 매뉴얼과 충돌하지 않게 쓰고 서론은 생략하라.')
+        body = json.dumps({
+            'model': core.LLM_MODEL, 'prompt': prompt, 'stream': False,
+            'keep_alive': '30m',
+            'options': {'num_ctx': 2048, 'num_predict': 220, 'temperature': 0.2},
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            core.OLLAMA_URL, data=body,
+            headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=120) as response:
+            return json.loads(response.read().decode('utf-8')).get(
+                'response', '').strip()
 
     def prewarm(self):
-        """모델을 메모리에 올려만 둔다.
-
-        v1 은 유형별 요약문을 미리 만들어 캐시했다. 이제 문장이 사건마다
-        달라지므로 캐시가 무의미하다 — 대신 지연의 실제 원인인 '모델 로드'만
-        미리 끝낸다 (num_predict=1, keep_alive 30분).
-        """
-        def _w():
+        """모델만 메모리에 올린다. 경보별 SOP 문장은 실측값 때문에 캐시하지 않는다."""
+        if QtCore.qEnvironmentVariable('QT_QPA_PLATFORM') == 'offscreen':
+            return
+        def worker():
             import urllib.request
             try:
-                body = json.dumps({'model': LLM_MODEL, 'prompt': '.',
-                                   'stream': False, 'keep_alive': '30m',
-                                   'options': {'num_predict': 1}}).encode('utf-8')
+                body = json.dumps({
+                    'model': core.LLM_MODEL, 'prompt': '.', 'stream': False,
+                    'keep_alive': '30m', 'options': {'num_predict': 1},
+                }).encode('utf-8')
                 req = urllib.request.Request(
                     core.OLLAMA_URL, data=body,
                     headers={'Content-Type': 'application/json'})
                 urllib.request.urlopen(req, timeout=120).read()
-            except Exception:
-                pass                      # ollama 가 없어도 즉시 조치는 뜬다
-        threading.Thread(target=_w, daemon=True).start()
+            except Exception as e:
+                self.status.emit(f'AI 모델 준비 실패: {e}  (경보 시 다시 시도)')
+        threading.Thread(target=worker, daemon=True).start()
 
 
 class ConsoleV2(QtWidgets.QMainWindow):
@@ -2285,6 +2533,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
       새 화면 구조에 맞게 바뀌었다. 바꾼 곳에는 전부 주석을 달았다.
     """
     HIST_KEYS = ('cz', 'ds', 'sc', 'logs', 'incidents')
+    NAV_WIDTH = 224
 
     def __init__(self, link=None, demo=False):
         super().__init__()
@@ -2329,12 +2578,31 @@ class ConsoleV2(QtWidgets.QMainWindow):
         h = QtWidgets.QHBoxLayout(root)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(0)
+        self._shell_layout = h
+        self._drawer_open = False
+        self._nav_was_open = False
+        self.menu_gutter = QtWidgets.QWidget()
+        self.menu_gutter.setFixedWidth(64)
+        h.addWidget(self.menu_gutter)
         self.nav = SideNav()
-        self.nav.navigate.connect(self._navigate)
+        self.nav.navigate.connect(self._nav_from_overlay)
+        self.nav.hide()
         h.addWidget(self.nav)
 
         self.stack = QtWidgets.QStackedWidget()
         h.addWidget(self.stack, 1)
+
+        self.menu_btn = QtWidgets.QToolButton(root)
+        self.menu_btn.setText('☰')
+        self.menu_btn.setToolTip('메뉴 열기')
+        self.menu_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.menu_btn.setFixedSize(38, 38)
+        self.menu_btn.setFont(f(F_H2, bold=True))
+        self.menu_btn.setStyleSheet(
+            f'QToolButton{{background:{PANEL};color:{TXT};border:1px solid {EDGE};'
+            f'border-radius:19px;}}QToolButton:hover{{color:{CYAN};'
+            f'border-color:{CYAN};}}')
+        self.menu_btn.clicked.connect(self._toggle_nav)
 
         # 0 대시보드
         self.dash = DashboardPage(link, demo)
@@ -2353,6 +2621,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.track = self.scene.track          # SettingsPopup 진단 탭이 참조한다
         self.timeline = self.monitor.timeline
         self.drawer = self.monitor.drawer
+        self.drawer.visibility_changed.connect(self._on_action_drawer)
 
         # 2 이벤트 로그
         self.evlog = EventLogPage()
@@ -2380,7 +2649,6 @@ class ConsoleV2(QtWidgets.QMainWindow):
         # ── 팝업 (v1 그대로 재사용) ──
         self.pwr = PowerPopup(self, link)
         self.restore = RestorePopup(self)
-        self.query = QueryPopup(self, self)
         self.graph = GraphPopup(self)
         self.cfg = SettingsPopup(self, link, self)
         self.engine = SopEngineV2()
@@ -2389,7 +2657,12 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.pwr.restore_btn.clicked.connect(self.do_restore)
         self.monitor.b_pwr.clicked.connect(self._show_pwr)
         self.monitor.b_graph.clicked.connect(self.graph.show)
-        self.monitor.b_query.clicked.connect(self.query.show)
+
+        self.assistant = AssistantDrawer(self, self)
+        self.assistant.visibility_changed.connect(self._on_assistant_visible)
+        self.ai_btn = AiIconButton(root)
+        self.ai_btn.clicked.connect(self._open_assistant)
+        self.monitor.b_query.clicked.connect(self._open_assistant)
 
         self.timeline.add('시스템 시작', GREEN)
         self.timeline.add(f'3D 렌더 {"OpenGL" if self.track.gl else "2D 측면도 대체"}')
@@ -2413,10 +2686,79 @@ class ConsoleV2(QtWidgets.QMainWindow):
             self.alive = True
             self._set_link_label('데모 모드', AMBER)
         self.nav.set_user(self.shift, self.operator)
+        self._apply_shell_geometry()
 
     # ══════════════════════════════════════════════════════════════════
     # 화면 이동
     # ══════════════════════════════════════════════════════════════════
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._apply_shell_geometry()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self._apply_shell_geometry)
+
+    def _apply_shell_geometry(self):
+        if not hasattr(self, 'stack'):
+            return
+        if hasattr(self, 'menu_btn'):
+            self.menu_btn.move(self.NAV_WIDTH - 48 if self.nav.isVisible() else 13, 12)
+            self.menu_btn.raise_()
+        if hasattr(self, 'ai_btn'):
+            anchors = {0: self.dash.ai_anchor, 1: self.monitor.ai_anchor}
+            anchor = anchors.get(self.stack.currentIndex())
+            if anchor is not None:
+                pos = anchor.mapTo(self.centralWidget(), QtCore.QPoint(2, 0))
+                self.ai_btn.move(pos)
+            else:
+                self.ai_btn.move(max(80, self.width() - 70), 48)
+            self.ai_btn.raise_()
+
+    def _toggle_nav(self):
+        opening = not self.nav.isVisible()
+        self.menu_gutter.setVisible(not opening)
+        self.nav.setVisible(opening)
+        self._apply_shell_geometry()
+        self.menu_btn.raise_()
+
+    def _nav_from_overlay(self, idx):
+        self.nav.hide()
+        self.menu_gutter.show()
+        self._navigate(idx)
+        self._apply_shell_geometry()
+
+    def _on_action_drawer(self, opening):
+        self._drawer_open = opening
+        if opening:
+            self._nav_was_open = self.nav.isVisible()
+            reclaimed = self.NAV_WIDTH if self._nav_was_open else (
+                self.menu_gutter.width() if self.menu_gutter.isVisible() else 0)
+            self.nav.hide()
+            self.menu_gutter.hide()
+            self.drawer.set_extra_width(reclaimed)
+        elif self._nav_was_open:
+            self.nav.show()
+        else:
+            self.menu_gutter.show()
+        if hasattr(self, 'assistant'):
+            self.assistant.close_drawer()
+        if hasattr(self, 'ai_btn'):
+            self.ai_btn.setVisible(not opening)
+        if not opening:
+            self.drawer.set_extra_width(0)
+        self._apply_shell_geometry()
+
+    def _open_assistant(self):
+        if self.alarm != ST_NORMAL:
+            self.timeline.add('경보 중에는 조치 가이드를 우선합니다', AMBER)
+            self.drawer.open_at(0)
+            return
+        self.assistant.open_drawer()
+
+    def _on_assistant_visible(self, visible):
+        self.ai_btn.setVisible(not self._drawer_open)
+
     def _navigate(self, idx):
         if idx == NAV_SETTINGS:
             self.nav.select(self.stack.currentIndex())   # 설정은 페이지가 아니라 모달
@@ -2428,6 +2770,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
             self.prep.set_zone(self.zone)
         self.stack.setCurrentIndex(idx)
         self.nav.select(idx)
+        self._apply_shell_geometry()
 
     def _set_link_label(self, text, color):
         self.monitor.link_lb.setText(f'● {text}')
@@ -2661,6 +3004,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
     # 경보
     # ══════════════════════════════════════════════════════════════════
     def on_event(self, ev):
+        self.assistant.close_drawer()
         self.alert = dict(ev)
         self.alert_t0 = time.time()          # ★ 노트북 시각. 젯슨 시계 안 씀.
         self.alarm = ST_UNACK

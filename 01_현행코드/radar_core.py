@@ -623,6 +623,63 @@ SOP_QUERY = {
     'voltage_drop':        '전압 강하 전기 설비 이상 시 점검 절차',
 }
 
+# 사고 후 조치 화면에서는 같은 분류의 예방 문서보다 응급조치 원문을 우선한다.
+# 파일명은 sop_doctor.py로 확인한 DB metadata의 실제 값이다.
+SOP_RESPONSE_SOURCE = {
+    'fall_detected': {
+        '03_낙상_응급처치': '산업재해 형태별 응급처치 (골절화상뇌진탕 등).pdf',
+    },
+    'stationary_anomaly': {
+        '01_감전_LOTO': '산업재해 형태별 응급처치 (골절화상뇌진탕 등).pdf',
+        '02_협착_끼임': 'B-M-37-2026 회전기계 등의 끼임·절단재해 예방을 위한 기술지원규정.pdf',
+    },
+    'electric_shock_risk': {
+        '01_감전_LOTO': '산업재해 형태별 응급처치 (골절화상뇌진탕 등).pdf',
+    },
+    'pinching': {
+        '02_협착_끼임': 'B-M-37-2026 회전기계 등의 끼임·절단재해 예방을 위한 기술지원규정.pdf',
+    },
+}
+
+SOP_RESPONSE_TERMS = {
+    'fall_detected': ('척추', '움직이지', '뇌진탕', '골절', '119', '이송'),
+    'stationary_anomaly': ('전원', '호흡', '심정지', '비상정지', '구조', '끼임'),
+    'electric_shock_risk': ('전원', '호흡', '심정지', '119', '환자'),
+    'pinching': ('비상정지', '정지', '전원', '구조', '끼임'),
+}
+
+
+def search_sop_documents(vs, ev_type, situation, category):
+    """사건 대응 문서를 우선하되, 지정 출처가 없으면 기존 분류 검색을 쓴다."""
+    sources = SOP_RESPONSE_SOURCE.get(ev_type, {})
+    categories = category if isinstance(category, (list, tuple)) else (category,)
+    docs = []
+    for cat in categories:
+        source = sources.get(cat)
+        count = 1 if isinstance(category, (list, tuple)) else 2
+        if source:
+            # 사고 종류와 공식 대응 문서가 이미 정해졌는데 경보마다 임베딩하면
+            # bge-m3 ↔ gemma2 모델 교체 때문에 수십 초가 더 걸린다. 해당 문서의
+            # 청크만 읽어 응급조치 용어가 많은 순으로 고르면 더 빠르고 결정적이다.
+            import psycopg2
+            from types import SimpleNamespace
+            with psycopg2.connect(CONN_STR) as cn:
+                with cn.cursor() as cur:
+                    cur.execute(
+                        "SELECT document, cmetadata FROM langchain_pg_embedding "
+                        "WHERE cmetadata->>'source_file' = %s",
+                        (source,))
+                    rows = cur.fetchall()
+            terms = SOP_RESPONSE_TERMS.get(ev_type, ())
+            rows.sort(key=lambda row: sum(row[0].count(term) for term in terms),
+                      reverse=True)
+            docs += [SimpleNamespace(page_content=text, metadata=metadata)
+                     for text, metadata in rows[:count]]
+        else:
+            metadata_filter = {'category': cat} if cat else None
+            docs += vs.similarity_search(situation, k=count, filter=metadata_filter)
+    return docs
+
 INSTANT_ACTION = {
     'fall_detected': [
         ('전원', ['해당 구역 전원 차단 완료 (젯슨 자동 실행)', '차단 상태 유지 · 재투입 금지']),
@@ -683,17 +740,7 @@ class SopEngine(QtCore.QObject):
             emb = OllamaEmbeddings(model=EMBED_MODEL)
             vs = PGVector(connection_string=CONN_STR, embedding_function=emb,
                           collection_name='safety_manual')
-            # cat 은 문자열 / 튜플 / None 세 형태를 가진다.
-            #   튜플: 사건 유형이 확정되기 전(정지형 이상) — 관련 카테고리마다 1건씩.
-            if isinstance(cat, (list, tuple)):
-                docs = []
-                for c in cat:
-                    docs += vs.similarity_search(situation, k=1,
-                                                 filter={'category': c})
-            elif cat:
-                docs = vs.similarity_search(situation, k=2, filter={'category': cat})
-            else:
-                docs = vs.similarity_search(situation, k=2)
+            docs = search_sop_documents(vs, ev_type, situation, cat)
             for d in docs:
                 srcs.append((d.metadata.get('source_file', '?'),
                              ' '.join(d.page_content.split())[:360]))
