@@ -16,7 +16,29 @@
 
 STAGED=$(git diff --cached --name-only)
 
-# 판정/화면 코드가 스테이징됐는가
+# ── ① 형태 검사 — HANDOFF / AI_BRIDGE 가 스테이징됐으면 반드시 통과해야 한다
+#    ⚠ [8/03] 검사기가 있어도 안 돌리면 의미가 없다. 40줄을 넘고 완료 기록이
+#      가득해도 그냥 커밋되던 상태였다. 여기서 막는다.
+if printf '%s\n' "$STAGED" | grep -qE '^(HANDOFF\.md|04_문서/AI_BRIDGE/)'; then
+    PY=$(command -v python || command -v python3)
+    if [ -n "$PY" ]; then
+        "$PY" scripts/validate_handoff.py   || exit 1
+        "$PY" scripts/validate_ai_bridge.py || exit 1
+    fi
+fi
+
+# ── ①-b 규칙 문서 동기 — CLAUDE.md/.claude 를 고쳤으면 AGENTS.md/.agents 도 같이 간다
+#    ⚠ [8/04] 손으로 두 벌을 고치다 실제로 갈라졌다. AGENTS.md 의 인계 규칙이
+#      이미 없어진 §0/§1/§2 구조를 지시하고 있었다(session-end 스킬은 74줄 차이).
+#      Claude Code 와 Codex 가 다른 규칙으로 움직이면 반대쪽이 틀린 문서를 쓴다.
+if printf '%s\n' "$STAGED" | grep -qE '^(CLAUDE\.md|AGENTS\.md|\.claude/skills/|\.agents/skills/)'; then
+    PY=$(command -v python || command -v python3)
+    if [ -n "$PY" ]; then
+        "$PY" scripts/sync_agent_docs.py --check || exit 1
+    fi
+fi
+
+# ── ② 판정/화면 코드가 스테이징됐는가
 CODE=$(printf '%s\n' "$STAGED" | grep -E '^01_현행코드/.*\.py$' || true)
 [ -z "$CODE" ] && exit 0
 

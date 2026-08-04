@@ -99,7 +99,7 @@ A-1의 진짜 교훈은 폰트가 아니었다. **`resolve_font()`는 폰트를 
 - **`HANDOFF.md`에는 변경 내역을 쓰지 않는다.** 그건 `git log`/`git diff`가 정본이다. 손으로 적으면 반드시 어긋난다. 여기엔 git이 담을 수 없는 것만 쓴다 — 의도·판단·막힌 지점. 로그가 아니라 화이트보드다.
 - **git 도입** — 129파일 31,133줄로 초기 커밋. `.gitignore`로 실측 데이터(75 MB)·발표자료·`_구버전보관/`을 제외해 11.2 MiB만 추적한다.
 - **`CLAUDE.md`(187줄)** — 아키텍처·금지사항·검증 절차·UI 원칙·물리 한계. Claude Code와 데스크톱 도구가 **같은 파일을 읽는다.**
-- **스킬 6종** — `ui-verify`(검증 4종 일괄) · `replay-regression` · `readme-log` · `jetson-deploy` · `next-task`(§1을 읽어 다음 작업 시작) · `session-end`(검증→§2 갱신→커밋).
+- **스킬 7종** — `ui-verify`(검증 4종 일괄) · `replay-regression` · `readme-log` · `jetson-deploy` · `radar-guard-hmi`(UI 안전 규칙) · `next-task`(HANDOFF 의 Next actions 를 읽어 시작) · `session-end`(검증→OUTBOX→HANDOFF 재작성→검사→커밋).
 - **pre-commit 훅** — `01_현행코드/*.py`를 고쳤는데 `HANDOFF.md`를 안 고치면 커밋을 막는다. 지침은 강제가 아니라 맥락이므로, 반드시 지켜야 하는 것은 훅으로 만들었다. 4개 시나리오로 동작 확인.
 - **검증 스크립트를 `cd` 없이 실행되게** 정리했다(자기 위치 기준). 실제로 cwd에 의존한 것은 `테스트_실데이터_재생.py` 하나뿐이었고 나머지 5개는 이미 정상이었다 — 확인하고 필요한 곳에만 넣었다.
 

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "PowerShell(git *)",
+      "PowerShell(python *)",
+      "PowerShell(Out-File *)",
+      "PowerShell(cd \"C:\\\\Users\\\\82102\\\\OneDrive\\\\문서\\\\Claude\\\\Projects\\\\공모전\\\\01_현행코드\"; $env:QT_QPA_PLATFORM='offscreen'; python 테스트_실데이터_재생.py 2>&1 | Out-String -Width 300)",
+      "Bash(git *)",
+      "Bash(python *)"
+    ],
+    "deny": [
+      "PowerShell(git push*)",
+      "PowerShell(git reset --hard*)",
+      "PowerShell(git clean*)",
+      "PowerShell(git rebase*)",
+      "PowerShell(*Remove-Item*)",
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean*)",
+      "Bash(rm -rf*)"
+    ]
+  }
+}
