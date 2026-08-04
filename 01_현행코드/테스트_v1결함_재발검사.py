@@ -41,9 +41,9 @@ check('0b. 열린 메뉴는 원래 사이드바 레이아웃 복원',
       and w.stack.width() == w.width() - w.NAV_WIDTH,
       f'closed={closed_width} open={w.stack.width()}px')
 w.drawer.open_at(0); app.processEvents()
-check('0c. 경보 드로어는 사이드바 224px를 SOP에 추가',
-      w.stack.width() == w.width()
-      and w.drawer._extra_width == w.NAV_WIDTH,
+check('0c. 경보 드로어도 햄버거 레일 64px 유지',
+      w.stack.width() == w.width() - w.menu_gutter.width()
+      and w.drawer._extra_width == w.NAV_WIDTH - w.menu_gutter.width(),
       f'stack={w.stack.width()} drawer+={w.drawer._extra_width}')
 w.drawer.close_drawer(); app.processEvents()
 check('0d. 안전 질문은 사건별 RAG로 라우팅',

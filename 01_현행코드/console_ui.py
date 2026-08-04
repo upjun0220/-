@@ -1325,9 +1325,6 @@ class DashboardPage(QtWidgets.QWidget):
         self.alarm_chip.setMinimumWidth(96)
         self.alarm_chip.setMinimumHeight(30)
         head.addWidget(self.alarm_chip)
-        self.ai_anchor = QtWidgets.QWidget()
-        self.ai_anchor.setFixedSize(50, 46)
-        head.addWidget(self.ai_anchor)
         self.clock = lb('', F_H2, TXT, bold=True)
         self.clock.setAlignment(QtCore.Qt.AlignCenter)
         self.clock.setMinimumWidth(104)
@@ -1595,9 +1592,6 @@ class MonitorPage(QtWidgets.QWidget):
         head.addWidget(self.seg3d)
         self.cam = button('시점 초기화', 'ghost', F_LABEL, 30, 96)
         head.addWidget(self.cam)
-        self.ai_anchor = QtWidgets.QWidget()
-        self.ai_anchor.setFixedSize(50, 46)
-        head.addWidget(self.ai_anchor)
         self.link_lb = lb('연결 확인 중', F_LABEL, DIM)
         head.addWidget(self.link_lb)
         self.clock = lb('', F_LABEL, DIM)
@@ -2284,6 +2278,8 @@ class SideNav(QtWidgets.QFrame):
         self.setStyleSheet(f'QFrame{{background:{PANEL};border:none;'
                            f'border-right:1px solid {EDGE};}}')
         v = vbox(self, SP4, SP2)
+        # 햄버거 전용 첫 줄. 로고와 같은 좌표에 겹치지 않는다.
+        v.addSpacing(44)
         brand = hbox(s=SP2)
         logo = lb('◈', 17, CYAN, bold=True)
         brand.addWidget(logo)
@@ -2706,13 +2702,12 @@ class ConsoleV2(QtWidgets.QMainWindow):
             self.menu_btn.move(self.NAV_WIDTH - 48 if self.nav.isVisible() else 13, 12)
             self.menu_btn.raise_()
         if hasattr(self, 'ai_btn'):
-            anchors = {0: self.dash.ai_anchor, 1: self.monitor.ai_anchor}
-            anchor = anchors.get(self.stack.currentIndex())
-            if anchor is not None:
-                pos = anchor.mapTo(self.centralWidget(), QtCore.QPoint(2, 0))
+            if self.nav.isVisible():
+                pos = self.nav.user.mapTo(
+                    self.centralWidget(), QtCore.QPoint(0, -58))
                 self.ai_btn.move(pos)
             else:
-                self.ai_btn.move(max(80, self.width() - 70), 48)
+                self.ai_btn.move(9, max(56, self.height() - 70))
             self.ai_btn.raise_()
 
     def _toggle_nav(self):
@@ -2732,12 +2727,14 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self._drawer_open = opening
         if opening:
             self._nav_was_open = self.nav.isVisible()
-            reclaimed = self.NAV_WIDTH if self._nav_was_open else (
-                self.menu_gutter.width() if self.menu_gutter.isVisible() else 0)
+            # SOP가 열려도 햄버거용 64px 레일은 남긴다.
+            reclaimed = self.NAV_WIDTH - self.menu_gutter.width() \
+                if self._nav_was_open else 0
             self.nav.hide()
-            self.menu_gutter.hide()
+            self.menu_gutter.show()
             self.drawer.set_extra_width(reclaimed)
         elif self._nav_was_open:
+            self.menu_gutter.hide()
             self.nav.show()
         else:
             self.menu_gutter.show()
