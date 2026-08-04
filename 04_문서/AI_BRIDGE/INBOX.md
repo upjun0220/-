@@ -22,7 +22,17 @@ QML 예시는 복사하지 말고 QtWidgets/QSS 로 번역한다.
 - From: 사용자
 - Type: 요청
 - Needs: 확인
-Cowork 크레딧 소진으로 **8/05(화) 밤 10시까지 Codex 가 단독 진행**한다. 그동안 지켜야 할 것:
-`REVIEW.md` 에 쓰지 않는다(읽는 쪽이 없다) · 막힘과 판단 요청은 `OUTBOX.md` · 세션 끝마다 `session-end`
-(HANDOFF 전체 재작성 + 검사 3종) · 의미 있는 세션은 `readme-log` 로 README 에 날짜 헤더로 남긴다.
-Cowork 는 복귀 시 `git log` → README 최신 세션 → HANDOFF → OUTBOX 순으로 읽는다.
+Cowork·Claude Code 크레딧 소진으로 **8/05(화) 밤 10시까지 Codex 만 작업**한다.
+읽는 규칙은 `AGENTS.md` + `.agents/skills/` 다(`.claude/` 쪽과 내용 동일, 8/04 동기화됨).
+
+**규칙 문서는 이틀간 동결한다.** `AGENTS.md`·`.agents/skills/`·`CLAUDE.md`·`.claude/skills/` 를 고치면
+정본과 어긋나 `sync_agent_docs.py --check` 가 커밋을 막는다. 고칠 것이 보이면 `OUTBOX.md` 에 제안만 쌓는다.
+`HANDOFF.md`·`OUTBOX.md`·`README.md`·`BACKLOG.md` 는 규칙 문서가 아니므로 평소대로 쓴다.
+
+**작업 순서**: HANDOFF Next actions 1→2→3 → 8/05 젯슨 통합시험(런북) → 그래도 남으면
+`BACKLOG.md` A층에서 꺼내되 **사용자 승인 후**. `REVIEW.md` 에는 쓰지 않는다(읽는 쪽이 없다).
+
+**세션 끝마다**: `session-end` — HANDOFF 전체 재작성(append 금지) → 검사 3종 종료코드 0 → 커밋.
+의미 있는 세션은 `readme-log` 로 README 에 날짜 헤더 + 문제→해결 + 검증 숫자.
+
+**Cowork 복귀 시 읽는 순서**: `git log` → README 최신 세션 → `HANDOFF.md` → `OUTBOX.md`.
