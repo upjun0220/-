@@ -46,6 +46,10 @@ check('0c. 경보 드로어도 햄버거 레일 64px 유지',
       and w.drawer._extra_width == w.NAV_WIDTH - w.menu_gutter.width(),
       f'stack={w.stack.width()} drawer+={w.drawer._extra_width}')
 w.drawer.close_drawer(); app.processEvents()
+check('0c-2. 조치 확인 뒤 사이드바 자동 복원 없음',
+      not w.nav.isVisible() and w.menu_gutter.isVisible()
+      and w.stack.width() == w.width() - w.menu_gutter.width(),
+      f'stack={w.stack.width()} nav={w.nav.isVisible()}')
 check('0d. 안전 질문은 사건별 RAG로 라우팅',
       w.assistant._event_for('낙상 조치 근거는?') == 'fall_detected')
 check('0e. 핵심 시스템 질문은 검증된 명세로 즉시 응답',

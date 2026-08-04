@@ -1251,9 +1251,6 @@ class ActionDrawer(QtWidgets.QFrame):
         self.ack.hide()
         v.addWidget(self.ack)
 
-        self.anim = QtCore.QPropertyAnimation(self, b'maximumWidth', self)
-        self.anim.setDuration(170)
-        self.anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
         self._open = False
         self._extra_width = 0
 
@@ -1284,10 +1281,9 @@ class ActionDrawer(QtWidgets.QFrame):
     def _animate(self, opening):
         self._open = opening
         self.visibility_changed.emit(opening)
-        self.anim.stop()
-        self.anim.setStartValue(self.maximumWidth())
-        self.anim.setEndValue(self.WIDTH + self._extra_width if opening else 0)
-        self.anim.start()
+        # 3D OpenGL 화면과 폭 애니메이션을 함께 돌리면 매 프레임 전체 레이아웃을
+        # 다시 계산해 170ms 설정보다 훨씬 느리게 보인다. 안전 조치는 즉시 연다.
+        self.setMaximumWidth(self.WIDTH + self._extra_width if opening else 0)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -2733,10 +2729,10 @@ class ConsoleV2(QtWidgets.QMainWindow):
             self.nav.hide()
             self.menu_gutter.show()
             self.drawer.set_extra_width(reclaimed)
-        elif self._nav_was_open:
-            self.menu_gutter.hide()
-            self.nav.show()
         else:
+            # 조치 확인 뒤 사이드바를 자동 복원하면 관제 화면 전체가 160px
+            # 이동한다. 사용자가 원할 때만 햄버거로 다시 연다.
+            self.nav.hide()
             self.menu_gutter.show()
         if hasattr(self, 'assistant'):
             self.assistant.close_drawer()
