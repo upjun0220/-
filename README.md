@@ -7,6 +7,23 @@
 
 ---
 
+# 🟢 8/04 — 로컬 LLM 챗봇 전용 스킬은 추가하지 않기로 결정
+
+> **작업자: Codex.** Claude Code가 후속 작업에서 같은 기능의 스킬을 중복 생성하지 않도록 조사 결과와 결론을 남긴다.
+> 조사: OpenAI curated 스킬 **39개** · Anthropic 공개 스킬 저장소 · Ollama 공식 챗봇/RAG 사례 목록
+
+---
+
+## A. 범용 챗봇 스킬을 추가하면 기존 HMI 규칙과 역할이 겹친다
+
+**문제.** PyQt5·Ollama·RAG 챗봇의 디자인과 설계를 전담하는 공개 스킬이 있는지 확인했으나, OpenAI 공식 목록의 `chatgpt-apps`는 웹 기반 ChatGPT 앱용이고 `winui-app`은 WinUI 전용이었다. Anthropic 공개 저장소와 Ollama 사례도 현재의 PyQt5 안전 관제 UI에 바로 적용할 `SKILL.md`를 제공하지 않았다.
+
+**해결.** 새 `local-llm-chatbot` 스킬은 만들거나 설치하지 않는다. 이미 적용 중인 `radar-guard-hmi`와 역할이 겹쳐 두 스킬이 동시에 발동하면 규칙 충돌과 컨텍스트 낭비가 생길 수 있기 때문이다. 현재 AI 채팅은 기존 HMI 안전 경계와 UI 회귀검사 안에서 계속 관리한다.
+
+**Claude Code 인계.** Agent Skills의 `SKILL.md` 형식 자체는 Codex와 Claude Code가 모두 사용할 수 있다. 다만 이 프로젝트는 `.agents/skills/`와 `.claude/skills/`의 동기화를 검사하며 현재 규칙 문서가 동결 상태다. 챗봇 수정이 반복되어 별도 기준이 실제로 필요해진 뒤에만, 동결 해제 후 새 스킬을 추가하지 말고 기존 `radar-guard-hmi`의 참고 문서로 통합하는 방향을 먼저 검토한다.
+
+---
+
 # 🟢 8/04 — Enter 한 번에 추천 질문까지 전송되는 대화창 결함 수정
 
 > AI 입력창에서 `안녕`을 Enter로 보내면 QDialog가 첫 추천 질문 버튼까지 기본 버튼으로 실행해 `왜 레이더를 쓰나요?`가 연속 전송됐다.
