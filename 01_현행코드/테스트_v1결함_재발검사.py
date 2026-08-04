@@ -54,6 +54,13 @@ check('0d. 안전 질문은 사건별 RAG로 라우팅',
       w.assistant._event_for('낙상 조치 근거는?') == 'fall_detected')
 check('0e. 핵심 시스템 질문은 검증된 명세로 즉시 응답',
       '개인정보' in w.assistant._local_answer('왜 카메라 대신 레이더를 쓰나요?'))
+check('0f. 인사·도움말은 LLM 없이 즉시 응답',
+      '안녕하세요' in w.assistant._local_answer('안녕')
+      and w.assistant._is_smalltalk('도움말'))
+check('0g. 대화 말풍선은 사용자·AI 좌우 구분',
+      'width="18%"' in w.assistant._bubble('질문', True, '나')
+      and w.assistant._bubble('질문', True, '나')
+      != w.assistant._bubble('답변', False, 'AI'))
 
 # ── 1. confirm() 버튼이 다크테마에서 보이는가 (v1 7/31) ──
 d_txt = []

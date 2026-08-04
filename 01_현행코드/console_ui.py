@@ -2084,10 +2084,13 @@ class AssistantDrawer(QtWidgets.QDialog):
         self.log.setReadOnly(True)
         self.log.setFont(f(F_BODY))
         self.log.setStyleSheet(TEXT_QSS)
-        self.log.setHtml(
-            f'<p style="color:{DIM}">Radar-Guard의 기능이나 현재 상황을 물어보세요. '
-            f'안전 조작은 실행하지 않습니다.</p>')
+        self.log.setHtml(self._bubble(
+            'Radar-Guard의 기능이나 현재 상황을 물어보세요.<br>'
+            '안전 조작은 실행하지 않습니다.', False, 'Radar-Guard AI'))
         v.addWidget(self.log, 1)
+
+        self.waiting = lb('', F_CAP, AMBER)
+        v.addWidget(self.waiting)
 
         chips = hbox(s=SP2)
         for text in ('왜 레이더를 쓰나요?', '현재 상태 알려줘', '낙상 조치 근거는?'):
@@ -2133,19 +2136,47 @@ class AssistantDrawer(QtWidgets.QDialog):
             self.ask(question)
 
     def ask(self, question):
-        self.log.append(
-            f'<p style="color:{CYAN}"><b>나</b> · {html_escape(question)}</p>')
+        self.log.append(self._bubble(html_escape(question), True, '나'))
         local = self._local_answer(question)
         if local is not None:
-            self._show_answer(local, '실시간 로컬 집계', 0.0)
+            source = ('즉시 응답' if self._is_smalltalk(question)
+                      else '실시간 로컬 집계')
+            self._show_answer(local, source, 0.0)
             return
-        self.log.append(f'<p style="color:{AMBER}">근거를 확인하고 있습니다…</p>')
+        self.waiting.setText('근거를 확인하고 있습니다…')
         threading.Thread(target=self._work, args=(question,), daemon=True).start()
+
+    @staticmethod
+    def _bubble(text, mine=False, meta=''):
+        """QTextEdit가 안정적으로 지원하는 표 정렬로 좌우 말풍선을 만든다."""
+        bubble = BG_SEL if mine else PANEL_HI
+        text_color = TXT
+        spacer = '<td width="18%"></td>'
+        body = (f'<td bgcolor="{bubble}" style="padding:10px;color:{text_color};">'
+                f'<b>{html_escape(meta)}</b><br>{text}</td>')
+        cells = spacer + body if mine else body + spacer
+        return (f'<table width="100%" cellspacing="0" cellpadding="8"><tr>{cells}'
+                f'</tr></table>')
+
+    @staticmethod
+    def _is_smalltalk(question):
+        q = ''.join(question.lower().split()).rstrip('!?.')
+        return (q in ('안녕', '안녕하세요', '반가워', '반갑습니다', '고마워',
+                      '고맙습니다', '감사합니다', '도움말', '도와줘')
+                or q.startswith('안녕'))
 
     def _local_answer(self, question):
         c = self.console
         if c is None:
             return '연결된 관제 데이터가 없습니다.'
+        q = ''.join(question.lower().split()).rstrip('!?.')
+        if q.startswith('안녕') or q in ('반가워', '반갑습니다'):
+            return '안녕하세요. Radar-Guard AI입니다. 현재 상태나 안전 매뉴얼을 물어보세요.'
+        if q in ('고마워', '고맙습니다', '감사합니다'):
+            return '도움이 되어 다행입니다. 다른 현장 상황도 확인해 드릴게요.'
+        if q in ('도움말', '도와줘'):
+            return ('현재 상태, 최근 경보, 레이더 사용 이유, 낙상·감전·협착 대응 '
+                    '근거를 질문할 수 있습니다. 차단·해제·전원 복구는 실행하지 않습니다.')
         if '무슨 시스템' in question or '뭐 하는' in question:
             return ('Radar-Guard는 카메라 대신 mmWave 레이더로 작업자 낙상·무동작과 '
                     '설비 이상을 감지하고, 젯슨 차단과 RAG 대응 가이드를 결합한 '
@@ -2250,14 +2281,17 @@ class AssistantDrawer(QtWidgets.QDialog):
         return None
 
     def _show_answer(self, answer, source, elapsed):
-        self.log.append(
-            f'<p style="color:{TXT}"><b>AI</b> · {core.md_to_html(answer)}</p>'
-            f'<p style="color:{FAINT}">근거: {html_escape(source)} · '
-            f'{elapsed:.1f}초</p>')
+        self.waiting.clear()
+        content = (f'{core.md_to_html(answer)}<br><span style="color:{FAINT};'
+                   f'font-size:9pt;">근거: {html_escape(source)} · '
+                   f'{elapsed:.1f}초</span>')
+        self.log.append(self._bubble(content, False, 'AI'))
 
     def _show_error(self, error):
-        self.log.append(
-            f'<p style="color:{AMBER}">AI 응답 실패: {html_escape(error)}</p>')
+        self.waiting.clear()
+        self.log.append(self._bubble(
+            f'<span style="color:{AMBER};">AI 응답 실패: '
+            f'{html_escape(error)}</span>', False, 'AI'))
 
 
 # ══════════════════════════════════════════════════════════════════════
