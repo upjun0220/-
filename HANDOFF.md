@@ -5,24 +5,26 @@
 
 ## State
 
-- Updated: 2026-08-03 · CW
+- Updated: 2026-08-04 · CW
 - Branch: main
 - Commit: 1263dbe
-- Working tree: 문서·스킬 변경 미커밋 (`04_문서/` 신규 4, `.claude/skills/radar-guard-hmi/` 신규, `scripts/` 신규, 런북 rename, `_구버전_laptop_viewer.py` 이동)
+- Working tree: 문서·스킬·scripts 변경 미커밋
 
 ## Current objective
 
-8/05(수) 젯슨 통합시험 — 레이더 → 젯슨 → UDP → 노트북 화면이 **끝까지 흐르는지** 확인한다.
+젯슨을 붙이기 전에 **표시 계층의 거짓 표시 3건을 없애고 검증 환경을 복구한다.** 실물 시험에서 센서 문제와 UI 문제가 한 화면에 섞이면 원인을 가릴 수 없다. 젯슨 통합시험은 8/05(수).
 
 ## Verified baseline
 
 - `1263dbe` 기준: v1결함 35·0 / 레이아웃 0건 / 실데이터재생 64·0 / 평면도흐름 16·0 / pyflakes 0
-- 젯슨 실물 연결 실측치 **없음**. 위 수치는 전부 시뮬·jsonl 재생 기준이다.
+- **⚠ 위 수치는 `PYTHONUTF8=1` 환경에서만 나온다.** 기본 cp949 콘솔에서는 첫 출력의 `—` 에서 죽는다.
+- 젯슨 실물 연결 실측치 **없음**. 전부 시뮬·jsonl 재생 기준이다.
 
 ## Next actions
 
-1. 젯슨 통합시험 — `04_문서/젯슨_통합시험_런북_0805.md` 절차대로. 시작 전 방화벽 UDP 5005 인바운드 허용, 핫스팟 연결, 한 구간씩 연다. 결과를 숫자로 남긴다.
-2. 드로어 제목 RED 고정 → `sev_color(sev)` 로 교체. `console_ui.py:1049`(`SopView.__init__` 생성 시 고정) · `:1150`(`EvidenceView.set_event` 매번 강제). 표시 계층만 건드린다. 고친 뒤 `replay_still.png`·`replay_vib.png` 를 열어 주황인지 확인.
+1. 검증 진입점에서 UTF-8 출력을 보장한다. `01_현행코드/테스트_*.py` 4종 + `replay_jsonl.py` 등 콘솔 출력이 있는 스크립트 상단에서 `sys.platform == 'win32'` 일 때 `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`. **이게 먼저다 — 검증이 안 돌면 아래 2·3 을 증명할 수 없다.** (`scripts/` 3종은 이미 반영됨)
+2. 드로어 제목 RED 고정 → `sev_color(sev)`. `console_ui.py:1049`(`SopView.__init__` 생성 시 고정) · `:1150`(`EvidenceView.set_event` 매번 강제). 같은 파일에서 `on_alert`(2519)를 `_pump_state`(2559) **뒤에 다시 계산**해 `lost`(2571)에 반영한다 — 지금은 `sev` 만 갱신되고 `on_alert` 는 옛 값이라 주석의 주장과 코드가 어긋난다. 경보 첫 패킷에서 형상이 즉시 숨는 회귀검사를 추가한다.
+3. `_set_auto_action`(2719)이 `breaker.state` 만 보고 "차단 신호 발신"이라 쓴다. 낙상으로 이미 내려간 뒤 warning 사건이 오면 거짓이다. `breaker.reason` 을 읽어 **이번 사건의 차단**과 **기존 차단 상태**를 다르게 표시한다.
 
 ## Blockers / unknowns
 
@@ -31,4 +33,4 @@
 
 ## Acceptance
 
-젯슨→노트북 패킷 수신 확인, READY→WARMUP→TRAIN→LIVE 진행, 낙상·진동 각 1회 화면 반영. 프레임레이트·프레임당 포인트수·유실률·LLM 응답시간을 숫자로 기록(못 잰 것은 `—`). 코드를 고쳤으면 `ui-verify` 전체 통과(35·0 / 0건 / 64·0 / 16·0).
+1·2·3 을 고친 뒤 `ui-verify` 전체를 **기본 콘솔에서** 통과(35·0 / 0건 / 64·0 / 16·0, pyflakes 0). `replay_still.png`·`replay_vib.png` 를 열어 드로어 제목이 주황인지 눈으로 확인. 차단 표시는 낙상 후 진동이 연달아 오는 시퀀스로 검사한다.

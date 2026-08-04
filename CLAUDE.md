@@ -196,6 +196,15 @@ LLM은 4레이어로 쓴다 — L1 브리핑 / L2 XAI 근거 / L3 RAG / L4 질�
 
 정보마다 정본이 하나다 — 실행 지시는 `HANDOFF.md`, 소통은 `AI_BRIDGE/`(GPT 검토는 `REVIEW.md`), 개선 이슈는 `04_문서/BACKLOG.md`, 설계 근거는 `04_문서/`, 완료 이력은 `git log`.
 
+### 규칙 문서 수정권
+
+**`CLAUDE.md` · `AGENTS.md` · `.claude/skills/` · `.agents/skills/` 를 고칠 수 있는 것은 Cowork 뿐이다.**
+Claude Code 와 Codex 는 직접 고치지 않고 `04_문서/AI_BRIDGE/OUTBOX.md` 에 제안한다.
+
+- 정본은 **`CLAUDE.md` 와 `.claude/skills/`** 다. `AGENTS.md` 와 `.agents/skills/` 는 `scripts\sync_agent_docs.py` 의 **생성물**이다.
+- 생성물을 직접 고치면 정본과 어긋나 **커밋이 막힌다**(pre-commit 이 `--check` 를 돌린다).
+- ⚠ [8/04] 실제로 갈라진 적이 있다 — `AGENTS.md` 의 인계 규칙이 이미 없어진 §0/§1/§2 구조를 지시했고 `session-end` 스킬은 74줄 차이가 났다. **두 도구가 다른 규칙으로 움직이면 반대쪽이 틀린 문서를 쓴다.**
+
 ---
 
 ## 11. 일정

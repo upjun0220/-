@@ -15,6 +15,17 @@ import os
 import re
 import sys
 
+# ⚠ [8/04] Windows 기본 콘솔(cp949)에서 '—' 같은 문자를 출력하면
+#   UnicodeEncodeError 로 중간에 죽는다. 검증 절차가 숨은 환경변수
+#   ($env:PYTHONUTF8)에 의존하면 안 되므로 진입점에서 보장한다.
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError):
+        pass
+
+
 # 실행 위치와 무관하게 저장소 루트를 찾는다 (verify_port.py 와 같은 방식)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATH = os.path.join(ROOT, 'HANDOFF.md')
