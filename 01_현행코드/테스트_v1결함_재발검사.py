@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """v1 에서 고쳤던 결함이 v2 에 재발했는지 런타임으로 검사한다."""
 import os, sys, time, traceback
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 # ⚠ [8/02 실측] offscreen 플러그인이 번들 Qt5/lib/fonts 를 못 찾아 families()=0 →
 #   resolve_font() 가 매칭 못 하고 초기값이 유지되며 합성 폰트 메트릭이 글자 폭을
@@ -164,6 +166,22 @@ w.demo_src.t0 = time.time()-7; pump(10); w.tick_ui()
 col = w.monitor.tiles['height'].val.styleSheet()
 check('27. 경보 중 계측 수치는 빨강 아님', ui.RED not in col, col)
 
+# ── 28. 경보 첫 패킷부터 사람 형상을 숨기는가 ──
+w.clear_alarm(); w.last_ev_id = 0; w._navigate(ui.PG_MON)
+first = w.demo_src.read()
+first['ev'] = dict(first.get('ev') or {}, active=True, id=999999,
+                   type='fall_detected', sev='critical', zone=ui.RADAR_ZONE,
+                   conf=0.9)
+hide_args = []
+orig_push = w.scene.push
+def capture_push(pkt, sev='normal', hide_shape=False):
+    hide_args.append(hide_shape)
+    return orig_push(pkt, sev, hide_shape)
+w.scene.push = capture_push
+w.on_packet(first); app.processEvents()
+w.scene.push = orig_push
+check('28. 경보 첫 패킷부터 사람 형상 숨김', hide_args == [True], hide_args)
+
 # ══════════════════════════════════════════════════════════════════════
 # 인체 도식 (8/01 추가) — 도식이 '측정한 것' 과 어긋나지 않는지
 # ══════════════════════════════════════════════════════════════════════
@@ -177,13 +195,13 @@ ps = w.scene.track.pose.estimate()
 assert ps is not None, '자세 추정 실패 — 데모 데이터 확인'
 seg = core.Track3D.stick2d(ps)
 cl = w.scene.track.pose.cloud()
-check('28. 서 있는 도식의 발이 바닥에 닿음',
+check('29. 서 있는 도식의 발이 바닥에 닿음',
       abs(seg[:, 1].min()) < 0.12, f'발 높이 {seg[:,1].min():+.2f} m')
-check('29. 머리 추정점이 몸 중심보다 위',
+check('30. 머리 추정점이 몸 중심보다 위',
       ps['head'][1] < ps['center'][1],
       f"머리 {core.CEILING_H-ps['head'][1]:.2f} m / 중심 {core.CEILING_H-ps['center'][1]:.2f} m")
 ov = min(seg[:,0].max(), cl[:,0].max()) - max(seg[:,0].min(), cl[:,0].min())
-check('30. 도식이 점군 위에 얹힘(서 있음)', ov > 0.15, f'겹침 {ov:.2f} m')
+check('31. 도식이 점군 위에 얹힘(서 있음)', ov > 0.15, f'겹침 {ov:.2f} m')
 
 w.demo_src.t0 = time.time()-7        # 누운 구간
 pump(40)
@@ -191,8 +209,8 @@ pl = w.scene.track.pose.estimate()
 segl = core.Track3D.stick2d(pl)
 cll = w.scene.track.pose.cloud()
 ovl = min(segl[:,0].max(), cll[:,0].max()) - max(segl[:,0].min(), cll[:,0].min())
-check('31. 도식이 점군 위에 얹힘(누움)', ovl > 0.5, f'겹침 {ovl:.2f} m')
-check('32. 누운 도식이 바닥 근처', segl[:,1].max() < 0.9,
+check('32. 도식이 점군 위에 얹힘(누움)', ovl > 0.5, f'겹침 {ovl:.2f} m')
+check('33. 누운 도식이 바닥 근처', segl[:,1].max() < 0.9,
       f'최고 {segl[:,1].max():.2f} m')
 prev, flips = None, 0
 for _ in range(120):
@@ -202,8 +220,8 @@ for _ in range(120):
         if prev is not None and float(_np.dot(r['axis'], prev)) < 0:
             flips += 1
         prev = _np.array(r['axis'])
-check('33. 누운 상태 축 부호 반전 없음', flips == 0, f'{flips}회/120프레임')
-check('34. 도식에 관절 자유도가 없음(고정 비율)',
+check('34. 누운 상태 축 부호 반전 없음', flips == 0, f'{flips}회/120프레임')
+check('35. 도식에 관절 자유도가 없음(고정 비율)',
       set(core.STICK) == {'head_t','head_r','neck','shoulder','hip',
                           'sh_w','hand_t','hand_w','foot_t','foot_w'})
 

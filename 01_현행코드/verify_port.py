@@ -25,6 +25,9 @@ import glob
 
 import numpy as np
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = os.path.dirname(os.path.abspath(__file__))
 # [7/31 폴더 정리] 판정 기준 원본과 학습 데이터의 새 위치

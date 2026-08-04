@@ -47,6 +47,9 @@ import threading
 import time
 from collections import deque
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 from radar_common import (
     SCHEMA_VERSION, DATA_PORT, CTRL_PORT, SEND_HZ, MAX_UDP, MIN_PTS, CLIENT_TTL,
     CMD_HELLO, CMD_RESOLVE, CMD_RESTORE, CMD_RESET, CMD_START, CMD_TRAIN,
@@ -97,6 +100,7 @@ S = {
     'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
     'frame': None, 'label': '-', 'src': '-', 'pre_alert': '',
     'breaker': {z: 'ON' for z in ZONE_IDS},
+    'breaker_reason': {z: None for z in ZONE_IDS},
     'cz_h': deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
     'ds_h': deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
     'sc_h': deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
@@ -189,6 +193,7 @@ def control_listener():
                                           if v != 'ON']
                 for z in zs:
                     S['breaker'][z] = 'ON'
+                    S['breaker_reason'][z] = None
                 log(f'BREAKER RESTORE {zs}')
             elif cmd == CMD_RESOLVE:
                 S['req'].add(CMD_RESOLVE)
@@ -255,7 +260,8 @@ def sender_loop():
                 'power': {'curr': round(random.gauss(1.0, 0.03), 3),
                           'volt': round(random.gauss(220.0, 0.4), 2),
                           'src': 'sim'},
-                'breaker': {'state': dict(S['breaker']), 'reason': {}},
+                'breaker': {'state': dict(S['breaker']),
+                            'reason': dict(S['breaker_reason'])},
                 'ev': {'active': S['ev_active'], 'type': S['ev_type'],
                        'sev': S['ev_sev'], 'conf': S['ev_conf'],
                        'zone': S['ev_zone'], 'id': S['ev_id'],
@@ -337,8 +343,9 @@ def _fire(et, frames, label):
                   'ev_id': S['ev_id'] + 1, 'ev_ts': time.time(),
                   'ev_evidence': ev, 'ev_gates': gates, 'ev_rejected': []})
         # 확정 사고(critical)만 차단한다 — 젯슨 _latch_event 와 같은 규칙
-        if sev == 'critical':
+        if sev == 'critical' and S['breaker'][RADAR_ZONE] == 'ON':
             S['breaker'][RADAR_ZONE] = 'TRIPPED'
+            S['breaker_reason'][RADAR_ZONE] = et
         S['incidents'].append({'type': et, 'zone': RADAR_ZONE,
                                'detected': time.strftime('%H:%M:%S'),
                                'resolved': None})

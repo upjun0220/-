@@ -21,6 +21,9 @@ import sys
 import threading
 import time
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 # ⚠ [8/02 실측] offscreen 플러그인이 번들 Qt5/lib/fonts 를 못 찾아 families()=0 →
 #   resolve_font() 가 매칭 못 하고 초기값이 유지되며 합성 폰트 메트릭이 글자 폭을
@@ -163,9 +166,22 @@ def main():
                   f'{w.cur_sev()} (기대 {want_sev})')
             check(f'{label}: 등급 색', sev_color(w.cur_sev()) == want_col,
                   sev_color(w.cur_sev()))
+            check(f'{label}: 조치 가이드 제목 등급색',
+                  want_col in w.drawer.sop.head.styleSheet(),
+                  w.drawer.sop.head.styleSheet())
+            check(f'{label}: 판단 근거 제목 등급색',
+                  want_col in w.drawer.evi.head.styleSheet(),
+                  w.drawer.evi.head.styleSheet())
             check(f'{label}: 배너 표시', w.monitor.banner.isVisible())
             check(f'{label}: 구역 = {RADAR_ZONE}',
                   (w.alert or {}).get('zone') == RADAR_ZONE)
+            auto = w.monitor.auto_lb.text()
+            if label == 'fall':
+                check('fall: 이번 사건 차단으로 표시',
+                      '차단 신호 발신' in auto, auto)
+            elif label in ('still', 'vib'):
+                check(f'{label}: 기존 낙상 차단으로 표시',
+                      '기존 차단 상태' in auto and '낙상' in auto, auto)
 
             # ⚠ [8/02] 3D(기본 모드, 이미 갱신됨)와 2D(명시 전환 후 다음 패킷으로
             #   갱신됨) 둘 다 검사한다 — 한쪽만 보면 이번 vib 사각지대처럼 다른

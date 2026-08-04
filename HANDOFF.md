@@ -5,32 +5,32 @@
 
 ## State
 
-- Updated: 2026-08-04 · CW
+- Updated: 2026-08-04 · Codex
 - Branch: main
-- Commit: 1263dbe
-- Working tree: 문서·스킬·scripts 변경 미커밋
+- Commit: 9acea4f
+- Working tree: Codex 세션 변경 커밋 예정 · `INBOX.md` 타 작업 6줄은 제외
 
 ## Current objective
 
-젯슨을 붙이기 전에 **표시 계층의 거짓 표시 3건을 없애고 검증 환경을 복구한다.** 실물 시험에서 센서 문제와 UI 문제가 한 화면에 섞이면 원인을 가릴 수 없다. 젯슨 통합시험은 8/05(수).
+8/05 젯슨 통합시험에서 레이더→젯슨→UDP→노트북 표시와 로컬 차단 경로가 실물 10 Hz 부하에서도 끝까지 동작하는지 수치로 확인한다.
 
 ## Verified baseline
 
-- `1263dbe` 기준: v1결함 35·0 / 레이아웃 0건 / 실데이터재생 64·0 / 평면도흐름 16·0 / pyflakes 0
-- **⚠ 위 수치는 `PYTHONUTF8=1` 환경에서만 나온다.** 기본 cp949 콘솔에서는 첫 출력의 `—` 에서 죽는다.
-- 젯슨 실물 연결 실측치 **없음**. 전부 시뮬·jsonl 재생 기준이다.
+- 노트북 기본 콘솔: pyflakes 0 / v1결함 36·0 / 레이아웃 0건 / 실데이터재생 73·0 / 평면도흐름 16·0
+- 판정 이식 7,788건 불일치 0 / 젯슨 안전 36건 실패 0
+- 위 수치는 시뮬·jsonl 재생 기준이며 젯슨 실물 연결 실측치는 없다.
 
 ## Next actions
 
-1. 검증 진입점에서 UTF-8 출력을 보장한다. `01_현행코드/테스트_*.py` 4종 + `replay_jsonl.py` 등 콘솔 출력이 있는 스크립트 상단에서 `sys.platform == 'win32'` 일 때 `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`. **이게 먼저다 — 검증이 안 돌면 아래 2·3 을 증명할 수 없다.** (`scripts/` 3종은 이미 반영됨)
-2. 드로어 제목 RED 고정 → `sev_color(sev)`. `console_ui.py:1049`(`SopView.__init__` 생성 시 고정) · `:1150`(`EvidenceView.set_event` 매번 강제). 같은 파일에서 `on_alert`(2519)를 `_pump_state`(2559) **뒤에 다시 계산**해 `lost`(2571)에 반영한다 — 지금은 `sev` 만 갱신되고 `on_alert` 는 옛 값이라 주석의 주장과 코드가 어긋난다. 경보 첫 패킷에서 형상이 즉시 숨는 회귀검사를 추가한다.
-3. `_set_auto_action`(2719)이 `breaker.state` 만 보고 "차단 신호 발신"이라 쓴다. 낙상으로 이미 내려간 뒤 warning 사건이 오면 거짓이다. `breaker.reason` 을 읽어 **이번 사건의 차단**과 **기존 차단 상태**를 다르게 표시한다.
+1. `04_문서/젯슨_통합시험_런북_0805.md` 사전 점검을 수행한다. 핫스팟·노트북 방화벽 UDP 5005·젯슨 시각 비의존·COM13 입력을 한 단계씩 확인한다.
+2. READY→WARMUP→TRAIN→LIVE를 진행하고 낙상·진동 각 1회를 발생시킨다. 프레임레이트·프레임당 포인트수·UDP 유실률·첫 LLM 응답시간을 숫자로 기록하며 못 잰 값은 `—`로 둔다.
+3. 끊김이 실제로 보일 때만 `DashboardPage.push()`·`FacilityPlan.paintEvent()`·`Track3D`를 pyinstrument로 측정한다. 추측으로 최적화하지 않는다.
 
 ## Blockers / unknowns
 
-1. 10 Hz 실부하에서 화면이 끊기는지 미확인. 잠재 위험 3건(`DashboardPage.push()` setStyleSheet / `FacilityPlan` paintEvent / `Track3D` GL)은 **끊김이 실제로 보일 때만** pyinstrument 로 측정한다.
-2. LLM 첫 응답 1분의 원인 미확정 — 모델 로딩인지 `prewarm()` 미실행인지 갈리지 않았다. LIVE 진입 후 "AI 요약 사전 생성 완료" 표시 여부로 판별한다.
+1. 실물 10 Hz에서 화면 끊김과 UDP 유실률이 미확인이다.
+2. LLM 첫 응답 약 1분이 모델 로딩인지 `prewarm()` 미실행인지 미확정이다.
 
 ## Acceptance
 
-1·2·3 을 고친 뒤 `ui-verify` 전체를 **기본 콘솔에서** 통과(35·0 / 0건 / 64·0 / 16·0, pyflakes 0). `replay_still.png`·`replay_vib.png` 를 열어 드로어 제목이 주황인지 눈으로 확인. 차단 표시는 낙상 후 진동이 연달아 오는 시퀀스로 검사한다.
+젯슨→노트북 패킷 수신, READY→WARMUP→TRAIN→LIVE, 낙상·진동 화면 반영, 젯슨 로컬 차단을 확인한다. 런북 계측값을 숫자로 남기고 코드 수정 시 UI 전체 검증과 젯슨 안전 검증을 다시 통과한다.

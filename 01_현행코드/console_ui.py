@@ -1046,7 +1046,7 @@ class SopView(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         v = vbox(self, 0, SP3)
-        self.head = lb('', F_H1, RED, bold=True)
+        self.head = lb('', F_H1, DIM, bold=True)
         v.addWidget(self.head)
         self.done_box = card(BG_OK, GREEN, RADIUS_SM)
         dv = vbox(self.done_box, SP3, 0)
@@ -1072,6 +1072,8 @@ class SopView(QtWidgets.QWidget):
     def show_for(self, et='fall_detected', done=None):
         self._et = et
         self.head.setText(EVENT_KO.get(et, str(et)))
+        self.head.setStyleSheet(
+            f'color:{sev_color(event_sev(et))};border:none;background:transparent;')
         self.done.setText(done or '해당 구역 전원 차단 완료 · 젯슨 자동 실행')
         html = []
         for cat, lines in INSTANT_ACTION.get(et, INSTANT_ACTION['fall_detected']):
@@ -1142,12 +1144,14 @@ class EvidenceView(QtWidgets.QWidget):
 
     def set_event(self, ev, rx_ts):
         et = ev.get('type') or ev.get('event_type')
+        sev = ev.get('sev') or event_sev(et)
         self.head.setText(
             f"{EVENT_KO.get(et, '-')} · {ev.get('zone')} "
-            f"{ZONE_KO.get(ev.get('zone'), '')} · {SEV_KO.get(ev.get('sev'), '')} · "
+            f"{ZONE_KO.get(ev.get('zone'), '')} · {SEV_KO.get(sev, '')} · "
             f"확신도 {ev.get('conf', 0):.0%} · "
             f"{time.strftime('%H:%M:%S', time.localtime(rx_ts))}")
-        self.head.setStyleSheet(f'color:{RED};border:none;background:transparent;')
+        self.head.setStyleSheet(
+            f'color:{sev_color(sev)};border:none;background:transparent;')
         g = ev.get('gates') or {}
         self.tbl.setRowCount(max(len(g), 1))
         if not g:
@@ -2557,6 +2561,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         #   도식만 초록으로 한 프레임 늦게 따라간다(실측: 주의 경보인데 도식이
         #   초록으로 남음). 판정 결과는 패킷에 이미 들어 있으므로 먼저 반영한다.
         self._pump_state(pkt)
+        on_alert = self.alarm != ST_NORMAL
         sev = self.cur_sev()
 
         ev = pkt.get('ev') or {}
@@ -2716,10 +2721,21 @@ class ConsoleV2(QtWidgets.QMainWindow):
         ⚠ v1 은 항상 '전원 차단 완료'라고 썼다. 차단기가 미연결이거나 실패한
           경우에도 완료라고 말하게 된다. 상태를 읽어 다르게 쓴다.
         """
-        bs = ((self.pkt.get('breaker') or {}).get('state')) or {}
+        breaker = self.pkt.get('breaker') or {}
+        bs = breaker.get('state') or {}
+        reasons = breaker.get('reason') or {}
         src = (self.pkt.get('power') or {}).get('src')
         off = bs.get(z, 'ON') != 'ON'
-        if off and src == 'modbus':
+        et = (self.alert or {}).get('type')
+        reason = reasons.get(z)
+        if off and reason != et:
+            why = EVENT_KO.get(reason, reason or '사유 미확인')
+            if src == 'modbus':
+                txt, c, bg = f'{z} 구역 기존 차단 유지 · {why}', GREEN, BG_OK
+            else:
+                txt, c, bg = (f'{z} 구역 기존 차단 상태 · {why} '
+                              f'(차단기 모의값)'), AMBER, BG_WARN
+        elif off and src == 'modbus':
             txt, c, bg = f'{z} 구역 전원 차단 완료 · 젯슨 자동 실행', GREEN, BG_OK
         elif off:
             txt, c, bg = (f'{z} 구역 차단 신호 발신 (차단기 모의값 — '

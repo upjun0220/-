@@ -8,6 +8,8 @@
     구역 클릭 진입 / 미설치 구역 처리
 """
 import os, sys, threading, time
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 # ⚠ [8/02 실측] offscreen 플러그인이 번들 Qt5/lib/fonts 를 못 찾아 families()=0 →
 #   resolve_font() 가 매칭 못 하고 초기값이 유지되며 합성 폰트 메트릭이 글자 폭을

@@ -23,6 +23,9 @@ import re
 import sys
 import types
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SEND = os.path.join(HERE, 'jetson_sender.py')

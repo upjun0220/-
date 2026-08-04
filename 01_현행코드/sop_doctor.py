@@ -25,6 +25,9 @@ r"""sop_doctor.py — SOP 벡터DB 진단. 무엇이 실제로 들어 있는지 
 import os
 import sys
 
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 CONN = os.environ.get('RADAR_PG',
                       'postgresql://postgres:password@localhost:5432/radar_guard')
 COLLECTION = 'safety_manual'

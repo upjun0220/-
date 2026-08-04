@@ -27,9 +27,13 @@ import json
 import math
 import random
 import socket
+import sys
 import threading
 import time
 from collections import deque
+
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 
 
