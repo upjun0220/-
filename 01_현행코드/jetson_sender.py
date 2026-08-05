@@ -1056,7 +1056,12 @@ def pipeline_loop():
     scan_buf      = []
     scan_until    = None
     step_in_until = None
-    read_offset = 0
+    # 기존 JSONL은 과거 기록이다. 재시작 때 100MB 전체를 재생하면 옛 사람으로
+    # 트랙·정지 타이머가 즉시 생긴다. 시작 이후 추가되는 프레임만 읽는다.
+    try:
+        read_offset = os.path.getsize(JSON_PATH)
+    except OSError:
+        read_offset = 0
     model       = None
     scaler      = None
     ae_disabled = False          # [7/31] True = AE 학습 실패로 규칙 전용 LIVE 로 강등된 상태
@@ -1161,7 +1166,10 @@ def pipeline_loop():
             model       = None
             scaler      = None
             thr         = 0.01
-            read_offset = 0
+            try:
+                read_offset = os.path.getsize(JSON_PATH)
+            except OSError:
+                read_offset = 0
             person_track.reset()
             with _lock:
                 state['scan_left'] = None
