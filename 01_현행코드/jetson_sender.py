@@ -135,6 +135,7 @@ TRACK_MOTION_DS = 0.35
 TRACK_LOST_SEC = 1.2
 TRACK_COMPACT_R = 0.80
 TRACK_MATCH_R = 1.20
+TRACK_N_MIN = 15  # [8/05 무인 50프레임] ROI+클러터 후 최대 14점
 
 BASELINE_PATH = '/home/project/baseline_model.pt'
 LOAD_BASELINE = True   # False = 항상 새로 웜업/학습
@@ -342,13 +343,13 @@ class PersonTrack:
     def update(self, points, feat, now):
         pos = (float(feat[0]), float(feat[2])) if feat is not None else None
         moving = bool(feat is not None and float(feat[4]) >= TRACK_MOTION_DS)
-        compact = bool(points and self._compact(points))
-        matched = (compact and pos is not None
+        present = bool(points and len(points) >= TRACK_N_MIN and self._compact(points))
+        matched = (present and pos is not None
                    and (self.last_pos is None
                         or np.hypot(pos[0] - self.last_pos[0], pos[1] - self.last_pos[1])
                         <= TRACK_MATCH_R))
         if self.state in ('absent', 'entering', 'exited'):
-            self.acquire_hits = self.acquire_hits + 1 if compact and moving and self._inside(pos) else 0
+            self.acquire_hits = self.acquire_hits + 1 if present and moving and self._inside(pos) else 0
             self.state = 'entering' if self.acquire_hits else 'absent'
             if self.acquire_hits >= TRACK_ACQUIRE_FRAMES:
                 self.state, self.last_pos, self.last_seen = 'tracking', pos, now
@@ -1492,11 +1493,10 @@ def pipeline_loop():
             else:
                 motion_run = 0
 
-            if MAINT_MODE:
-                stat_since = None; stat_zone = None; stat_pre = False
-                stat_hits = stat_tot = 0
-                with _lock:
-                    state['pre_alert'] = ''
+            # 트랙 기반 정지형으로 교체된 옛 저도플러 게이트. 아래 분기는 회귀 비교를
+            # 위해 남기되 실행하지 않는다. 두 경로가 같은 타이머를 지우면 안 된다.
+            if True:
+                pass
             elif _clutter:
                 pass   # 중립: 카운터/타이머 유지
             elif (person_track.state == 'lost_in_zone' and _zone_hit
@@ -1549,7 +1549,7 @@ def pipeline_loop():
                     with _lock:
                         state['pre_alert'] = ''
 
-            if stat_since is not None and time.time() - stat_last_hit > STAT_HIT_TIMEOUT:
+            if False and stat_since is not None and time.time() - stat_last_hit > STAT_HIT_TIMEOUT:
                 if stat_pre:
                     add_log(f'PRE-ALERT cleared Zone {stat_zone}: presence lost')
                 stat_since = None; stat_zone = None; stat_pre = False
@@ -1557,7 +1557,7 @@ def pipeline_loop():
                 with _lock:
                     state['pre_alert'] = ''
 
-            if (stat_since is not None and stat_tot >= STAT_MIN_OBS
+            if (False and stat_since is not None and stat_tot >= STAT_MIN_OBS
                     and stat_hits < STAT_HIT_FLOOR * stat_tot):
                 if stat_pre:
                     add_log(f'PRE-ALERT cleared Zone {stat_zone}: scattered clutter (low hit-ratio)')
@@ -1569,7 +1569,12 @@ def pipeline_loop():
             # [8/05 실측] 정지 인체는 도플러 0으로 사라지고 빈방 반사가 남는다.
             # 저도플러 점을 계속 사람으로 요구하면 타이머가 매번 초기화된다.
             # 확인된 트랙이 경계 퇴실 없이 내부에서 소실된 시간으로 정지형을 판정한다.
-            if person_track.state == 'lost_in_zone':
+            if MAINT_MODE:
+                stat_since = None; stat_zone = None; stat_pre = False
+                stat_hits = stat_tot = 0
+                with _lock:
+                    state['pre_alert'] = ''
+            elif person_track.state == 'lost_in_zone':
                 stat_since = person_track.lost_since or time.time()
                 stat_zone = RADAR_ZONE
                 stat_hits = stat_tot = STAT_MIN_OBS
@@ -1716,9 +1721,9 @@ def pipeline_loop():
                         _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
 
                 # ── 정지형 2차 경보: critical latch ──
-                if (stat_since is not None and not state['ev_active']
-                        and time.time() - stat_since >= STAT_CRIT_SEC
-                        and stat_hits >= STAT_HIT_RATIO * max(1, stat_tot)):
+                if (person_track.state == 'lost_in_zone' and person_track.lost_since is not None
+                        and not state['ev_active']
+                        and time.time() - person_track.lost_since >= STAT_CRIT_SEC):
                     et2 = 'stationary_anomaly'
                     zn2 = stat_zone or EVENT_ZONE.get(et2, RADAR_ZONE)
                     dwell = time.time() - stat_since
