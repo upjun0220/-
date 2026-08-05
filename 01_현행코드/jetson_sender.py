@@ -136,6 +136,8 @@ TRACK_LOST_SEC = 1.2
 TRACK_COMPACT_R = 0.80
 TRACK_MATCH_R = 1.20
 TRACK_N_MIN = 15  # [8/05 무인 50프레임] ROI+클러터 후 최대 14점
+TRACK_STILL_R = 0.35
+TRACK_STILL_KEEP_SEC = 3.0
 
 BASELINE_PATH = '/home/project/baseline_model.pt'
 LOAD_BASELINE = True   # False = 항상 새로 웜업/학습
@@ -324,6 +326,10 @@ class PersonTrack:
         self.last_pos = None
         self.last_seen = 0.0
         self.lost_since = None
+        self.present = False
+        self.still_since = None
+        self.still_anchor = None
+        self.smooth_pos = None
 
     @staticmethod
     def _compact(points):
@@ -344,6 +350,7 @@ class PersonTrack:
         pos = (float(feat[0]), float(feat[2])) if feat is not None else None
         moving = bool(feat is not None and float(feat[4]) >= TRACK_MOTION_DS)
         present = bool(points and len(points) >= TRACK_N_MIN and self._compact(points))
+        self.present = present
         matched = (present and pos is not None
                    and (self.last_pos is None
                         or np.hypot(pos[0] - self.last_pos[0], pos[1] - self.last_pos[1])
@@ -353,18 +360,36 @@ class PersonTrack:
             self.state = 'entering' if self.acquire_hits else 'absent'
             if self.acquire_hits >= TRACK_ACQUIRE_FRAMES:
                 self.state, self.last_pos, self.last_seen = 'tracking', pos, now
+                self.smooth_pos = self.still_anchor = pos
+                self.still_since = now
                 self.acquire_hits = 0
         elif self.state == 'tracking':
             if matched:
                 self.last_pos, self.last_seen = pos, now
+                if self.smooth_pos is None:
+                    self.smooth_pos = pos
+                else:
+                    self.smooth_pos = (0.8 * self.smooth_pos[0] + 0.2 * pos[0],
+                                       0.8 * self.smooth_pos[1] + 0.2 * pos[1])
+                if self.still_anchor is None:
+                    self.still_anchor, self.still_since = self.smooth_pos, now
+                elif np.hypot(self.smooth_pos[0] - self.still_anchor[0],
+                              self.smooth_pos[1] - self.still_anchor[1]) > TRACK_STILL_R:
+                    self.still_anchor, self.still_since = self.smooth_pos, now
             elif now - self.last_seen >= TRACK_LOST_SEC:
+                stable_for = now - self.still_since if self.still_since is not None else 0.0
+                if stable_for < TRACK_STILL_KEEP_SEC:
+                    self.still_since = None
                 if self._inside(self.last_pos, margin=0.15):
                     self.state, self.lost_since = 'lost_in_zone', now
                 else:
                     self.state, self.lost_since = 'exited', None
+                    self.still_since = None
         elif self.state == 'lost_in_zone' and matched and moving:
             self.state, self.last_pos, self.last_seen = 'tracking', pos, now
             self.lost_since = None
+            self.smooth_pos = self.still_anchor = pos
+            self.still_since = now
         return self.state
 
 
@@ -1574,8 +1599,9 @@ def pipeline_loop():
                 stat_hits = stat_tot = 0
                 with _lock:
                     state['pre_alert'] = ''
-            elif person_track.state == 'lost_in_zone':
-                stat_since = person_track.lost_since or time.time()
+            elif (person_track.still_since is not None
+                  and (person_track.present or person_track.state == 'lost_in_zone')):
+                stat_since = person_track.still_since
                 stat_zone = RADAR_ZONE
                 stat_hits = stat_tot = STAT_MIN_OBS
                 dwell = time.time() - stat_since
@@ -1721,9 +1747,10 @@ def pipeline_loop():
                         _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
 
                 # ── 정지형 2차 경보: critical latch ──
-                if (person_track.state == 'lost_in_zone' and person_track.lost_since is not None
+                if (person_track.still_since is not None
+                        and (person_track.present or person_track.state == 'lost_in_zone')
                         and not state['ev_active']
-                        and time.time() - person_track.lost_since >= STAT_CRIT_SEC):
+                        and time.time() - person_track.still_since >= STAT_CRIT_SEC):
                     et2 = 'stationary_anomaly'
                     zn2 = stat_zone or EVENT_ZONE.get(et2, RADAR_ZONE)
                     dwell = time.time() - stat_since
