@@ -2896,6 +2896,9 @@ class ConsoleV2(QtWidgets.QMainWindow):
                 self._nav_pending = True
                 QtCore.QTimer.singleShot(AUTO_NAV_MS, self._auto_nav)
 
+        # RESET으로 현장준비 페이지에 있어도 젯슨의 경보 해소를 먼저 반영한다.
+        # 이전에는 PG_PREP 조기 return 뒤에 있어 과거 정지형 경보가 영구 잔류했다.
+        self._pump_state(pkt)
         on_alert = self.alarm != ST_NORMAL
         self._show_pre(pkt)          # 화면에 상관없이 항상 최신으로
         # ⚠ 화면 전체가 같은 등급 색을 써야 한다. 배너는 주황인데 점군만
@@ -2915,7 +2918,6 @@ class ConsoleV2(QtWidgets.QMainWindow):
             return
         if page != PG_MON:
             self._drain_logs(pkt)
-            self._pump_state(pkt)
             return
 
         self.scene.set_stale(False)
@@ -2936,7 +2938,6 @@ class ConsoleV2(QtWidgets.QMainWindow):
         #   아직 self.alert 가 비어 있어 등급이 normal 로 계산되고, 점군·인체
         #   도식만 초록으로 한 프레임 늦게 따라간다(실측: 주의 경보인데 도식이
         #   초록으로 남음). 판정 결과는 패킷에 이미 들어 있으므로 먼저 반영한다.
-        self._pump_state(pkt)
         on_alert = self.alarm != ST_NORMAL
         sev = self.cur_sev()
 
