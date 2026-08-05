@@ -241,7 +241,16 @@ for nm in ('sim_radar_writer', 'tempfile'):
     ck(not called_unguarded, f'{nm} — 가드 밖 최상위 사용 없음',
        '' if not called_unguarded else f'{called_unguarded}행')
 
-print('\n[6] 판정 로직이 radar_live_full.py 와 동일한가 (주석 제외 코드 비교)')
+print('\n[6] 준비 단계에서 판정이 열리지 않는가')
+src = open(SEND, encoding='utf-8').read()
+ck("state['phase']     = PH_WAIT_ARM" in src,
+   '학습 완료 후 감시 대기', 'PH_WAIT_ARM 전환 확인')
+ck('elif phase == PH_WAIT_ARM:' in src and "state['phase'] = PH_LIVE" in src,
+   '감시 시작 명령으로만 LIVE 전환')
+ck("_is_live = (state['phase'] == PH_LIVE)" in src,
+   '판정 경로는 PH_LIVE 에서만 실행')
+
+print('\n[7] 판정 로직이 radar_live_full.py 와 동일한가 (주석 제외 코드 비교)')
 
 
 def code_of(path, fn):
@@ -261,11 +270,11 @@ if os.path.exists(LIVE):
 else:
     ck(False, 'radar_live_full.py 를 찾을 수 없음', LIVE)
 
-print('\n[7] 의도한 동작 변경 (에러가 아니라 수정 — 확인용)')
+print('\n[8] 의도한 동작 변경 (에러가 아니라 수정 — 확인용)')
 for note in (
         '차단기 판정을 PH_LIVE 에서만 수행 (이전: 웜업·학습 중에도 수행)',
         '설비진동 게이트에 사람 dop_std 를 넣지 않음 (이전: 걸을 때마다 차단)',
-        '학습 실패 시 무한 대기 대신 규칙 전용 LIVE 로 강등',
+        '학습 성공·실패 후 감시 시작 버튼 전까지 PH_WAIT_ARM 에서 판정 차단',
         '히스토리(cz/ds/sc/logs/incidents)를 1초에 한 번만 전송 (MTU 초과 해소)',
         'evidence/gates/rejected/power/breaker 를 패킷에 추가'):
     print(f'  · {note}')

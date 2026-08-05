@@ -60,7 +60,7 @@ from radar_common import (
     DATA_PORT, CTRL_PORT, HELLO_SEC, LINK_TIMEOUT, SCHEMA_VERSION,
     CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET,
     CEILING_H, HISTORY_LEN,
-    PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_LIVE,
+    PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
     PHASE_ORDER, PHASE_KO, PHASE_ACTION,
     EVENT_KO, EVENT_CATEGORY, ZONE_IDS, ZONE_KO, RADAR_ZONE, pg_conn_str,
     SEV_KO, GATE_META, REJECT_KO, EVIDENCE_KO, SOP_CATEGORIES,
@@ -1055,7 +1055,7 @@ class PreparePage(QtWidgets.QWidget):
       감지 구역을 나갔다 들어와야 하는 1분짜리 '모드'다.
       → 전체 화면으로 분리한다. 흐름이 화면 단위로 읽힌다:
           [1] 연결·세션  →  [2] 현장 준비  →  [3] 관제
-      LIVE 가 되면 관제 화면으로 자동 전환된다.
+      학습 후 '감시 시작'을 눌러 LIVE 가 되면 관제 화면으로 자동 전환된다.
     """
     back = QtCore.pyqtSignal()
 
@@ -1063,7 +1063,7 @@ class PreparePage(QtWidgets.QWidget):
         super().__init__()
         self.link = link
         self.phase = None
-        # True = 학습이 끝나면 관제로 자동 복귀. 사용자가 '빈방 스캔'을 눌러
+        # True = 감시 시작 후 관제로 자동 복귀. 사용자가 '빈방 스캔'을 눌러
         #   들어온 경우에만 켠다(이미 LIVE 인 상태로 구경하러 온 것과 구분).
         self.autoback = False
         outer = QtWidgets.QHBoxLayout(self)
@@ -1196,6 +1196,10 @@ class PreparePage(QtWidgets.QWidget):
         elif ph == PH_TRAINING:
             self.sub.setText('LSTM-AE 학습 중 — 20~30초')
             self.bar.setRange(0, 0)
+        elif ph == PH_WAIT_ARM:
+            self.sub.setText('준비 완료 — 감시 시작 전까지 경보가 발생하지 않습니다')
+            self.bar.setRange(0, 100)
+            self.bar.setValue(100)
         elif ph == PH_LIVE:
             self.sub.setText('관제 화면으로 전환합니다')
             self.bar.setRange(0, 100)
@@ -1204,8 +1208,9 @@ class PreparePage(QtWidgets.QWidget):
             self.sub.setText('')
             self.bar.setRange(0, 100)
             self.bar.setValue(0)
-        self.go.setText('학습 시작' if ph == PH_WAIT_TRAIN else '기준 수집 시작')
-        self.go.setVisible(ph in (PH_READY, PH_WAIT_TRAIN))
+        self.go.setText({PH_WAIT_TRAIN: '학습 시작',
+                         PH_WAIT_ARM: '감시 시작'}.get(ph, '기준 수집 시작'))
+        self.go.setVisible(ph in (PH_READY, PH_WAIT_TRAIN, PH_WAIT_ARM))
         # 관제로 나가는 길은 항상 열어 둔다 (기준이 없으면 화면이 그걸 알린다)
         self.skip.setEnabled(True)
 

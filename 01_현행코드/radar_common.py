@@ -62,14 +62,16 @@ PH_READY = 'READY'          # 대기 — 사용자가 'Start' 누르길 기다�
 PH_WARMUP = 'WARMUP'        # 빈방 스캔 → 정상 베이스라인 N프레임 수집
 PH_WAIT_TRAIN = 'WAIT_TRAIN'  # 수집 완료 — 사용자가 'Train' 누르길 기다림
 PH_TRAINING = 'TRAINING'    # LSTM-AE 학습 중 (~20-30초)
+PH_WAIT_ARM = 'WAIT_ARM'    # 학습 완료 — 사용자가 감시 시작을 누르길 기다림
 PH_LIVE = 'LIVE'            # 실시간 감시
 
-PHASE_ORDER = [PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_LIVE]
+PHASE_ORDER = [PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE]
 PHASE_KO = {
     PH_READY:      '대기',
     PH_WARMUP:     '기준 수집',
     PH_WAIT_TRAIN: '학습 대기',
     PH_TRAINING:   '학습 중',
+    PH_WAIT_ARM:   '감시 대기',
     PH_LIVE:       '감시 중',
 }
 # 준비 화면에서 각 단계에 근무자가 실제로 해야 할 행동. 화면에 이것만 띄운다.
@@ -78,6 +80,7 @@ PHASE_ACTION = {
     PH_WARMUP:     '빈 방 스캔 중 — 감지 구역 밖으로 나가 주세요',
     PH_WAIT_TRAIN: '구역 안에 서서 버튼을 누르세요',
     PH_TRAINING:   '움직이지 말고 서 계세요',
+    PH_WAIT_ARM:   '구역 밖으로 나온 뒤 감시를 시작하세요',
     PH_LIVE:       '감시가 시작됐습니다',
 }
 

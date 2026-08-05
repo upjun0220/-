@@ -62,7 +62,7 @@ try:
         SCHEMA_VERSION, DATA_PORT, CTRL_PORT, SEND_HZ, MAX_UDP, MIN_PTS, CLIENT_TTL,
         CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET, CMD_RESOLVE, CMD_RESTORE,
         CEILING_H, HISTORY_LEN,
-        PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_LIVE,
+        PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
         EVENT_LABELS, EVENT_ZONE, ZONE_IDS, RADAR_ZONE, EVENT_SEV,
         CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH,
     )
@@ -786,6 +786,9 @@ def control_listener():
                 elif phase == PH_WAIT_TRAIN:
                     state['train_requested'] = True
                     state['logs'].append(f'[{ts}] [BTN] Start Training -- stand still!')
+                elif phase == PH_WAIT_ARM:
+                    state['phase'] = PH_LIVE
+                    state['logs'].append(f'[{ts}] [BTN] Monitoring armed -- LIVE detection active')
             elif cmd == CMD_TRAIN:
                 state['train_requested'] = True
             elif cmd == CMD_RESET:
@@ -1214,7 +1217,8 @@ def pipeline_loop():
                 wc = len(warmup_feat)
                 with _lock:
                     state['warmup_count'] = wc
-                    if state['phase'] not in (PH_WAIT_TRAIN, PH_TRAINING, PH_LIVE):
+                    if state['phase'] not in (PH_WAIT_TRAIN, PH_TRAINING,
+                                               PH_WAIT_ARM, PH_LIVE):
                         state['phase'] = PH_WARMUP
 
                 if wc % 30 == 0 or wc == 1:
@@ -1276,7 +1280,7 @@ def pipeline_loop():
                     thr    = _res.get('thr')
 
                     if model is None or scaler is None:
-                        # ── 강등: 규칙 전용 LIVE ──
+                        # ── 강등: 규칙 전용 감시 대기 ──
                         #  ⚠ AE 는 '점수'가 아니라 classify() 앞의 게이트다
                         #    (is_anomaly = score > thr  →  anom_streak  →  classify).
                         #    따라서 thr 를 크게 잡으면 classify 가 아예 호출되지 않아
@@ -1286,16 +1290,17 @@ def pipeline_loop():
                         thr = -1.0
                         with _lock:
                             state['threshold'] = thr
-                            state['phase']     = PH_LIVE
+                            state['phase']     = PH_WAIT_ARM
                         add_log(f"[학습 실패] {_res.get('error', '원인 불명')}")
-                        add_log('규칙 전용 LIVE 로 강등 — AE 게이트를 개방해 classify 를 '
+                        add_log('규칙 전용 감시 대기 — AE 게이트를 개방해 classify 를 '
                                 '상시 평가합니다. 낙상 규칙(도플러·높이·수평·정지)은 그대로 '
-                                '동작하지만, AE 2차 확인이 없어 오탐이 늘 수 있습니다.')
+                                '동작하지만, AE 2차 확인이 없어 오탐이 늘 수 있습니다. '
+                                '감시 시작 버튼을 눌러야 LIVE 로 전환됩니다.')
                     else:
                         with _lock:
                             state['threshold'] = thr
-                            state['phase']     = PH_LIVE
-                        add_log(f'Training done. Threshold={thr:.5f}. LIVE detection active.')
+                            state['phase']     = PH_WAIT_ARM
+                        add_log(f'Training done. Threshold={thr:.5f}. Waiting to arm monitoring.')
                         try:
                             torch.save({'model': model.state_dict(),
                                         'scaler': scaler, 'thr': thr,

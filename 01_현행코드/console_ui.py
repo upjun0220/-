@@ -2911,7 +2911,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
                 self.prep.update_phase(pkt)
             if pkt.get('phase') == PH_LIVE and self.prep and self.prep.autoback:
                 self.prep.autoback = False
-                self.enter_console()          # 학습 완료 → 감시 자동 복귀
+                self.enter_console()          # 감시 시작 확인 → 관제로 자동 복귀
             return
         if page != PG_MON:
             self._drain_logs(pkt)
