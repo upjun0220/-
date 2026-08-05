@@ -303,7 +303,10 @@ def build_clutter_map(scan_frames):
         voxels = {(round(x / SCAN_GRID), round(y / SCAN_GRID_Y), round(z / SCAN_GRID))
                   for x, y, z in frame}
         cnt.update(voxels)
-    spots = [(gx * SCAN_GRID, gy * SCAN_GRID_Y, gz * SCAN_GRID, CLUTTER_SPOT_R, CLUTTER_Y_BAND)
+    # 점 단위 복셀은 중심점 방식보다 촘촘하므로 기존 35 cm 구를 쓰면 ROI 대부분이
+    # 지워진다. 학습한 복셀 셀 자체만 제거해 사람의 인접 점을 보존한다.
+    spots = [(gx * SCAN_GRID, gy * SCAN_GRID_Y, gz * SCAN_GRID,
+              SCAN_GRID * 0.45, SCAN_GRID_Y * 0.45)
              for (gx, gy, gz), k in cnt.most_common(SCAN_MAX_SPOTS) if k >= SCAN_MIN_HITS]
     return spots
 
