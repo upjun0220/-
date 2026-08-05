@@ -89,6 +89,7 @@ PHASE_ACTION = {
 # ══════════════════════════════════════════════════════════════════════
 EVENT_LABELS = {            # 젯슨 콘솔 로그용 (영문 — 폰트 의존 없음)
     'fall_detected':       'FALL DETECTED',
+    'fall_suspected':      'FALL SUSPECTED (RULE/RF DISAGREEMENT)',
     'stationary_anomaly':  'STATIONARY ANOMALY (VERIFY: SHOCK/ENTRAPMENT)',
     'electric_shock_risk': 'ELECTRIC SHOCK RISK',
     'pinching':            'PINCHING / ENTRAPMENT',
@@ -96,6 +97,7 @@ EVENT_LABELS = {            # 젯슨 콘솔 로그용 (영문 — 폰트 의존 
 }
 EVENT_KO = {                # 노트북 관제 화면용
     'fall_detected':       '낙상',
+    'fall_suspected':      '낙상 의심',
     'stationary_anomaly':  '장시간 무동작',
     'electric_shock_risk': '감전 위험',
     'pinching':            '협착 · 끼임',
@@ -120,6 +122,7 @@ ZONE_DEVICE = {
 
 EVENT_ZONE = {                         # 레이더·전기 유래 이벤트 → 레이더 설치 구역
     'fall_detected':       RADAR_ZONE,
+    'fall_suspected':      RADAR_ZONE,
     'stationary_anomaly':  RADAR_ZONE,
     'electric_shock_risk': RADAR_ZONE,
     'pinching':            RADAR_ZONE,
@@ -180,6 +183,7 @@ SOP_CATEGORIES = ['01_감전_LOTO', '02_협착_끼임', '03_낙상_응급처치'
 
 EVENT_CATEGORY = {
     'fall_detected':       '03_낙상_응급처치',
+    'fall_suspected':      '03_낙상_응급처치',
     'electric_shock_risk': '01_감전_LOTO',
     'pinching':            '02_협착_끼임',
     'vibration_anomaly':   '04_예지보전',
@@ -243,6 +247,7 @@ SEV_KO = {'normal': '정상', 'warning': '주의', 'critical': '위험'}
 #    그대로 동작한다. (반대로 classify 의 severity 를 건드리면 차단이 바뀐다)
 EVENT_SEV = {
     'fall_detected':       'critical',   # 게이트 5개 통과 = 확정
+    'fall_suspected':      'warning',    # 규칙 양성/RF 음성 — 확인 전 차단하지 않음
     'electric_shock_risk': 'critical',
     'pinching':            'critical',
     'overcurrent':         'critical',

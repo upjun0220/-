@@ -2843,7 +2843,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
             return
         sev = self.cur_sev()
         lost = (self.alarm != ST_NORMAL
-                and (self.alert or {}).get('type') in ('fall_detected',
+                and (self.alert or {}).get('type') in ('fall_detected', 'fall_suspected',
                                                        'stationary_anomaly'))
         self.scene.redraw(sev, hide_shape=lost)
 
@@ -2950,7 +2950,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         #   → 낙상 경보 옆에 '서 있는 사람' 을 그리면 화면이 거짓말을 한다.
         #     형상을 지우고 이유를 쓴다. 이건 이 레이더의 알려진 한계다.
         lost = (on_alert
-                and (self.alert or {}).get('type') in ('fall_detected',
+                and (self.alert or {}).get('type') in ('fall_detected', 'fall_suspected',
                                                        'stationary_anomaly'))
         pose = self.scene.push(pkt, sev, hide_shape=lost)
         if pose:
@@ -3332,6 +3332,10 @@ class ConsoleV2(QtWidgets.QMainWindow):
             self.monitor.msg.setText(
                 f'작업자가 바닥에 누운 채 {el}초째 움직이지 않습니다.\n'
                 f'{z} {ZONE_KO.get(z, "")} 구역.')
+        elif et == 'fall_suspected':
+            self.monitor.msg.setText(
+                f'낙상 규칙과 RF 판정이 불일치했습니다. 즉시 현장을 확인하십시오.\n'
+                f'{z} {ZONE_KO.get(z, "")} 구역 · {el}초 경과.')
         else:
             self.monitor.msg.setText(
                 f'{EVENT_KO.get(et, "이상")} · {z} {ZONE_KO.get(z, "")} '

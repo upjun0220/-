@@ -86,12 +86,19 @@ LAPTOP_IP = os.environ.get('RADAR_LAPTOP_IP', '')   # 비워두면 HELLO로 자�
 # ═══════════════════════════════════════════════════════════
 JSON_PATH     = '/home/project/stage1_filtered.json'
 CLF_LOG_PATH  = '/home/project/clf_decisions.jsonl'   # classify 판정 로그(문턱 튜닝용)
+SUSPECT_LOG_PATH = '/home/project/fall_suspected.jsonl'  # 확인 라벨 전 재학습 후보
 
 DANGER_ZONES = {
     'A': {'x': (-1.0, 1.0), 'z': (-1.0, 1.0), 'label': 'WORK-ZONE'},
 }
 EXCLUDE_REGIONS = []
 NEAR_FIELD_MIN_RANGE = 0.5
+
+# [8/05 제작도+실물] 3030 프레임 안쪽 폭 1.44 m. 금속 기둥 반사를 피하도록
+# 좌우 7 cm씩 안으로 들이고, 앞뒤는 기존 검증 작업구역 ±1.0 m를 유지한다.
+FRAME_ROI_X = (-0.65, 0.65)
+FRAME_ROI_Z = (-1.0, 1.0)
+FRAME_ROI_Y = (NEAR_FIELD_MIN_RANGE, CEILING_H + 0.25)
 
 STAT_N_MIN    = 3
 STAT_DS_MIN   = 0.04
@@ -122,6 +129,12 @@ STAT_CRIT_SEC = 30.0   # 2차: 계속 무동작 -> stationary 경보(critical, l
 MAINT_MODE    = False  # True = 계획 정비 중(LOTO/작업허가) -> 정지형 경보 억제
 STAT_MISS_TOL = 3      # [7/12] 10->3: 이탈 프레임 10개 용인이 '이동 중 타이머 생존 ->
                        #   오발화'의 주원인. 3프레임(~0.3s)만 용인.
+
+TRACK_ACQUIRE_FRAMES = 3
+TRACK_MOTION_DS = 0.35
+TRACK_LOST_SEC = 1.2
+TRACK_COMPACT_R = 0.80
+TRACK_MATCH_R = 1.20
 
 BASELINE_PATH = '/home/project/baseline_model.pt'
 LOAD_BASELINE = True   # False = 항상 새로 웜업/학습
@@ -282,13 +295,97 @@ def train_on_real_data(feature_list):
     return model, scaler, thr
 
 
-def build_clutter_map(scan_pts):
-    """빈 방 스캔 좌표를 3D 복셀 군집화 -> 반복 관측 복셀만 클러터 스팟(x,y,z,r,dy)."""
-    cnt = Counter((round(x / SCAN_GRID), round(y / SCAN_GRID_Y), round(z / SCAN_GRID))
-                  for x, y, z in scan_pts)
+def build_clutter_map(scan_frames):
+    """빈방 각 프레임의 모든 점을 3D 복셀화해 반복 배경만 학습한다."""
+    cnt = Counter()
+    for frame in scan_frames:
+        # 같은 프레임의 점 여러 개가 한 복셀에 몰려도 관측 1회로 센다.
+        voxels = {(round(x / SCAN_GRID), round(y / SCAN_GRID_Y), round(z / SCAN_GRID))
+                  for x, y, z in frame}
+        cnt.update(voxels)
     spots = [(gx * SCAN_GRID, gy * SCAN_GRID_Y, gz * SCAN_GRID, CLUTTER_SPOT_R, CLUTTER_Y_BAND)
              for (gx, gy, gz), k in cnt.most_common(SCAN_MAX_SPOTS) if k >= SCAN_MIN_HITS]
     return spots
+
+
+class PersonTrack:
+    """입장 움직임으로 생성하고, 구역 내부 소실과 경계 퇴실을 구분하는 단일 트랙."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.state = 'absent'
+        self.acquire_hits = 0
+        self.last_pos = None
+        self.last_seen = 0.0
+        self.lost_since = None
+
+    @staticmethod
+    def _compact(points):
+        if len(points) < 6:
+            return False
+        xz = np.asarray([[float(p['x']), float(p['z'])] for p in points])
+        center = np.median(xz, axis=0)
+        return float(np.percentile(np.linalg.norm(xz - center, axis=1), 75)) <= TRACK_COMPACT_R
+
+    @staticmethod
+    def _inside(pos, margin=0.0):
+        if pos is None:
+            return False
+        return (FRAME_ROI_X[0] + margin <= pos[0] <= FRAME_ROI_X[1] - margin
+                and FRAME_ROI_Z[0] + margin <= pos[1] <= FRAME_ROI_Z[1] - margin)
+
+    def update(self, points, feat, now):
+        pos = (float(feat[0]), float(feat[2])) if feat is not None else None
+        moving = bool(feat is not None and float(feat[4]) >= TRACK_MOTION_DS)
+        compact = bool(points and self._compact(points))
+        matched = (compact and pos is not None
+                   and (self.last_pos is None
+                        or np.hypot(pos[0] - self.last_pos[0], pos[1] - self.last_pos[1])
+                        <= TRACK_MATCH_R))
+        if self.state in ('absent', 'entering', 'exited'):
+            self.acquire_hits = self.acquire_hits + 1 if compact and moving and self._inside(pos) else 0
+            self.state = 'entering' if self.acquire_hits else 'absent'
+            if self.acquire_hits >= TRACK_ACQUIRE_FRAMES:
+                self.state, self.last_pos, self.last_seen = 'tracking', pos, now
+                self.acquire_hits = 0
+        elif self.state == 'tracking':
+            if matched:
+                self.last_pos, self.last_seen = pos, now
+            elif now - self.last_seen >= TRACK_LOST_SEC:
+                if self._inside(self.last_pos, margin=0.15):
+                    self.state, self.lost_since = 'lost_in_zone', now
+                else:
+                    self.state, self.lost_since = 'exited', None
+        elif self.state == 'lost_in_zone' and matched and moving:
+            self.state, self.last_pos, self.last_seen = 'tracking', pos, now
+            self.lost_since = None
+        return self.state
+
+
+def _rule_fall_positive(clf):
+    """classify 정본을 바꾸지 않고 규칙 양성/RF 음성 불일치만 복원한다."""
+    ev = clf.get('evidence') or {}
+    gates = clf.get('gates') or {}
+    shape = all((gates.get(k) or {}).get('pass') for k in
+                ('impulse', 'h_drop', 'horiz', 'ds_last'))
+    ds_max, n_mean = float(ev.get('dopstd_max') or 0), float(ev.get('n_mean') or 0)
+    broad = int(ev.get('ds_broad') or 0)
+    return bool(shape and ((ds_max >= 1.2 and n_mean >= 5 and broad >= 2)
+                           or (n_mean >= 35 and ds_max >= 0.9 and broad >= 1)))
+
+
+def _save_fall_suspect(fw, clf):
+    """LIVE 자가학습 대신 사람이 확인할 수 있는 무라벨 재학습 후보를 축적한다."""
+    rec = {'t': round(time.time(), 2), 'label': None, 'source': 'rule_rf_disagreement',
+           'features': np.asarray(fw, dtype=float).round(5).tolist(),
+           'evidence': clf.get('evidence'), 'gates': clf.get('gates')}
+    try:
+        with open(SUSPECT_LOG_PATH, 'a') as f:
+            f.write(json.dumps(rec, separators=(',', ':')) + '\n')
+    except OSError as e:
+        add_log(f'낙상 의심 데이터 저장 실패: {e}')
 
 
 def _rf_features(win):
@@ -390,6 +487,7 @@ state = {
     'height':     None,
     'dop_std':    0.0,
     'zone_state': {},
+    'track_state': 'absent',
 }
 
 
@@ -873,6 +971,7 @@ def sender_loop():
                 'height':   state.get('height'),
                 'dop_std':  state.get('dop_std', 0.0),
                 'zone_state': state.get('zone_state') or {},
+                'track_state': state.get('track_state', 'absent'),
                 'cfg': {'N_WARMUP': N_WARMUP, 'SCAN_SEC': SCAN_SEC,
                         'CEILING_H': CEILING_H, 'JSON_PATH': JSON_PATH,
                         'CURR_LIMIT': CURR_LIMIT, 'VOLT_MIN': VOLT_MIN,
@@ -923,6 +1022,7 @@ def pipeline_loop():
     stat_last_hit = 0.0
     last_motion_t = -1e9
     motion_run = 0
+    person_track = PersonTrack()
     clutter_spots = list(CLUTTER_SPOTS)
     scan_buf      = []
     scan_until    = None
@@ -1033,8 +1133,12 @@ def pipeline_loop():
             scaler      = None
             thr         = 0.01
             read_offset = 0
+            person_track.reset()
             with _lock:
                 state['scan_left'] = None
+                state['track_state'] = 'absent'
+                state['latest_pts'] = []
+                state['centroid'] = None
 
         time.sleep(POLL_SEC)
 
@@ -1084,12 +1188,24 @@ def pipeline_loop():
             # 근거리 아티팩트 게이트
             if NEAR_FIELD_MIN_RANGE and frame_pts:
                 frame_pts = [p for p in frame_pts if p['y'] >= NEAR_FIELD_MIN_RANGE]
+            # 알루미늄 프레임 안쪽만 판정 입력으로 사용한다. 기둥·외부 가구의
+            # 반사는 여기서 제거하며 UI에도 같은 필터 후 점만 전달한다.
+            if frame_pts:
+                frame_pts = [p for p in frame_pts
+                             if (FRAME_ROI_X[0] <= p['x'] <= FRAME_ROI_X[1]
+                                 and FRAME_ROI_Y[0] <= p['y'] <= FRAME_ROI_Y[1]
+                                 and FRAME_ROI_Z[0] <= p['z'] <= FRAME_ROI_Z[1])]
             # 공간 배제
             if EXCLUDE_REGIONS and frame_pts:
                 frame_pts = [p for p in frame_pts if not any(
                     r['x'][0] <= p['x'] <= r['x'][1] and r['z'][0] <= p['z'] <= r['z'][1]
                     for r in EXCLUDE_REGIONS)]
             if not frame_pts:
+                person_track.update([], None, time.time())
+                with _lock:
+                    state['latest_pts'] = []
+                    state['centroid'] = None
+                    state['track_state'] = person_track.state
                 stat_miss += 1
                 if stat_miss >= STAT_MISS_TOL:
                     stat_since = None; stat_zone = None; stat_pre = False
@@ -1108,6 +1224,11 @@ def pipeline_loop():
                                         and abs(p['y'] - _sy) <= _dy
                                         for _sx, _sy, _sz, _sr, _dy in clutter_spots)]
                 if not frame_pts:
+                    person_track.update([], None, time.time())
+                    with _lock:
+                        state['latest_pts'] = []
+                        state['centroid'] = None
+                        state['track_state'] = person_track.state
                     stat_miss += 1
                     if stat_miss >= STAT_MISS_TOL:
                         stat_since = None; stat_zone = None; stat_pre = False
@@ -1123,6 +1244,7 @@ def pipeline_loop():
             _now_t = time.time()
             _dt    = (_now_t - prev_ts) if prev_ts is not None else None
             feat = extract_features(frame_pts, prev_c, prev_zvel, _dt, ema_zacc)
+            track_state = person_track.update(frame_pts, feat, _now_t)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
             prev_c    = feat[:3].copy()
@@ -1141,6 +1263,7 @@ def pipeline_loop():
                                      'cz': round(float(feat[2]), 3)}
                 state['height']   = round(cz, 3)
                 state['dop_std']  = round(float(feat[4]), 3)
+                state['track_state'] = track_state
                 # ── [7/31] 전기 설비 읽기 + 차단 판정 (젯슨이 실행) ──
                 _pw = _read_power()
                 state['power'] = _pw
@@ -1193,7 +1316,8 @@ def pipeline_loop():
                 # STEP A: 빈 방 클러터 스캔
                 if scan_until is not None:
                     if time.time() < scan_until:
-                        scan_buf.append((float(feat[0]), float(feat[1]), float(feat[2])))
+                        scan_buf.append([(float(p['x']), float(p['y']), float(p['z']))
+                                         for p in frame_pts])
                         with _lock:
                             state['scan_left'] = scan_until - time.time()
                             state['sc_h'].append(0.0)
@@ -1372,7 +1496,8 @@ def pipeline_loop():
                     state['pre_alert'] = ''
             elif _clutter:
                 pass   # 중립: 카운터/타이머 유지
-            elif (_zone_hit and _n >= STAT_N_MIN and STAT_DS_MIN < _ds < STAT_DS_MAX and _pos_ok
+            elif (person_track.state == 'lost_in_zone' and _zone_hit
+                  and _n >= STAT_N_MIN and STAT_DS_MIN < _ds < STAT_DS_MAX and _pos_ok
                   and (stat_since is not None
                        or time.time() - last_motion_t <= STAT_ENTRY_SEC)):
                 if stat_since is None:
@@ -1438,6 +1563,26 @@ def pipeline_loop():
                 with _lock:
                     state['pre_alert'] = ''
 
+            # [8/05 실측] 정지 인체는 도플러 0으로 사라지고 빈방 반사가 남는다.
+            # 저도플러 점을 계속 사람으로 요구하면 타이머가 매번 초기화된다.
+            # 확인된 트랙이 경계 퇴실 없이 내부에서 소실된 시간으로 정지형을 판정한다.
+            if person_track.state == 'lost_in_zone':
+                stat_since = person_track.lost_since or time.time()
+                stat_zone = RADAR_ZONE
+                stat_hits = stat_tot = STAT_MIN_OBS
+                dwell = time.time() - stat_since
+                if dwell >= STAT_PRE_SEC:
+                    stat_pre = True
+                    remain = max(0, int(STAT_CRIT_SEC - dwell))
+                    with _lock:
+                        state['pre_alert'] = (f'PRE-ALERT  Zone {stat_zone}: no-motion {int(dwell)}s'
+                                              f'  --  MOVE to cancel  ({remain}s to CRITICAL)')
+            else:
+                stat_since = None; stat_zone = None; stat_pre = False
+                stat_hits = stat_tot = 0
+                with _lock:
+                    state['pre_alert'] = ''
+
             score = 0.0
             if len(feat_buf) == SEQ_LEN:
                 try:
@@ -1491,6 +1636,15 @@ def pipeline_loop():
                     clf = classify(fw, score, thr)
                     et  = clf['event_type']
                     raw_et = et
+
+                    # 규칙 낙상 양성인데 RF만 음성이면 정상으로 버리지 않는다.
+                    # classify 정본과 차단 조건은 그대로 두고, 확인 경보와 학습 후보를 남긴다.
+                    if et == 'normal' and RF_OK and _rule_fall_positive(clf):
+                        clf = dict(clf)
+                        clf.update({'event_type': 'fall_suspected', 'severity': 'warning',
+                                    'confidence': max(0.70, float(clf.get('confidence') or 0))})
+                        et = raw_et = 'fall_suspected'
+                        _save_fall_suspect(fw, clf)
 
                     # [판정 로그] 미검출/오탐 원인 확정용
                     try:

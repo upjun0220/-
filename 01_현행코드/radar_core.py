@@ -403,8 +403,14 @@ class PoseEstimator:
                                for p in points], dtype=np.float32)
         return np.asarray(points, dtype=np.float32).reshape(-1, 3)
 
-    def push(self, points, centroid=None):
+    def push(self, points, centroid=None, tracked=True):
+        # 젯슨이 사람 트랙을 잃었다고 명시하면 과거 누적점을 즉시 폐기한다.
+        # 빈 프레임에서 return만 하던 이전 동작은 빈방에 STICKMAN을 남겼다.
+        if not tracked:
+            self.clear()
+            return
         if not points:
+            self.clear()
             return
         p = self._xyz(points)
         c = (np.asarray([centroid['cx'], centroid['cy'], centroid['cz']], dtype=np.float32)
@@ -785,7 +791,8 @@ class SopEngine(QtCore.QObject):
     def prewarm(self):
         """LIVE 진입 후 유형별 SOP 를 미리 만들어 둔다 → 경보 순간 지연 0."""
         def _w():
-            for et in ('fall_detected', 'stationary_anomaly', 'vibration_anomaly'):
+            for et in ('fall_detected', 'fall_suspected',
+                       'stationary_anomaly', 'vibration_anomaly'):
                 if et in self._cache:
                     continue
                 try:
@@ -918,10 +925,15 @@ class Track3D(QtWidgets.QWidget):
         return CYAN, GREEN, AMBER
 
     def push(self, st, sev='normal', hide_shape=False):
-        self.pose.push(st.get('points') or [], st.get('centroid'))
+        track_state = st.get('track_state', 'tracking')
+        self.pose.push(st.get('points') or [], st.get('centroid'),
+                       tracked=(track_state == 'tracking'))
         c = st.get('centroid') or {}
-        self.trail.append([c.get('cx', 0), c.get('cz', 0),
-                           CEILING_H - c.get('cy', CEILING_H)])
+        if track_state == 'tracking' and c:
+            self.trail.append([c.get('cx', 0), c.get('cz', 0),
+                               CEILING_H - c.get('cy', CEILING_H)])
+        elif track_state != 'tracking':
+            self.trail.clear()
         return self.redraw(sev, hide_shape)
 
     def redraw(self, sev='normal', hide_shape=False):
