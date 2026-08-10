@@ -1,13 +1,16 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "PowerShell(git *)",
       "PowerShell(python *)",
       "PowerShell(Out-File *)",
       "PowerShell(cd \"C:\\\\Users\\\\82102\\\\OneDrive\\\\문서\\\\Claude\\\\Projects\\\\공모전\\\\01_현행코드\"; $env:QT_QPA_PLATFORM='offscreen'; python 테스트_실데이터_재생.py 2>&1 | Out-String -Width 300)",
       "Bash(git *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell(python scripts\\\\validate_handoff.py; echo \"handoff exit=$LASTEXITCODE\"; python scripts\\\\validate_ai_bridge.py; echo \"ai_bridge exit=$LASTEXITCODE\")",
+      "PowerShell(python scripts\\\\validate_ai_bridge.py; echo \"exit=$LASTEXITCODE\")",
+      "Bash(xargs ls -la)",
+      "Bash(echo \"exit=$?\")"
     ],
     "deny": [
       "PowerShell(git push*)",
@@ -19,6 +22,7 @@
       "Bash(git reset --hard*)",
       "Bash(git clean*)",
       "Bash(rm -rf*)"
-    ]
+    ],
+    "defaultMode": "acceptEdits"
   }
 }
