@@ -61,7 +61,7 @@ try:
     from radar_common import (  # noqa: F401  (아래 목록을 그대로 쓴다)
         SCHEMA_VERSION, DATA_PORT, CTRL_PORT, SEND_HZ, MAX_UDP, MIN_PTS, CLIENT_TTL,
         CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET, CMD_RESOLVE, CMD_RESTORE,
-        CEILING_H, HISTORY_LEN,
+        CEILING_H, FRAME_INNER_HALF, OCCUPANCY_CORE_HALF, HISTORY_LEN,
         PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
         EVENT_LABELS, EVENT_ZONE, ZONE_IDS, RADAR_ZONE, EVENT_SEV,
         CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH,
@@ -89,15 +89,15 @@ CLF_LOG_PATH  = '/home/project/clf_decisions.jsonl'   # classify 판정 로그(�
 SUSPECT_LOG_PATH = '/home/project/fall_suspected.jsonl'  # 확인 라벨 전 재학습 후보
 
 DANGER_ZONES = {
-    'A': {'x': (-1.0, 1.0), 'z': (-1.0, 1.0), 'label': 'WORK-ZONE'},
+    'A': {'x': (-FRAME_INNER_HALF, FRAME_INNER_HALF),
+          'z': (-FRAME_INNER_HALF, FRAME_INNER_HALF), 'label': 'WORK-ZONE'},
 }
 EXCLUDE_REGIONS = []
 NEAR_FIELD_MIN_RANGE = 0.5
 
-# [8/05 제작도+실물] 3030 프레임 안쪽 폭 1.44 m. 금속 기둥 반사를 피하도록
-# 좌우 7 cm씩 안으로 들이고, 앞뒤는 기존 검증 작업구역 ±1.0 m를 유지한다.
-FRAME_ROI_X = (-0.65, 0.65)
-FRAME_ROI_Z = (-1.0, 1.0)
+# [8/06 제작도] 전체 1.50m, 3030 기둥 안쪽 1.44m. 바닥면도 같은 정사각형이다.
+FRAME_ROI_X = (-FRAME_INNER_HALF, FRAME_INNER_HALF)
+FRAME_ROI_Z = (-FRAME_INNER_HALF, FRAME_INNER_HALF)
 FRAME_ROI_Y = (NEAR_FIELD_MIN_RANGE, CEILING_H + 0.25)
 
 STAT_N_MIN    = 3
@@ -330,6 +330,16 @@ class PersonTrack:
         self.still_since = None
         self.still_anchor = None
         self.smooth_pos = None
+        self.last_centroid = None
+        self.core_seen = False
+        self.exit_band_seen = False
+
+    def anchor(self):
+        if self.state not in ('tracking', 'lost_in_zone') or self.last_centroid is None:
+            return None
+        return {'cx': round(self.last_centroid[0], 3),
+                'cy': round(self.last_centroid[1], 3),
+                'cz': round(self.last_centroid[2], 3)}
 
     @staticmethod
     def _compact(points):
@@ -346,6 +356,12 @@ class PersonTrack:
         return (FRAME_ROI_X[0] + margin <= pos[0] <= FRAME_ROI_X[1] - margin
                 and FRAME_ROI_Z[0] + margin <= pos[1] <= FRAME_ROI_Z[1] - margin)
 
+    @staticmethod
+    def _core(pos):
+        return (pos is not None
+                and abs(pos[0]) <= OCCUPANCY_CORE_HALF
+                and abs(pos[1]) <= OCCUPANCY_CORE_HALF)
+
     def update(self, points, feat, now):
         pos = (float(feat[0]), float(feat[2])) if feat is not None else None
         moving = bool(feat is not None and float(feat[4]) >= TRACK_MOTION_DS)
@@ -360,12 +376,21 @@ class PersonTrack:
             self.state = 'entering' if self.acquire_hits else 'absent'
             if self.acquire_hits >= TRACK_ACQUIRE_FRAMES:
                 self.state, self.last_pos, self.last_seen = 'tracking', pos, now
+                self.last_centroid = tuple(float(v) for v in feat[:3])
+                self.core_seen = self._core(pos)
+                self.exit_band_seen = not self.core_seen
                 self.smooth_pos = self.still_anchor = pos
                 self.still_since = now
                 self.acquire_hits = 0
         elif self.state == 'tracking':
             if matched:
                 self.last_pos, self.last_seen = pos, now
+                self.last_centroid = tuple(float(v) for v in feat[:3])
+                if self._core(pos):
+                    self.core_seen = True
+                    self.exit_band_seen = False
+                elif self.core_seen:
+                    self.exit_band_seen = True
                 if self.smooth_pos is None:
                     self.smooth_pos = pos
                 else:
@@ -380,16 +405,28 @@ class PersonTrack:
                 stable_for = now - self.still_since if self.still_since is not None else 0.0
                 if stable_for < TRACK_STILL_KEEP_SEC:
                     self.still_since = None
-                if self._inside(self.last_pos, margin=0.15):
-                    self.state, self.lost_since = 'lost_in_zone', now
-                else:
+                if self.exit_band_seen:
                     self.state, self.lost_since = 'exited', None
                     self.still_since = None
+                    print(f'[TRACK] tracking->exited: core->band->lost last_pos={self.last_pos}')
+                else:
+                    self.state, self.lost_since = 'lost_in_zone', now
+                    print(f'[TRACK] tracking->lost_in_zone: core fade last_pos={self.last_pos}')
         elif self.state == 'lost_in_zone' and matched and moving:
             self.state, self.last_pos, self.last_seen = 'tracking', pos, now
+            self.last_centroid = tuple(float(v) for v in feat[:3])
             self.lost_since = None
-            self.smooth_pos = self.still_anchor = pos
-            self.still_since = now
+            if self._core(pos):
+                self.core_seen = True
+                self.exit_band_seen = False
+            self.smooth_pos = pos
+            # 정지 인체의 호흡점·잔여점이 간헐 재출현해도 같은 앵커 주변이면
+            # 무동작 타이머를 유지한다. centroid가 실제로 이동했을 때만 취소한다.
+            if (self.still_anchor is None
+                    or np.hypot(pos[0] - self.still_anchor[0],
+                                pos[1] - self.still_anchor[1]) > TRACK_STILL_R):
+                self.still_anchor = pos
+                self.still_since = now
         return self.state
 
 
@@ -486,6 +523,7 @@ state = {
     'start_requested':   False,
     'train_requested':   False,
     'reset_requested':   False,
+    'arm_reset_requested': False,
     'resolve_requested': False,
     'latest_pts':       [],
     'cz_h':   deque([1.7] * HISTORY_LEN, maxlen=HISTORY_LEN),
@@ -500,6 +538,7 @@ state = {
     'threshold':  0.01,
     'pre_alert':   '',
     'scan_left':   None,
+    'prepare_step': '',  # empty_scan / step_in / baseline / wait_train
     'logs': deque(maxlen=20),
     'incidents': deque(maxlen=20),
     'last_data_t': 0.0,
@@ -517,6 +556,7 @@ state = {
     'dop_std':    0.0,
     'zone_state': {},
     'track_state': 'absent',
+    'track_anchor': None,
 }
 
 
@@ -915,6 +955,7 @@ def control_listener():
                     state['logs'].append(f'[{ts}] [BTN] Start Training -- stand still!')
                 elif phase == PH_WAIT_ARM:
                     state['phase'] = PH_LIVE
+                    state['arm_reset_requested'] = True
                     state['logs'].append(f'[{ts}] [BTN] Monitoring armed -- LIVE detection active')
             elif cmd == CMD_TRAIN:
                 state['train_requested'] = True
@@ -980,6 +1021,7 @@ def sender_loop():
                 'data_ok':      state['data_ok'],
                 'data_age':     (time.time() - state['last_data_t']) if state['last_data_t'] else 1e9,
                 'scan_left':    state['scan_left'],
+                'prepare_step': state['prepare_step'],
                 'pre_alert':    state['pre_alert'],
                 'ev': {
                     'active': state['ev_active'], 'type': state['ev_type'],
@@ -1001,6 +1043,7 @@ def sender_loop():
                 'dop_std':  state.get('dop_std', 0.0),
                 'zone_state': state.get('zone_state') or {},
                 'track_state': state.get('track_state', 'absent'),
+                'track_anchor': state.get('track_anchor'),
                 'cfg': {'N_WARMUP': N_WARMUP, 'SCAN_SEC': SCAN_SEC,
                         'CEILING_H': CEILING_H, 'JSON_PATH': JSON_PATH,
                         'CURR_LIMIT': CURR_LIMIT, 'VOLT_MIN': VOLT_MIN,
@@ -1076,6 +1119,7 @@ def pipeline_loop():
         scan_until = None
         with _lock:
             state['scan_left'] = None
+            state['prepare_step'] = 'step_in'
         spots_txt = ', '.join(f'(x{x:+.2f},y{y:+.2f},z{z:+.2f})' for x, y, z, _, _ in learned) or 'none'
         add_log(f'Scan done: {len(learned)} clutter spot(s) learned [{spots_txt}]')
         add_log(f'>> STEP IN NOW -- OFF-NADIR (to the SIDE). Collection starts in {int(STEP_IN_SEC)}s.')
@@ -1120,6 +1164,22 @@ def pipeline_loop():
             add_log('>> 9차원 feature로 재학습이 필요합니다. [START] 눌러 재수집하세요.')
 
     while True:
+        # 준비 단계에서 만든 사람 트랙을 감시로 넘기면, 기준 수집 후 퇴장한 사람이
+        # LIVE 시작과 동시에 lost_in_zone이 되어 빈방 무동작 경보를 만든다.
+        with _lock:
+            arm_reset = state['arm_reset_requested']
+            state['arm_reset_requested'] = False
+        if arm_reset:
+            person_track.reset()
+            stat_since = None; stat_zone = None; stat_miss = 0; stat_pre = False
+            stat_hits = stat_tot = 0
+            with _lock:
+                state['track_state'] = 'absent'
+                state['track_anchor'] = None
+                state['latest_pts'] = []
+                state['centroid'] = None
+                state['pre_alert'] = ''
+
         # ── Reset check ────────────────────────────────────
         do_reset = False
         with _lock:
@@ -1134,6 +1194,7 @@ def pipeline_loop():
                 state['ev_sev']           = 'normal'
                 state['ev_conf']          = 0.0
                 state['pre_alert']        = ''
+                state['prepare_step']     = ''
                 state['threshold']        = 0.01
                 state['logs'].append(
                     f'[{datetime.now().strftime("%H:%M:%S")}] '
@@ -1174,6 +1235,7 @@ def pipeline_loop():
             with _lock:
                 state['scan_left'] = None
                 state['track_state'] = 'absent'
+                state['track_anchor'] = None
                 state['latest_pts'] = []
                 state['centroid'] = None
 
@@ -1243,6 +1305,7 @@ def pipeline_loop():
                     state['latest_pts'] = []
                     state['centroid'] = None
                     state['track_state'] = person_track.state
+                    state['track_anchor'] = person_track.anchor()
                 stat_miss += 1
                 if stat_miss >= STAT_MISS_TOL:
                     stat_since = None; stat_zone = None; stat_pre = False
@@ -1266,6 +1329,7 @@ def pipeline_loop():
                         state['latest_pts'] = []
                         state['centroid'] = None
                         state['track_state'] = person_track.state
+                        state['track_anchor'] = person_track.anchor()
                     stat_miss += 1
                     if stat_miss >= STAT_MISS_TOL:
                         stat_since = None; stat_zone = None; stat_pre = False
@@ -1301,6 +1365,7 @@ def pipeline_loop():
                 state['height']   = round(cz, 3)
                 state['dop_std']  = round(float(feat[4]), 3)
                 state['track_state'] = track_state
+                state['track_anchor'] = person_track.anchor()
                 # ── [7/31] 전기 설비 읽기 + 차단 판정 (젯슨이 실행) ──
                 _pw = _read_power()
                 state['power'] = _pw
@@ -1339,6 +1404,7 @@ def pipeline_loop():
                         state['start_requested'] = False
                         state['phase']           = PH_WARMUP
                         state['scan_left']       = SCAN_SEC
+                        state['prepare_step']    = 'empty_scan'
                     add_log(f'STEP A: EMPTY-ROOM SCAN {int(SCAN_SEC)}s -- everyone OUT of view!')
                 else:
                     with _lock:
@@ -1372,6 +1438,7 @@ def pipeline_loop():
                     step_in_until = None
                     with _lock:
                         state['scan_left'] = None
+                        state['prepare_step'] = 'baseline'
                     add_log('>> Collecting baseline NOW -- act NORMALLY (stand + small natural moves)')
 
                 warmup_feat.append(feat.tolist())
@@ -1390,6 +1457,7 @@ def pipeline_loop():
                         newly_done = state['phase'] != PH_WAIT_TRAIN
                         if newly_done:
                             state['phase'] = PH_WAIT_TRAIN
+                            state['prepare_step'] = 'wait_train'
                     if newly_done:
                         add_log(f'Baseline complete ({N_WARMUP} frames). Click "Start Training" to proceed.')
 
@@ -1721,7 +1789,10 @@ def pipeline_loop():
 
                     if et == 'normal':
                         pend_et, pend_cnt = None, 0
-                    elif et == 'fall_detected':
+                    elif et in ('fall_detected', 'fall_suspected'):
+                        # 규칙의 2초 창을 통과한 낙상 후보는 RF 동의 여부와 무관하게
+                        # FALL_CONFIRM 경로를 쓴다. 의심 경보를 일반 이상 3회 게이트로
+                        # 보내면 짧은 실제 낙상이 사라진다(8/06 실측: 2회 뒤 normal).
                         _now = time.time()
                         fall_hits = [t for t in fall_hits if _now - t <= FALL_WIN_SEC]
                         fall_hits.append(_now)

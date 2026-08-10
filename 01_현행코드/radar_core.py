@@ -50,6 +50,7 @@ import re
 import socket
 import threading
 from collections import deque
+from functools import lru_cache
 from html import escape as html_escape
 
 import numpy as np
@@ -59,7 +60,7 @@ import pyqtgraph as pg
 from radar_common import (
     DATA_PORT, CTRL_PORT, HELLO_SEC, LINK_TIMEOUT, SCHEMA_VERSION,
     CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET,
-    CEILING_H, HISTORY_LEN,
+    CEILING_H, FRAME_INNER_HALF, OCCUPANCY_CORE_HALF, HISTORY_LEN,
     PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
     PHASE_ORDER, PHASE_KO, PHASE_ACTION,
     EVENT_KO, EVENT_CATEGORY, ZONE_IDS, ZONE_KO, RADAR_ZONE, pg_conn_str,
@@ -614,6 +615,65 @@ def stick_segments(center, axis, length, right, spread=1.0):
     return np.asarray(segs, dtype=np.float32)
 
 
+@lru_cache(maxsize=1)
+def _mannequin_mesh():
+    """리깅으로 정자세를 만든 일체형 CC0 인체 OBJ를 정규화한다."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'mannequin_cc0.obj')
+    vertices, faces = [], []
+    group = None
+    with open(path, encoding='utf-8', errors='replace') as src:
+        for line in src:
+            fields = line.split()
+            if not fields:
+                continue
+            if fields[0] == 'v':
+                vertices.append(tuple(map(float, fields[1:4])))
+            elif fields[0] in ('g', 'o'):
+                group = fields[1] if len(fields) > 1 else None
+            elif fields[0] == 'f' and group == 'body':
+                ids = [int(value.split('/')[0]) - 1 for value in fields[1:]]
+                faces.extend((ids[0], ids[i], ids[i + 1])
+                             for i in range(1, len(ids) - 1))
+    if not vertices or not faces:
+        raise ValueError(f'마네킹 OBJ가 비어 있습니다: {path}')
+
+    # MakeHuman 원본에는 리깅용 joint/helper 면도 함께 있다. 화면에는 실제
+    # 일체형 인체인 body 그룹만 남기고 정점 번호를 촘촘하게 다시 매긴다.
+    used = np.unique(np.asarray(faces, dtype=np.uint32))
+    remap = np.full(len(vertices), -1, dtype=np.int32)
+    remap[used] = np.arange(len(used), dtype=np.int32)
+    source = np.asarray(vertices, dtype=np.float32)[used]
+    faces = remap[np.asarray(faces, dtype=np.uint32)]
+    mesh = np.column_stack((source[:, 0], source[:, 2], source[:, 1]))
+    mesh[:, 2] -= mesh[:, 2].min()
+    mesh /= mesh[:, 2].max()
+    mesh[:, 0] -= 0.5 * (mesh[:, 0].min() + mesh[:, 0].max())
+    mesh[:, 1] -= np.median(mesh[:, 1])
+
+    return mesh.astype(np.float32), faces.astype(np.uint32)
+
+
+def body_mesh(center, axis, length, right):
+    """서 있는 추정 형상에 CC0 단일 표면 마네킹을 맞춘다.
+
+    위치·키·머리 기준점만 점군 추정값이다. 마네킹 자세는 항상 같고,
+    낙상·추적 소실 때는 호출하지 않는다.
+    """
+    unit, faces = _mannequin_mesh()
+    a = np.asarray(axis, dtype=float)
+    a /= np.linalg.norm(a) or 1.0
+    r = np.asarray(right, dtype=float)
+    r -= a * float(np.dot(a, r))
+    r /= np.linalg.norm(r) or 1.0
+    d = np.cross(a, r)
+    basis = np.column_stack((r, d, a))
+    local = unit.copy()
+    local[:, 2] -= 0.5
+    return (local @ basis.T * float(length)
+            + np.asarray(center, dtype=float)), faces
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 3. SOP 엔진 — pgvector 검색 + Gemma 상세 SOP  (전부 노트북 로컬)
 # ══════════════════════════════════════════════════════════════════════
@@ -864,9 +924,15 @@ class Track3D(QtWidgets.QWidget):
         g.setSpacing(0.5, 0.5)
         g.setColor(pg.mkColor(GRID))
         self.gl.addItem(g)
-        z = np.array([[-1.0, -1.0, 0.01], [1.0, -1.0, 0.01], [1.0, 1.0, 0.01],
-                      [-1.0, 1.0, 0.01], [-1.0, -1.0, 0.01]])
+        h = FRAME_INNER_HALF
+        z = np.array([[-h, -h, 0.01], [h, -h, 0.01], [h, h, 0.01],
+                      [-h, h, 0.01], [-h, -h, 0.01]])
         self.gl.addItem(gl.GLLinePlotItem(pos=z, color=pg.glColor(CYAN), width=1.6,
+                                          antialias=True))
+        c = OCCUPANCY_CORE_HALF
+        core = np.array([[-c, -c, 0.012], [c, -c, 0.012], [c, c, 0.012],
+                         [-c, c, 0.012], [-c, -c, 0.012]])
+        self.gl.addItem(gl.GLLinePlotItem(pos=core, color=pg.glColor(DIM), width=1.0,
                                           antialias=True))
         # 1 m 높이 눈금 — 캡슐 크기를 눈으로 가늠할 기준
         for h in (1.0, 2.0):
@@ -875,6 +941,23 @@ class Track3D(QtWidgets.QWidget):
                                     np.full(48, h)])
             self.gl.addItem(gl.GLLinePlotItem(pos=ring, color=(0.13, 0.2, 0.3, 0.55),
                                               width=1.0, antialias=True))
+        # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
+        body_unit, body_faces = _mannequin_mesh()
+        body_unit = body_unit.copy()
+        body_unit[:, 2] -= 0.5
+        self.body = gl.GLMeshItem(vertexes=body_unit, faces=body_faces,
+                                  color=(0.78, 0.88, 0.92, 0.34), smooth=True,
+                                  shader='shaded', glOptions='translucent')
+        self.body.hide()
+        self.gl.addItem(self.body)
+        # 채워진 유리 표면 위에 약한 림 셰이더를 겹쳐 홀로그램 외곽만 살린다.
+        self.body_rim = gl.GLMeshItem(
+            vertexes=body_unit, faces=body_faces,
+            color=(0.0, 0.85, 1.0, 0.13), smooth=True,
+            shader='balloon', glOptions='translucent')
+        self.body_rim.hide()
+        self.gl.addItem(self.body_rim)
+        self._body_sev = None
         self.sc = gl.GLScatterPlotItem(size=6.0, color=pg.glColor(CYAN))
         self.gl.addItem(self.sc)
         # 인체 도식 — mode='lines' 로 끊긴 선분들을 한 아이템에 그린다
@@ -884,6 +967,8 @@ class Track3D(QtWidgets.QWidget):
         # 머리 추정점 — 도식이 아니라 '실측에서 나온 점' 이므로 따로 강조한다
         self.hd = gl.GLScatterPlotItem(size=11.0, color=pg.glColor(AMBER))
         self.gl.addItem(self.hd)
+        self.anchor = gl.GLScatterPlotItem(size=15.0, color=pg.glColor(AMBER))
+        self.gl.addItem(self.anchor)
         self.tr = gl.GLLinePlotItem(color=(0.53, 0.6, 0.73, 0.6), width=1.2,
                                     antialias=True)
         self.gl.addItem(self.tr)
@@ -901,9 +986,11 @@ class Track3D(QtWidgets.QWidget):
         self.sc = pg.ScatterPlotItem(size=6, brush=pg.mkBrush(0, 204, 255, 160), pen=None)
         self.cap = pg.PlotCurveItem(pen=pg.mkPen(GREEN, width=2.2), connect='pairs')
         self.hd = pg.ScatterPlotItem(size=11, brush=pg.mkBrush(AMBER), pen=None)
+        self.anchor = pg.ScatterPlotItem(size=15, symbol='x',
+                                         pen=pg.mkPen(AMBER, width=2), brush=None)
         floor = pg.PlotCurveItem(pen=pg.mkPen(EDGE, width=1.5))
         floor.setData([-1.6, 1.6], [0, 0])
-        for it in (floor, self.sc, self.cap, self.hd):
+        for it in (floor, self.sc, self.cap, self.hd, self.anchor):
             self.plot.addItem(it)
         v.addWidget(self.plot, 1)
 
@@ -934,6 +1021,19 @@ class Track3D(QtWidgets.QWidget):
                                CEILING_H - c.get('cy', CEILING_H)])
         elif track_state != 'tracking':
             self.trail.clear()
+        anchor = st.get('track_anchor') or {}
+        if track_state == 'lost_in_zone' and anchor:
+            x = float(anchor.get('cx', 0))
+            h = CEILING_H - float(anchor.get('cy', CEILING_H))
+            z = float(anchor.get('cz', 0))
+            if self.gl is not None:
+                self.anchor.setData(pos=np.array([[x, z, h]], dtype=np.float32))
+            else:
+                self.anchor.setData([x], [h])
+        elif self.gl is not None:
+            self.anchor.setData(pos=np.zeros((0, 3), dtype=np.float32))
+        else:
+            self.anchor.setData([], [])
         return self.redraw(sev, hide_shape)
 
     def redraw(self, sev='normal', hide_shape=False):
@@ -953,12 +1053,34 @@ class Track3D(QtWidgets.QWidget):
             if len(self.trail) > 2:
                 self.tr.setData(pos=np.array(self.trail))
             if p and p['shape_ok'] and not hide_shape:
-                self.cap.setData(pos=self._stick3d(p), color=pg.glColor(fig_c))
                 self.hd.setData(pos=np.array([self.to_disp(p['head'])]),
                                 color=pg.glColor(hd_c))
+                if p['posture'] == 'standing':
+                    self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32),
+                                     color=pg.glColor(fig_c))
+                    transform = self._body_transform(p)
+                    self.body.setTransform(transform)
+                    self.body_rim.setTransform(transform)
+                    if self._body_sev != sev:
+                        color = (pg.glColor(fig_c)
+                                 if sev in ('warning', 'critical')
+                                 else (0.78, 0.88, 0.92, 1.0))
+                        self.body.setColor((*color[:3], 0.34))
+                        rim = color[:3] if sev in ('warning', 'critical') \
+                            else (0.0, 0.85, 1.0)
+                        self.body_rim.setColor((*rim, 0.13))
+                        self._body_sev = sev
+                    self.body.show()
+                    self.body_rim.show()
+                else:
+                    self.cap.setData(pos=self._stick3d(p), color=pg.glColor(fig_c))
+                    self.body.hide()
+                    self.body_rim.hide()
             else:
                 self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32))
                 self.hd.setData(pos=np.zeros((0, 3), dtype=np.float32))
+                self.body.hide()
+                self.body_rim.hide()
         else:
             if len(pts):
                 self.sc.setData(pts[:, 0], CEILING_H - pts[:, 1])
@@ -1028,6 +1150,22 @@ class Track3D(QtWidgets.QWidget):
             # 누움 — 몸통 축이 수평이므로 팔다리는 바닥면에 편다(위에서 잘 읽힌다)
             right = np.cross(a, up)
         return stick_segments(C, a, L, right)
+
+    def _body_transform(self, p):
+        """고정 GPU 메쉬를 추정 위치·키에 맞추는 변환 행렬."""
+        a = self.vec_disp(p['axis'])
+        a /= np.linalg.norm(a) or 1.0
+        L = self.body_length(p)
+        C = self.figure_center(self.to_disp(p['head']), a, L)
+        az = np.deg2rad(self.gl.opts.get('azimuth', 48.0))
+        right = np.array([-np.sin(az), np.cos(az), 0.0])
+        right -= a * float(np.dot(a, right))
+        right /= np.linalg.norm(right) or 1.0
+        depth = np.cross(a, right)
+        matrix = np.eye(4, dtype=float)
+        matrix[:3, :3] = np.column_stack((right, depth, a)) * L
+        matrix[:3, 3] = C
+        return pg.Transform3D(matrix)
 
     @staticmethod
     def stick2d(p):
@@ -1137,9 +1275,9 @@ class PreparePage(QtWidgets.QWidget):
         warn = panel()
         wv = QtWidgets.QVBoxLayout(warn)
         wv.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
-        wv.addWidget(lb('⚠  빈 방 스캔 중에는 반드시 감지 구역 밖에 있어야 합니다. '
-                        '사람이 남아 있으면 그 사람이 "정상 배경"으로 학습되어 '
-                        '이후 낙상을 놓칩니다.', FS_BODY, AMBER, wrap=True))
+        self.warn = lb('시작하면 먼저 빈 방을 스캔합니다.', FS_BODY, AMBER,
+                       wrap=True)
+        wv.addWidget(self.warn)
         v.addWidget(warn)
         v.addStretch()
 
@@ -1192,24 +1330,45 @@ class PreparePage(QtWidgets.QWidget):
             t.setStyleSheet(f'color:{col};border:none;background:transparent;')
             num.setText('✓' if done else str(i + 1))
             num.setStyleSheet(f'color:{col};border:none;background:transparent;')
+        step = pkt.get('prepare_step') or ''
         self.big.setText(PHASE_ACTION.get(ph, ''))
+        self.warn.setText('시작하면 먼저 빈 방을 스캔합니다.')
         wc = pkt.get('warmup_count') or 0
         nw = ((pkt.get('cfg') or {}).get('N_WARMUP')) or 150
         left = pkt.get('scan_left')
-        if left is not None:
+        if ph == PH_WARMUP and step == 'empty_scan':
+            self.big.setText('빈 방 스캔 중 — 감지 구역 밖으로 나가 주세요')
             self.sub.setText(f'빈 방 스캔  {left:.0f}초 남음')
+            self.warn.setText('이 단계에만 사람이 없어야 합니다. 사람이 남으면 정상 배경으로 학습됩니다.')
             self.bar.setRange(0, 100)
             sec = ((pkt.get('cfg') or {}).get('SCAN_SEC')) or 12.0
             self.bar.setValue(int(100 * (1 - left / max(sec, 1e-6))))
+        elif ph == PH_WARMUP and step == 'step_in':
+            self.big.setText('지금 감지 구역 안으로 들어가세요')
+            self.sub.setText(f'정상 기준 수집 시작까지  {left:.0f}초')
+            self.warn.setText('프레임 안에 서서 작은 움직임을 준비하세요.')
+            self.bar.setRange(0, 100)
+            sec = ((pkt.get('cfg') or {}).get('STEP_IN_SEC')) or 5.0
+            self.bar.setValue(int(100 * (1 - left / max(sec, 1e-6))))
         elif ph == PH_WARMUP:
+            self.big.setText('정상 동작 기준 수집 중 — 작게 움직여 주세요')
             self.sub.setText(f'정상 기준 수집  {wc} / {nw} 프레임')
+            self.warn.setText('사람이 감지 구역 안에서 서기와 작은 자연 동작을 보여야 합니다.')
             self.bar.setRange(0, nw)
             self.bar.setValue(wc)
         elif ph == PH_TRAINING:
             self.sub.setText('LSTM-AE 학습 중 — 20~30초')
+            self.warn.setText('학습 중에는 감지 구역을 비워 두세요.')
             self.bar.setRange(0, 0)
+        elif ph == PH_WAIT_TRAIN:
+            self.big.setText('정상 기준 수집 완료')
+            self.sub.setText('기준 수집 완료 — 사람이 퇴장한 뒤 학습을 시작하세요')
+            self.warn.setText('사람이 감지 구역에서 완전히 나온 뒤 학습을 시작하세요.')
+            self.bar.setRange(0, 100)
+            self.bar.setValue(100)
         elif ph == PH_WAIT_ARM:
             self.sub.setText('준비 완료 — 감시 시작 전까지 경보가 발생하지 않습니다')
+            self.warn.setText('관제 화면에서 감시를 시작할 수 있습니다.')
             self.bar.setRange(0, 100)
             self.bar.setValue(100)
         elif ph == PH_LIVE:
@@ -1220,7 +1379,7 @@ class PreparePage(QtWidgets.QWidget):
             self.sub.setText('')
             self.bar.setRange(0, 100)
             self.bar.setValue(0)
-        self.go.setText({PH_WAIT_TRAIN: '학습 시작',
+        self.go.setText({PH_WAIT_TRAIN: '사람 퇴장 후 학습 시작',
                          PH_WAIT_ARM: '감시 시작'}.get(ph, '기준 수집 시작'))
         self.go.setVisible(ph in (PH_READY, PH_WAIT_TRAIN, PH_WAIT_ARM))
         # 관제로 나가는 길은 항상 열어 둔다 (기준이 없으면 화면이 그걸 알린다)

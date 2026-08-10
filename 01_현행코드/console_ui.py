@@ -2968,6 +2968,12 @@ class ConsoleV2(QtWidgets.QMainWindow):
                 f"{z} {ZONE_KO.get(z, '')} · {shape}"
                 f"   ·   {pose['label']}",
                 sev_color(sev) if on_alert else FAINT)
+        elif pkt.get('track_state') == 'lost_in_zone':
+            # 정지 인체는 도플러가 0이 되어 형상은 사라져도 젯슨 점유 트랙은 남는다.
+            # 없는 자세를 그리지 않고, 빈방과 구분되는 점유 상태만 사실대로 표시한다.
+            self.monitor.set_pose_text(
+                f"{RADAR_ZONE} {ZONE_KO.get(RADAR_ZONE, '')} · 점유 유지 · 정지로 점군 소실",
+                AMBER)
         self.monitor.zstrip.update_state(pkt, sev)
         self._update_tiles(pkt, on_alert)
         self.graph.push(pkt)
