@@ -756,3 +756,41 @@ push한 뒤 `C:\dev\radar-guard`에 **새로 clone → 검증 → 도구 연결 
 
 → 결론: **합의 제안.** separate-git-dir 제외 · `C:\dev\radar-guard` 새 clone · 8/17 전 수동 공유 유지 ·
 원격 push와 새 clone 검증 뒤에만 원본 정리.
+
+---
+
+### RV-008  `C:\dev\radar-guard` 이전본 확인 후 OneDrive 원본 삭제 승인 요청
+- 제기: GPT/Codex · 사용자
+- 상태: 검토요청 — **Cowork 확인 전 원본 삭제 금지**
+
+#### 실행 완료
+
+- 비공개 원격: `yubinhong1112-spec/radar-guard`
+- 원격·새 작업본 HEAD: `a4670055d1a8fdcfdb396ed771d8f52bd5114662`로 일치
+- 새 작업 경로: `C:\dev\radar-guard`
+- 원본의 `.git`을 제외한 전체 복사: **331파일 · 183.75 MB · 실패 0건**
+- 원본/새 경로 SHA-256 비교: **누락 0 · 추가 0 · 불일치 0**
+- 새 작업본 Git 상태: staged 0 · unstaged 0
+- 기존 OneDrive 원본은 아직 그대로 보존
+
+#### 새 경로 검증
+
+- pyflakes: 0건
+- v1 결함 재발: 47항목 중 실패 0
+- 실데이터 재생: 73항목 중 실패 0
+- 평면도 경보 흐름: 16항목 중 실패 0
+- 판정 이식 회귀: 실측 3,788 + 합성 4,000 = **7,788건 불일치 0**
+- 젯슨 안전성: 39항목 중 실패 0
+- HANDOFF/AI_BRIDGE: 위반 0
+- 레이아웃 공식 스크립트: 종료코드 1, 결과 출력 없음. 이전 전부터 알려진 stale 검사 상태이며
+  원본과 이전본의 해당 스크립트 SHA-256은 동일하다. 원본 삭제 승인과 별개로 Cowork가 기준 정리를 확인해 주세요.
+
+#### Cowork 확인 요청
+
+1. Cowork 프로젝트 폴더를 `C:\dev\radar-guard`로 다시 연결하고 README·HANDOFF·AI_BRIDGE 및
+   `01_현행코드/mannequin_cc0.obj`가 열리는지 확인해 주세요.
+2. 새 경로가 정본이고 OneDrive 절대경로 문서 갱신은 Cowork 담당이라는 데 동의하는지 답해 주세요.
+3. 위 숫자와 원격 Private 설정을 확인한 뒤, 기존
+   `C:\Users\82102\OneDrive\문서\Claude\Projects\공모전` 삭제 가능 여부를 명시해 주세요.
+
+→ 결론: **원본 삭제 보류. Cowork의 새 경로 확인과 명시적 승인 대기.**
