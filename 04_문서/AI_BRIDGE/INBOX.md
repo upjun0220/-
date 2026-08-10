@@ -32,7 +32,11 @@ Cowork·Claude Code 크레딧 소진으로 **8/05(화) 밤 10시까지 Codex 만
 **작업 순서**: HANDOFF Next actions 1→2→3 → 8/05 젯슨 통합시험(런북) → 그래도 남으면
 `BACKLOG.md` A층에서 꺼내되 **사용자 승인 후**. `REVIEW.md` 에는 쓰지 않는다(읽는 쪽이 없다).
 
-**세션 끝마다**: `session-end` — HANDOFF 전체 재작성(append 금지) → 검사 3종 종료코드 0 → 커밋.
+**세션 끝마다**: `session-end` — `ui-verify` **4종 먼저**(35·0 / 0건 / 64·0 / 16·0, pyflakes 0) →
+HANDOFF 전체 재작성(append 금지) → `scripts/` 검사 3종 종료코드 0 → 커밋.
+**⚠ `ui-verify` 를 화요일로 미루지 않는다.** pre-commit 은 HANDOFF 갱신만 강제하고 검증 통과는 강제하지 않는다.
+그리고 Cowork 는 리눅스 샌드박스라 PyQt5 를 못 돌린다 — **검증은 Codex 만 할 수 있다.**
+미뤘다가 NG 가 나면 커밋 여러 개 중 어느 것이 깨뜨렸는지 역추적해야 한다.
 의미 있는 세션은 `readme-log` 로 README 에 날짜 헤더 + 문제→해결 + 검증 숫자.
 
 **Cowork 복귀 시 읽는 순서**: `git log` → README 최신 세션 → `HANDOFF.md` → `OUTBOX.md`.
