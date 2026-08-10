@@ -82,7 +82,7 @@ PHASE_ACTION = {
     PH_READY:      '준비되면 아래 버튼을 누르세요',
     PH_WARMUP:     '빈 방 스캔 중 — 감지 구역 밖으로 나가 주세요',
     PH_WAIT_TRAIN: '구역 안에 서서 버튼을 누르세요',
-    PH_TRAINING:   '움직이지 말고 서 계세요',
+    PH_TRAINING:   '학습이 끝날 때까지 감지 구역 밖에서 기다려 주세요',
     PH_WAIT_ARM:   '구역 밖으로 나온 뒤 감시를 시작하세요',
     PH_LIVE:       '감시가 시작됐습니다',
 }

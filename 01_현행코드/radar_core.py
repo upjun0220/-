@@ -1275,13 +1275,13 @@ class PreparePage(QtWidgets.QWidget):
         warn = panel()
         wv = QtWidgets.QVBoxLayout(warn)
         wv.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
-        self.warn = lb('시작하면 먼저 빈 방을 스캔합니다.', FS_BODY, AMBER,
+        self.warn = lb('순서: 모두 퇴장 → 1명 입장 → 작게 움직임 → 다시 퇴장 → 학습', FS_BODY, AMBER,
                        wrap=True)
         wv.addWidget(self.warn)
         v.addWidget(warn)
         v.addStretch()
 
-        self.go = btn('기준 수집 시작', FS_TITLE, primary=True, height=60)
+        self.go = btn('빈 방 스캔 시작', FS_TITLE, primary=True, height=60)
         self.go.clicked.connect(self._go)
         v.addWidget(self.go)
 
@@ -1332,7 +1332,7 @@ class PreparePage(QtWidgets.QWidget):
             num.setStyleSheet(f'color:{col};border:none;background:transparent;')
         step = pkt.get('prepare_step') or ''
         self.big.setText(PHASE_ACTION.get(ph, ''))
-        self.warn.setText('시작하면 먼저 빈 방을 스캔합니다.')
+        self.warn.setText('순서: 모두 퇴장 → 1명 입장 → 작게 움직임 → 다시 퇴장 → 학습')
         wc = pkt.get('warmup_count') or 0
         nw = ((pkt.get('cfg') or {}).get('N_WARMUP')) or 150
         left = pkt.get('scan_left')
@@ -1380,7 +1380,7 @@ class PreparePage(QtWidgets.QWidget):
             self.bar.setRange(0, 100)
             self.bar.setValue(0)
         self.go.setText({PH_WAIT_TRAIN: '사람 퇴장 후 학습 시작',
-                         PH_WAIT_ARM: '감시 시작'}.get(ph, '기준 수집 시작'))
+                         PH_WAIT_ARM: '감시 시작'}.get(ph, '빈 방 스캔 시작'))
         self.go.setVisible(ph in (PH_READY, PH_WAIT_TRAIN, PH_WAIT_ARM))
         # 관제로 나가는 길은 항상 열어 둔다 (기준이 없으면 화면이 그걸 알린다)
         self.skip.setEnabled(True)

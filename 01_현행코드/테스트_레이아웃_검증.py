@@ -84,7 +84,7 @@ for size in ((1440,900),(1366,900),(1280,800),(1200,800)):
     check_clipping(w.monitor, f'감시-정상 {size}'); check_overlap(w.monitor, f'감시-정상 {size}')
     # 감시 (경보 + 드로어)
     w.demo_src.t0=time.time()-7.0; settle(20); w.tick_ui()
-    w.drawer.open_at(0); w.drawer.anim.setCurrentTime(300); app.processEvents(); settle(4)
+    w.drawer.open_at(0); app.processEvents(); settle(4)
     check_clipping(w.monitor, f'감시-경보 {size}'); check_overlap(w.monitor, f'감시-경보 {size}')
     assert w.alarm==v2.ST_UNACK, w.alarm
     locked=[b.isEnabled() for b in w.nav.buttons]
