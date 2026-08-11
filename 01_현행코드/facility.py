@@ -67,8 +67,8 @@ ZONES = {
 
 # 설치된 레이더 — 구역 → 도면 좌표와 설치 높이
 #   ⚠ COVER_HALF 는 jetson_sender.DANGER_ZONES 의 감지영역 반폭이다.
-#     현재 A: x(-1.0~1.0), z(-1.0~1.0) → 반폭 1.0 m (즉 2 m × 2 m)
-COVER_HALF = 1.0
+#     현재 A: x(-0.72~0.72), z(-0.72~0.72) → 제작 프레임 안쪽 1.44 m 정사각형
+COVER_HALF = 0.72
 RADARS = {
     'A': {'pos': (9.1, 4.6), 'ceiling': 2.30, 'label': '레이더 #1'},
 }
