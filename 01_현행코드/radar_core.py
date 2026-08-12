@@ -1275,13 +1275,13 @@ class PreparePage(QtWidgets.QWidget):
         warn = panel()
         wv = QtWidgets.QVBoxLayout(warn)
         wv.setContentsMargins(SP_M, SP_M, SP_M, SP_M)
-        self.warn = lb('순서: 모두 퇴장 → 1명 입장 → 작게 움직임 → 다시 퇴장 → 학습', FS_BODY, AMBER,
+        self.warn = lb('시작하면 먼저 빈 방을 스캔합니다.', FS_BODY, AMBER,
                        wrap=True)
         wv.addWidget(self.warn)
         v.addWidget(warn)
         v.addStretch()
 
-        self.go = btn('빈 방 스캔 시작', FS_TITLE, primary=True, height=60)
+        self.go = btn('기준 수집 시작', FS_TITLE, primary=True, height=60)
         self.go.clicked.connect(self._go)
         v.addWidget(self.go)
 
@@ -1332,11 +1332,20 @@ class PreparePage(QtWidgets.QWidget):
             num.setStyleSheet(f'color:{col};border:none;background:transparent;')
         step = pkt.get('prepare_step') or ''
         self.big.setText(PHASE_ACTION.get(ph, ''))
-        self.warn.setText('순서: 모두 퇴장 → 1명 입장 → 작게 움직임 → 다시 퇴장 → 학습')
+        self.warn.setText('시작하면 먼저 빈 방을 스캔합니다.')
         wc = pkt.get('warmup_count') or 0
         nw = ((pkt.get('cfg') or {}).get('N_WARMUP')) or 150
         left = pkt.get('scan_left')
-        if ph == PH_WARMUP and step == 'empty_scan':
+        if ph == PH_WARMUP and step == 'step_out':
+            # [8/11] 버튼을 누른 사람이 나갈 시간을 준다. 이전에는 START 즉시
+            # 스캔해 사람 몸통이 빈 방 클러터로 학습됐다.
+            self.big.setText('지금 감지 구역 밖으로 나가세요')
+            self.sub.setText(f'빈 방 스캔 시작까지  {left:.0f}초')
+            self.warn.setText('이 카운트가 끝나면 스캔이 시작됩니다. 그 전에 완전히 벗어나세요.')
+            self.bar.setRange(0, 100)
+            sec = ((pkt.get('cfg') or {}).get('STEP_OUT_SEC')) or 5.0
+            self.bar.setValue(int(100 * (1 - left / max(sec, 1e-6))))
+        elif ph == PH_WARMUP and step == 'empty_scan':
             self.big.setText('빈 방 스캔 중 — 감지 구역 밖으로 나가 주세요')
             self.sub.setText(f'빈 방 스캔  {left:.0f}초 남음')
             self.warn.setText('이 단계에만 사람이 없어야 합니다. 사람이 남으면 정상 배경으로 학습됩니다.')
@@ -1380,7 +1389,7 @@ class PreparePage(QtWidgets.QWidget):
             self.bar.setRange(0, 100)
             self.bar.setValue(0)
         self.go.setText({PH_WAIT_TRAIN: '사람 퇴장 후 학습 시작',
-                         PH_WAIT_ARM: '감시 시작'}.get(ph, '빈 방 스캔 시작'))
+                         PH_WAIT_ARM: '감시 시작'}.get(ph, '기준 수집 시작'))
         self.go.setVisible(ph in (PH_READY, PH_WAIT_TRAIN, PH_WAIT_ARM))
         # 관제로 나가는 길은 항상 열어 둔다 (기준이 없으면 화면이 그걸 알린다)
         self.skip.setEnabled(True)
@@ -1943,11 +1952,16 @@ class PowerPopup(Dialog):
     def push(self, st):
         p = st.get('power') or {}
         for k in ('curr', 'volt'):
-            self.buf[k].append(p.get(k, 0.0))
+            value = p.get(k)
+            self.buf[k].append(float(value) if value is not None else float('nan'))
             del self.buf[k][:-self.BUF]
         self.snap = (st.get('breaker') or {}).get('state') or {}
-        self.src.setText('⚠ 전류·전압은 모의값입니다 (스마트 차단기 하드웨어 미연결)'
-                         if p.get('src') == 'sim' else '실측 (Modbus)')
+        if p.get('src') == 'ina226':
+            self.src.setText(
+                f"실측 (INA226) · {p.get('volt', 0):.3f} V · "
+                f"{p.get('curr', 0):.3f} A · {p.get('watt', 0):.2f} W")
+        else:
+            self.src.setText('INA226 연결 오류 · 전류·전압 측정값 없음')
         if self.isVisible():
             self.c1.setData(self.buf['curr'])
             self.c2.setData(self.buf['volt'])

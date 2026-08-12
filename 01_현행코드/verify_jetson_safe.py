@@ -270,7 +270,44 @@ if os.path.exists(LIVE):
 else:
     ck(False, 'radar_live_full.py 를 찾을 수 없음', LIVE)
 
-print('\n[8] 의도한 동작 변경 (에러가 아니라 수정 — 확인용)')
+print('\n[8] 실물 차단기 실패가 성공 상태로 기록되지 않는가')
+
+
+class FakeRelay:
+    connected = True
+    error = None
+
+    def __init__(self, initial=False):
+        self.value = initial
+        self.fail = False
+
+    def read(self):
+        return self.value
+
+    def write(self, value):
+        if self.fail:
+            self.error = '시험용 통신 실패'
+            return False
+        self.value = value
+        return True
+
+
+real_relay = m.RELAY
+try:
+    fake = FakeRelay()
+    m.RELAY = fake
+    breaker = m.BreakerLogic()
+    ck(breaker.trip(m.RADAR_ZONE, 'fall_detected'), 'Modbus 성공 후에만 차단 상태 전환')
+    ck(breaker.snapshot()['state'][m.RADAR_ZONE] == 'TRIPPED', '차단 상태 TRIPPED')
+    ck(breaker.restore([m.RADAR_ZONE]) == [m.RADAR_ZONE], '수동 복구 성공')
+    ck(breaker.snapshot()['state'][m.RADAR_ZONE] == 'ON', '복구 상태 ON')
+    fake.fail = True
+    ck(not breaker.trip(m.RADAR_ZONE, 'fall_detected'), 'Modbus 실패를 차단 성공으로 처리하지 않음')
+    ck(breaker.snapshot()['state'][m.RADAR_ZONE] == 'ON', '통신 실패 시 ON 상태 유지')
+finally:
+    m.RELAY = real_relay
+
+print('\n[9] 의도한 동작 변경 (에러가 아니라 수정 — 확인용)')
 for note in (
         '차단기 판정을 PH_LIVE 에서만 수행 (이전: 웜업·학습 중에도 수행)',
         '설비진동 게이트에 사람 dop_std 를 넣지 않음 (이전: 걸을 때마다 차단)',

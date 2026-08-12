@@ -1528,11 +1528,11 @@ class DashboardPage(QtWidgets.QWidget):
         else:
             c['engine'].set(False, '대기', '판정 장비 응답 없음')
 
-        pw = pkt.get('power') or {}
-        if pw.get('src') == 'modbus':
-            c['breaker'].set(True, '연결됨', '실측 계측 중')
+        breaker = pkt.get('breaker') or {}
+        if breaker.get('src') == 'modbus' and breaker.get('connected'):
+            c['breaker'].set(True, '연결됨', 'Modbus 릴레이 응답 정상')
         else:
-            c['breaker'].set(False, '미연결', '하드웨어 미도착 · 모의값 표시', AMBER)
+            c['breaker'].set(False, '미연결', 'Modbus 릴레이 응답 없음', AMBER)
 
         c['sop'].set(RAG_OK, '정상' if RAG_OK else '비활성',
                      '안전 매뉴얼 검색 사용 가능' if RAG_OK
@@ -2468,7 +2468,7 @@ class SopEngineV2(core.SopEngine):
         e = ev.get('evidence') or {}
         z = ev.get('zone') or RADAR_ZONE
         bs = ((pkt.get('breaker') or {}).get('state')) or {}
-        src = (pkt.get('power') or {}).get('src')
+        src = (pkt.get('breaker') or {}).get('src')
         off = bs.get(z, 'ON') != 'ON'
         return {
             'zone': f"{z} {ZONE_KO.get(z, '')}",
@@ -3108,7 +3108,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         breaker = self.pkt.get('breaker') or {}
         bs = breaker.get('state') or {}
         reasons = breaker.get('reason') or {}
-        src = (self.pkt.get('power') or {}).get('src')
+        src = breaker.get('src')
         off = bs.get(z, 'ON') != 'ON'
         et = (self.alert or {}).get('type')
         reason = reasons.get(z)

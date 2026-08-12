@@ -111,6 +111,13 @@ STAT_HIT_TIMEOUT = 5.0
 STAT_ENTRY_SEC = 8.0
 
 SCAN_SEC        = 12.0   # 빈 방 스캔 시간 (이 동안 전원 시야 밖!)
+# [8/11] 퇴장 유예. 버튼을 누른 사람이 감지 구역 밖으로 나갈 시간.
+#   왜: 이전엔 START 를 받는 즉시 빈방 스캔이 시작됐다. 노트북이 감지 구역 안에
+#       있으면 구조적으로 빠져나갈 방법이 없어 사람이 배경으로 학습됐다
+#       (2026-08-11 실측: 사람 몸통이 클러터 4개로 등록됨 —
+#        (0.00,1.50,0.00) 외 3개가 0.6m x 0.6m 덩어리를 이뤘다).
+#   입장에는 STEP_IN_SEC 유예가 있었는데 퇴장에는 없어 비대칭이었다.
+STEP_OUT_SEC    = 5.0
 STEP_IN_SEC     = 5.0    # 빈방 스캔 후 사람이 들어와 자리 잡을 카운트다운(초)
 SCAN_GRID       = 0.30
 SCAN_MIN_HITS   = 4
@@ -549,7 +556,7 @@ state = {
     'ev_gates':     None,
     'ev_rejected':  [],
     # ── [7/31] 전기 설비. 하드 도착 전까지 _read_power() 가 모의값 생성 ──
-    'power': {'curr': 1.0, 'volt': 220.0, 'src': 'sim'},
+    'power': {'curr': None, 'volt': None, 'src': 'unavailable'},
     # ── [7/31] 노트북 3D/수치 패널용 프레임 요약 ──
     'centroid':   None,
     'height':     None,
@@ -579,6 +586,79 @@ state = {
 #    (레이더를 여러 대로 늘릴 때 구역별로 나누면 된다)
 ELEC_ZONE = RADAR_ZONE      # 변전실 — 전류/전압 이상
 VIB_ZONE  = RADAR_ZONE      # 진동은 이 레이더의 도플러로 잰다 = 레이더 설치 구역
+
+RELAY_PORT = '/dev/ttyUSB2'
+RELAY_BAUD = 9600
+RELAY_ADDR = 1
+RELAY_CH   = 0              # Modbus CH1. NC 배선: 코일 ON=전원 차단
+INA_BUS    = '/dev/i2c-7'
+INA_ADDR   = 0x41
+INA_SHUNT_OHM = 0.005       # M5Stack INA226 10A Isolated 공식 사양: 5 mΩ
+
+
+class RelayRTU:
+    """CH1 한 채널만 쓰는 최소 Modbus RTU 릴레이 드라이버."""
+
+    def __init__(self):
+        self.connected = False
+        self.error = None
+        self._lk = threading.Lock()
+
+    @staticmethod
+    def _crc16(data):
+        crc = 0xFFFF
+        for byte in data:
+            crc ^= byte
+            for _ in range(8):
+                crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+        return bytes((crc & 0xFF, crc >> 8))
+
+    def _exchange(self, body, size):
+        import serial
+        frame = body + self._crc16(body)
+        with serial.Serial(RELAY_PORT, RELAY_BAUD, timeout=0.5) as port:
+            port.reset_input_buffer()
+            port.write(frame)
+            port.flush()
+            reply = port.read(size)
+        if len(reply) != size or reply[-2:] != self._crc16(reply[:-2]):
+            raise OSError(f'Modbus 응답 오류: {reply.hex() or "없음"}')
+        return reply
+
+    def _read_unlocked(self):
+        reply = self._exchange(bytes((RELAY_ADDR, 0x01, 0, RELAY_CH, 0, 1)), 6)
+        if reply[:3] != bytes((RELAY_ADDR, 0x01, 0x01)):
+            raise OSError(f'Modbus 상태 응답 불일치: {reply.hex()}')
+        return bool(reply[3] & 0x01)
+
+    def read(self):
+        with self._lk:
+            try:
+                value = self._read_unlocked()
+                self.connected, self.error = True, None
+                return value
+            except Exception as exc:
+                self.connected, self.error = False, str(exc)
+                return None
+
+    def write(self, tripped):
+        """NC 접점: True면 코일 ON으로 개방(차단), False면 폐쇄(복구)."""
+        with self._lk:
+            try:
+                value = 0xFF if tripped else 0x00
+                body = bytes((RELAY_ADDR, 0x05, 0, RELAY_CH, value, 0))
+                reply = self._exchange(body, 8)
+                if reply[:-2] != body or self._read_unlocked() != tripped:
+                    raise OSError(f'Modbus 쓰기 검증 실패: {reply.hex()}')
+                self.connected, self.error = True, None
+                return True
+            except Exception as exc:
+                self.connected, self.error = False, str(exc)
+                print(f'[BREAKER ERROR] {exc}', flush=True)
+                return False
+
+
+RELAY = RelayRTU()
 
 
 def classify_equipment(curr, volt, dop_std):
@@ -611,11 +691,17 @@ class BreakerLogic:
         self.state = {z: 'ON' for z in ZONE_IDS}
         self.reason = {z: None for z in ZONE_IDS}
         self._lk = threading.Lock()
+        actual = RELAY.read()
+        if actual is True:
+            self.state[RADAR_ZONE] = 'TRIPPED'
+            self.reason[RADAR_ZONE] = 'startup_readback'
 
     def trip(self, zone, reason=''):
         """단일 Zone 차단. 새로 차단됐으면 True."""
         with self._lk:
             if self.state.get(zone) == 'ON':
+                if zone != RADAR_ZONE or not RELAY.write(True):
+                    return False
                 self.state[zone] = 'TRIPPED'
                 self.reason[zone] = reason
                 return True
@@ -632,9 +718,11 @@ class BreakerLogic:
             tgt = zones or [z for z, s in self.state.items() if s == 'TRIPPED']
             done = [z for z in tgt if self.state.get(z) == 'TRIPPED']
             for z in done:
+                if z != RADAR_ZONE or not RELAY.write(False):
+                    continue
                 self.state[z] = 'ON'
                 self.reason[z] = None
-        return done
+            return [z for z in done if self.state.get(z) == 'ON']
 
     def tripped_zones(self):
         return [z for z, s in self.state.items() if s == 'TRIPPED']
@@ -644,23 +732,43 @@ class BreakerLogic:
 
     def snapshot(self):
         with self._lk:
-            return {'state': dict(self.state), 'reason': dict(self.reason)}
+            return {'state': dict(self.state), 'reason': dict(self.reason),
+                    'src': 'modbus' if RELAY.connected else 'unavailable',
+                    'connected': RELAY.connected, 'error': RELAY.error}
 
 
 BREAKER = BreakerLogic()
 
 
 def _read_power():
-    """전류·전압 읽기.
+    """INA226의 버스 전압과 션트 전압을 읽어 12V LED 부하를 실측한다."""
+    import fcntl
+    fd = None
+    try:
+        fd = os.open(INA_BUS, os.O_RDWR)
+        fcntl.ioctl(fd, 0x0703, INA_ADDR)  # I2C_SLAVE
 
-    ⚠ 하드웨어 미도착 -> 지금은 모의값. 하드 도착 후 이 함수만 Modbus 로 교체.
-      반환 dict 의 'src' 를 'modbus' 로 바꾸면 노트북 화면이 '실측'으로 표시한다.
-    """
-    import random
-    tripped = BREAKER.any_tripped()
-    return {'curr': round(random.gauss(0.6 if tripped else 1.0, 0.04), 3),
-            'volt': round(random.gauss(220.0, 0.4), 1),
-            'src': 'sim'}
+        def _reg16(reg, signed=False):
+            os.write(fd, bytes((reg,)))
+            raw = os.read(fd, 2)
+            if len(raw) != 2:
+                raise OSError(f'INA226 register 0x{reg:02X} short read')
+            value = (raw[0] << 8) | raw[1]
+            return value - 0x10000 if signed and value & 0x8000 else value
+
+        shunt_v = _reg16(0x01, signed=True) * 2.5e-6
+        voltage = _reg16(0x02) * 1.25e-3
+        current = shunt_v / INA_SHUNT_OHM
+        return {'curr': round(current, 4), 'volt': round(voltage, 4),
+                'watt': round(voltage * current, 3), 'src': 'ina226',
+                'connected': True, 'error': None}
+    except Exception as exc:
+        print(f'[INA226 ERROR] {exc}', flush=True)
+        return {'curr': None, 'volt': None, 'watt': None,
+                'src': 'unavailable', 'connected': False, 'error': str(exc)}
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def add_log(msg):
@@ -703,6 +811,9 @@ def _latch_event(et, clf, zn, ts, score_x):
         tripped = BREAKER.trip(zn, reason=et)
         if tripped:
             state['logs'].append(f'[{ts}] BREAKER TRIP Zone {zn} <- {lbl}')
+        else:
+            state['logs'].append(
+                f'[{ts}] BREAKER TRIP FAILED Zone {zn}: {RELAY.error or "미지원 구역"}')
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1078,6 +1189,10 @@ def pipeline_loop():
     prev_zvel   = 0.0
     prev_ts     = None
     ema_zacc    = 0.0
+    # [8/11] classify 전용 계열(클러터 제거 전)의 이전 프레임 상태.
+    prev_c_full    = None
+    prev_zvel_full = 0.0
+    ema_zacc_full  = 0.0
     anom_streak = 0
     pend_et     = None
     pend_cnt    = 0
@@ -1098,6 +1213,7 @@ def pipeline_loop():
     clutter_spots = list(CLUTTER_SPOTS)
     scan_buf      = []
     scan_until    = None
+    step_out_until = None    # [8/11] 퇴장 유예 종료 시각 (None = 유예 중 아님)
     step_in_until = None
     # 기존 JSONL은 과거 기록이다. 재시작 때 100MB 전체를 재생하면 옛 사람으로
     # 트랙·정지 타이머가 즉시 생긴다. 시작 이후 추가되는 프레임만 읽는다.
@@ -1210,6 +1326,9 @@ def pipeline_loop():
             prev_zvel   = 0.0
             prev_ts     = None
             ema_zacc    = 0.0
+            prev_c_full    = None
+            prev_zvel_full = 0.0
+            ema_zacc_full  = 0.0
             anom_streak = 0
             pend_et     = None
             pend_cnt    = 0
@@ -1223,6 +1342,7 @@ def pipeline_loop():
             clutter_spots = list(CLUTTER_SPOTS)
             scan_buf    = []
             scan_until  = None
+            step_out_until = None
             step_in_until = None
             model       = None
             scaler      = None
@@ -1309,14 +1429,43 @@ def pipeline_loop():
                 stat_miss += 1
                 if stat_miss >= STAT_MISS_TOL:
                     stat_since = None; stat_zone = None; stat_pre = False
-                if scan_until is not None:
+                # [8/11] 퇴장 유예도 여기서 만료시킨다.
+                #   이 경로는 '포인트가 하나도 없는 프레임'이다. 사람이 나간 뒤
+                #   조용한 방에서는 이쪽만 계속 타므로, 여기서 처리하지 않으면
+                #   step_out 이 영원히 안 끝나고 스캔이 시작되지 않는다.
+                if step_out_until is not None:
+                    if time.time() < step_out_until:
+                        with _lock:
+                            state['scan_left'] = step_out_until - time.time()
+                    else:
+                        step_out_until = None
+                        scan_until = time.time() + SCAN_SEC
+                        with _lock:
+                            state['prepare_step'] = 'empty_scan'
+                            state['scan_left']    = SCAN_SEC
+                        add_log(f'STEP A: EMPTY-ROOM SCAN {int(SCAN_SEC)}s -- everyone OUT of view!')
+                elif scan_until is not None:
                     if time.time() < scan_until:
                         with _lock:
                             state['scan_left'] = scan_until - time.time()
                     else:
-                        _finish_scan()
+                        _finish_scan()      # prepare_step='step_in' 은 여기서 설정된다
+                        # [8/11] 기존 버그: 이 경로에서 _finish_scan 만 하고
+                        #   입장 카운트다운 타이머를 안 걸어 STEP B-0 가 스킵됐다.
+                        step_in_until = time.time() + STEP_IN_SEC
                 continue
 
+            # [8/11] 클러터 제거 '전' 포인트를 따로 보관한다 -> classify 전용.
+            #   왜: 학습된 클러터 스팟이 하필 사람 통행 영역(height 1.1~1.7m)에
+            #       걸리면 낙상 순간의 고도플러 포인트까지 배경으로 오인해 지운다.
+            #   실측(2026-08-11, stage1_recent.json frame 52350~52900 재계산):
+            #       원본->ROI 까지 ds_max 1.108 (문턱 1.05 통과)
+            #       -> 클러터 제거 후 0.849 (미달). ROI 안 포인트의 53.4% 가 사라졌다.
+            #       clf_decisions.jsonl 기록값 0.849 와 정확히 일치 = 이 경로가 원인.
+            #   AE(feat_buf)·정지형 게이트·화면 표시는 그대로 클러터 제거본을 쓴다.
+            #   AE 는 클러터 제거된 데이터로 baseline 을 학습했으므로 전처리를
+            #   바꾸면 학습/추론이 어긋난다. 정지형은 빈방 오탐 억제가 목적이다.
+            frame_pts_full = frame_pts
             # 클러터 점 제거 (스캔 완료 후)
             if CLUTTER_REMOVE_POINTS and scan_until is None and clutter_spots:
                 frame_pts = [p for p in frame_pts
@@ -1341,10 +1490,18 @@ def pipeline_loop():
 
             ys  = [p['y'] for p in frame_pts]
             cz  = CEILING_H - (float(np.mean(ys)) if ys else CEILING_H)
-            n   = len(frame_pts)
             _now_t = time.time()
             _dt    = (_now_t - prev_ts) if prev_ts is not None else None
             feat = extract_features(frame_pts, prev_c, prev_zvel, _dt, ema_zacc)
+            # [8/11] classify 전용 피처. 클러터 제거 전 포인트로 계산한다.
+            #   prev_* 를 별도로 추적하는 이유: z_vel/z_accel 은 이전 프레임 centroid
+            #   에 의존한다. 클러터 제거본의 prev_c 를 그대로 쓰면 두 계열이 섞여
+            #   수직 속도가 실제와 다르게 나온다.
+            feat_full = extract_features(frame_pts_full, prev_c_full, prev_zvel_full,
+                                         _dt, ema_zacc_full)
+            prev_c_full    = feat_full[:3].copy()
+            prev_zvel_full = float(feat_full[7])
+            ema_zacc_full  = float(feat_full[8])
             track_state = person_track.update(frame_pts, feat, _now_t)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
@@ -1378,7 +1535,8 @@ def pipeline_loop():
                 #       설비 진동은 classify() 의 vibration_anomaly 가 담당한다
                 #       (ds_first>=0.40 AND ds_last>=0.40 AND h_drop<0.5 — 지속성 요구).
                 #       여기서는 전기 이상(과전류·전압강하)만 본다.
-                if state['phase'] == PH_LIVE:
+                if (state['phase'] == PH_LIVE
+                        and _pw['curr'] is not None and _pw['volt'] is not None):
                     _trip = BREAKER.on_anomalies(
                         classify_equipment(_pw['curr'], _pw['volt'], dop_std=0.0))
                     for _z in _trip:
@@ -1399,13 +1557,16 @@ def pipeline_loop():
             if current_phase == PH_READY:
                 if start_req:
                     scan_buf   = []
-                    scan_until = time.time() + SCAN_SEC
+                    # [8/11] 바로 스캔에 들어가지 않는다. 먼저 퇴장 유예를 준다.
+                    #   scan_until 은 step_out 이 끝난 뒤에 설정한다.
+                    step_out_until = time.time() + STEP_OUT_SEC
+                    scan_until = None
                     with _lock:
                         state['start_requested'] = False
                         state['phase']           = PH_WARMUP
-                        state['scan_left']       = SCAN_SEC
-                        state['prepare_step']    = 'empty_scan'
-                    add_log(f'STEP A: EMPTY-ROOM SCAN {int(SCAN_SEC)}s -- everyone OUT of view!')
+                        state['scan_left']       = STEP_OUT_SEC
+                        state['prepare_step']    = 'step_out'
+                    add_log(f'STEP A-0: GET OUT NOW -- empty-room scan starts in {int(STEP_OUT_SEC)}s')
                 else:
                     with _lock:
                         state['sc_h'].append(0.0)
@@ -1416,6 +1577,21 @@ def pipeline_loop():
             #    이 조건이 없으면 매 프레임 웜업 블록으로 되돌아와 1188행이 phase 를
             #    LIVE -> WAIT_TRAIN 으로 되돌린다(실측 재현: 웜업 155->183 무한 증가).
             if model is None and not ae_disabled:
+                # [8/11] STEP A-0: 퇴장 유예. 이 구간의 프레임은 버린다.
+                #   사람이 아직 시야에 있으므로 scan_buf 에 넣으면 안 된다.
+                if step_out_until is not None:
+                    if time.time() < step_out_until:
+                        with _lock:
+                            state['scan_left'] = step_out_until - time.time()
+                            state['sc_h'].append(0.0)
+                        continue
+                    step_out_until = None
+                    scan_until = time.time() + SCAN_SEC
+                    with _lock:
+                        state['prepare_step'] = 'empty_scan'
+                        state['scan_left']    = SCAN_SEC
+                    add_log(f'STEP A: EMPTY-ROOM SCAN {int(SCAN_SEC)}s -- everyone OUT of view!')
+
                 # STEP A: 빈 방 클러터 스캔
                 if scan_until is not None:
                     if time.time() < scan_until:
@@ -1550,7 +1726,8 @@ def pipeline_loop():
             feat_buf.append(feat.tolist())
             if len(feat_buf) > SEQ_LEN:
                 feat_buf.pop(0)
-            clf_buf.append(feat.tolist())
+            # [8/11] classify 입력만 클러터 제거 전 피처를 쓴다. (위 주석 참조)
+            clf_buf.append(feat_full.tolist())
             if len(clf_buf) > CLF_WIN:
                 clf_buf.pop(0)
 
