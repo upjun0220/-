@@ -72,7 +72,7 @@ WINDOW_FRAMES    = int(WINDOW_SEC * FPS_EST)   # ~20 frames
 DEBUG_TIMING     = False
 
 # ROI 낙상 문턱 재검증에 필요한 양성·난음성만 수집한다.
-TARGET = {'fall': 12, 'fast_sit': 10, 'walk': 5, 'normal': 5,
+TARGET = {'fall': 10, 'fast_sit': 10, 'walk': 5, 'normal': 5,
           'crouch': 5, 'exit': 5, 'wave': 8, 'still': 5, 'vib': 10}
 CORE_CLASSES    = ['fall', 'fast_sit', 'walk', 'normal', 'crouch', 'exit', 'wave', 'still']
 EXPLORE_CLASSES = ['vib']
@@ -354,9 +354,9 @@ btn_empty.on_clicked(_start_empty)
 
 
 def _on_key(evt):
-    """사람 A/B/C와 위치 1~5를 파일을 재시작하지 않고 전환한다."""
+    """사람 A/B/C/D와 위치 1~5를 파일을 재시작하지 않고 전환한다."""
     global CUR_PERSON, CUR_POSITION
-    if evt.key in ('a', 'b', 'c'):
+    if evt.key in ('a', 'b', 'c', 'd'):
         CUR_PERSON = evt.key.upper()
         with _lock:
             for c in state['counts']:
@@ -384,7 +384,7 @@ def build_info():
 
     lines = []
     lines.append(f'PERSON {CUR_PERSON}  |  POSITION {CUR_POSITION}  '
-                 '(a/b/c, 1=center 2=N 3=E 4=S 5=W)')
+                 '(a/b/c/d, 1=center 2=N 3=E 4=S 5=W)')
     if empty_until is not None:
         lines.append(f'EMPTY: recording {max(0, empty_until-time.time()):.0f}s left')
     else:
@@ -456,7 +456,7 @@ if __name__ == '__main__':
     print(f'  윈도우    : {WINDOW_SEC}s (~{WINDOW_FRAMES} frames)')
     print('  목표      : ' + ', '.join(f'{c}={TARGET[c]}' for c in CLASSES))
     print(f'  세션      : {SESSION_ID}  (RADAR_SESSION 환경변수로 변경)')
-    print('  사람 키   : a/b/c   | 위치 키: 1=center 2=N 3=E 4=S 5=W')
+    print('  사람 키   : a/b/c/d | 위치 키: 1=center 2=N 3=E 4=S 5=W')
     print(f'  빈방      : EMPTY 60s 버튼 -> {EMPTY_PATH}')
     print('  [터미널 1] python3 ~/radar_parser.py   (먼저)')
     print('  [터미널 2] python3 ~/radar_collect.py  (이것)')
