@@ -1207,9 +1207,25 @@ def pipeline_loop():
     stat_ax = stat_az = 0.0
     stat_hits = stat_tot = 0
     stat_last_hit = 0.0
+    track_log_t = 0.0
     last_motion_t = -1e9
     motion_run = 0
     person_track = PersonTrack()
+
+    def _track_log(points_n, centroid, now):
+        """현장 진단용 트랙 상태를 1초에 한 번 즉시 출력한다."""
+        nonlocal track_log_t
+        if now - track_log_t < 1.0:
+            return
+        track_log_t = now
+        still = (None if person_track.still_since is None
+                 else max(0.0, now - person_track.still_since))
+        ctext = ('none' if centroid is None else
+                 f'({centroid[0]:.3f},{centroid[1]:.3f},{centroid[2]:.3f})')
+        ttext = 'off' if still is None else f'{still:.1f}s/{STAT_CRIT_SEC:.0f}s'
+        print(f'[TRACK] state={person_track.state} centroid={ctext} '
+              f'points={points_n} still={ttext}', flush=True)
+
     clutter_spots = list(CLUTTER_SPOTS)
     scan_buf      = []
     scan_until    = None
@@ -1420,7 +1436,9 @@ def pipeline_loop():
                     r['x'][0] <= p['x'] <= r['x'][1] and r['z'][0] <= p['z'] <= r['z'][1]
                     for r in EXCLUDE_REGIONS)]
             if not frame_pts:
-                person_track.update([], None, time.time())
+                _track_now = time.time()
+                person_track.update([], None, _track_now)
+                _track_log(0, None, _track_now)
                 with _lock:
                     state['latest_pts'] = []
                     state['centroid'] = None
@@ -1473,7 +1491,9 @@ def pipeline_loop():
                                         and abs(p['y'] - _sy) <= _dy
                                         for _sx, _sy, _sz, _sr, _dy in clutter_spots)]
                 if not frame_pts:
-                    person_track.update([], None, time.time())
+                    _track_now = time.time()
+                    person_track.update([], None, _track_now)
+                    _track_log(0, None, _track_now)
                     with _lock:
                         state['latest_pts'] = []
                         state['centroid'] = None
@@ -1503,6 +1523,7 @@ def pipeline_loop():
             prev_zvel_full = float(feat_full[7])
             ema_zacc_full  = float(feat_full[8])
             track_state = person_track.update(frame_pts, feat, _now_t)
+            _track_log(len(frame_pts), feat[:3], _now_t)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
             prev_c    = feat[:3].copy()
