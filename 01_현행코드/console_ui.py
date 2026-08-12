@@ -1544,7 +1544,7 @@ class DashboardPage(QtWidgets.QWidget):
         self.update_zones(pkt)
         self.plan_hint.setText(
             f"{RADAR_ZONE} 구역 감지영역 "
-            f"{2 * fac.COVER_HALF:.0f} × {2 * fac.COVER_HALF:.0f} m · "
+            f"{2 * fac.COVER_HALF:.2f} × {2 * fac.COVER_HALF:.2f} m · "
             f"천장 {fac.RADARS[RADAR_ZONE]['ceiling']:.2f} m"
             if RADAR_ZONE in fac.RADARS else '')
         self.why.setText('' if ok else
