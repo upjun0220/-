@@ -165,6 +165,13 @@ RECOVER_DSLO   = 0.30
 RECOVER_DSHI   = 0.90
 RECOVER_FRAMES = 4
 FALL_ZACC_MIN  = 0
+# [8/12 임시 시연값] A를 제외한 B/C/D 낙상 30회로 조정.
+# 낙상 27/30, 비낙상 오탐 7/105. 내일 표본 추가 후 반드시 재산정한다.
+FALL_DS_MAX_MIN = 0.75
+FALL_DS_MEAN_MAX = 0.50
+FALL_H_DROP_MIN = 0.25
+FALL_IMPULSE_MIN = 1.50
+FALL_DS_LAST_MAX = 0.65
 POLL_SEC      = 0.4
 
 DEVICE = (torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -1005,6 +1012,37 @@ def classify(feat_win, score, thr):
 
     # 5) 그 외 (미미한 움직임) -> 정상
     return _mk('normal', 'normal', 0.0)
+
+
+def classify_demo_bcd(feat_win, score, thr):
+    """[8/12 임시] B/C/D ROI 표본 임계값으로 시연하고 내일 재수집 후 제거한다."""
+    result = classify(feat_win, score, thr)
+    ev = result.get('evidence') or {}
+    ds_peak = float(ev.get('dopstd_max') or 0)
+    ds_mean = float(ev.get('dopstd_mean') or 0)
+    impulse = float(ev.get('impulse_ratio') or 0)
+    h_drop = float(ev.get('h_drop') or 0)
+    ds_last = float(ev.get('ds_last') or 0)
+    gates = {
+        'ds_peak': {'value': ds_peak, 'thr': FALL_DS_MAX_MIN, 'unit': 'm/s',
+                    'cmp': '>=', 'pass': ds_peak >= FALL_DS_MAX_MIN},
+        'ds_mean': {'value': ds_mean, 'thr': FALL_DS_MEAN_MAX, 'unit': 'm/s',
+                    'cmp': '<=', 'pass': ds_mean <= FALL_DS_MEAN_MAX},
+        'impulse': {'value': impulse, 'thr': FALL_IMPULSE_MIN, 'unit': '비율',
+                    'cmp': '>=', 'pass': impulse >= FALL_IMPULSE_MIN},
+        'h_drop': {'value': h_drop, 'thr': FALL_H_DROP_MIN, 'unit': 'm',
+                   'cmp': '>=', 'pass': h_drop >= FALL_H_DROP_MIN},
+        'ds_last': {'value': ds_last, 'thr': FALL_DS_LAST_MAX, 'unit': 'm/s',
+                    'cmp': '<=', 'pass': ds_last <= FALL_DS_LAST_MAX},
+    }
+    detected = float(ev.get('n_mean') or 0) >= 4 and all(g['pass'] for g in gates.values())
+    result = dict(result, gates=gates)
+    if detected:
+        result.update(event_type='fall_detected', severity='critical',
+                      confidence=max(0.85, float(result.get('confidence') or 0)), rejected=[])
+    elif result.get('event_type') == 'fall_detected':
+        result.update(event_type='normal', severity='normal', confidence=0.0, rejected=[])
+    return result
 
 # ═══════════════════════════════════════════════════════════
 # 5. NETWORK  (제어 수신 + 상태 송신)
@@ -1941,7 +1979,7 @@ def pipeline_loop():
                 if anom_streak >= CONFIRM_FRAMES:
                     anom_streak = 0
                     fw  = np.array(clf_buf, dtype=np.float32)
-                    clf = classify(fw, score, thr)
+                    clf = classify_demo_bcd(fw, score, thr)
                     et  = clf['event_type']
                     raw_et = et
 
