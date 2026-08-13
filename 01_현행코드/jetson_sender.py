@@ -1963,6 +1963,9 @@ def pipeline_loop():
                                 inc['resolved'] = ts
                                 break
                         state['logs'].append(f'[{ts}] RESOLVED Zone {zn}: {lbl} (manual ack)')
+                        # ⚠ [8/13 실측] 종료 직후 옛 시작 시각으로 재발화하지 않도록
+                        # 트랙은 유지하고 무동작 판정 시간만 0초부터 다시 센다.
+                        person_track.still_since = time.time()
                         # ⚠ 차단기는 복구하지 않는다 (LOTO / restart prevention).
                         #   재투입은 노트북에서 확인 3개를 받은 뒤 CMD_RESTORE 로만.
                         if BREAKER.any_tripped():
