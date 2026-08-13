@@ -249,6 +249,10 @@ ck('elif phase == PH_WAIT_ARM:' in src and "state['phase'] = PH_LIVE" in src,
    '감시 시작 명령으로만 LIVE 전환')
 ck("_is_live = (state['phase'] == PH_LIVE)" in src,
    '판정 경로는 PH_LIVE 에서만 실행')
+reset_at = src.index("if state['reset_requested']")
+reset_block = src[reset_at:src.index('if do_reset:', reset_at)]
+ck("state['start_requested']  = True" in reset_block,
+   '기준 초기화 후 빈방 스캔 자동 재시작')
 
 print('\n[7] 판정 로직이 radar_live_full.py 와 동일한가 (주석 제외 코드 비교)')
 

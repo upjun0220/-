@@ -1359,7 +1359,9 @@ def pipeline_loop():
                 state['reset_requested'] = False
                 state['phase']            = PH_READY
                 state['warmup_count']     = 0
-                state['start_requested']  = False
+                # RESET 확인 한 번으로 재수집까지 이어간다. 별도 START 패킷은
+                # UDP 유실이나 조작 누락 시 READY에 영구 정지할 수 있다.
+                state['start_requested']  = True
                 state['train_requested']  = False
                 state['ev_active']        = False
                 state['ev_type']          = None
@@ -1370,7 +1372,7 @@ def pipeline_loop():
                 state['threshold']        = 0.01
                 state['logs'].append(
                     f'[{datetime.now().strftime("%H:%M:%S")}] '
-                    f'RESET -- click Start Baseline to recollect')
+                    f'RESET -- baseline recollection starts automatically')
                 do_reset = True
 
         if do_reset:
