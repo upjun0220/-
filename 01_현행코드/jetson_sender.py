@@ -590,14 +590,14 @@ VIB_ZONE  = RADAR_ZONE      # 진동은 이 레이더의 도플러로 잰다 = �
 RELAY_PORT = '/dev/ttyUSB2'
 RELAY_BAUD = 9600
 RELAY_ADDR = 1
-RELAY_CH   = 0              # Modbus CH1. NC 배선: 코일 ON=전원 차단
+RELAY_CH   = 0              # Modbus CH1. NO 배선: 코일 ON=정상 투입, OFF=차단
 INA_BUS    = '/dev/i2c-7'
 INA_ADDR   = 0x41
 INA_SHUNT_OHM = 0.005       # M5Stack INA226 10A Isolated 공식 사양: 5 mΩ
 
 
 class RelayRTU:
-    """CH1 한 채널만 쓰는 최소 Modbus RTU 릴레이 드라이버."""
+    """NO 접점 CH1을 쓰는 최소 Modbus RTU 릴레이 드라이버."""
 
     def __init__(self):
         self.connected = False
@@ -634,21 +634,23 @@ class RelayRTU:
     def read(self):
         with self._lk:
             try:
-                value = self._read_unlocked()
+                # NO 접점은 코일이 꺼지면 열린다. 무여자 상태를 차단으로 해석한다.
+                tripped = not self._read_unlocked()
                 self.connected, self.error = True, None
-                return value
+                return tripped
             except Exception as exc:
                 self.connected, self.error = False, str(exc)
                 return None
 
     def write(self, tripped):
-        """NC 접점: True면 코일 ON으로 개방(차단), False면 폐쇄(복구)."""
+        """NO 접점: True면 코일 OFF로 차단, False면 코일 ON으로 투입."""
         with self._lk:
             try:
-                value = 0xFF if tripped else 0x00
+                coil_on = not tripped
+                value = 0xFF if coil_on else 0x00
                 body = bytes((RELAY_ADDR, 0x05, 0, RELAY_CH, value, 0))
                 reply = self._exchange(body, 8)
-                if reply[:-2] != body or self._read_unlocked() != tripped:
+                if reply[:-2] != body or self._read_unlocked() != coil_on:
                     raise OSError(f'Modbus 쓰기 검증 실패: {reply.hex()}')
                 self.connected, self.error = True, None
                 return True
