@@ -1151,7 +1151,7 @@ class EvidenceView(QtWidgets.QWidget):
         self.head.setText(
             f"{EVENT_KO.get(et, '-')} · {ev.get('zone')} "
             f"{ZONE_KO.get(ev.get('zone'), '')} · {SEV_KO.get(sev, '')} · "
-            f"확신도 {ev.get('conf', 0):.0%} · "
+            f"판정 점수 {ev.get('conf', 0):.2f} · "
             f"{time.strftime('%H:%M:%S', time.localtime(rx_ts))}")
         self.head.setStyleSheet(
             f'color:{sev_color(sev)};border:none;background:transparent;')
@@ -1929,7 +1929,7 @@ class EventLogPage(QtWidgets.QWidget):
         r = self.tbl.rowCount()
         self.tbl.insertRow(r)
         cells = (ts, EVENT_KO.get(et, str(et)),
-                 f'{zone} {ZONE_KO.get(zone, "")}', f'{conf:.0%}', status)
+                 f'{zone} {ZONE_KO.get(zone, "")}', f'{conf:.2f}', status)
         self.rows.append(cells)
         for c, t in enumerate(cells):
             it = QtWidgets.QTableWidgetItem(t)
@@ -2524,7 +2524,7 @@ class SopEngineV2(core.SopEngine):
         if facts.get('elapsed'):
             add(f"무동작 경과: 약 {int(facts['elapsed'])}초")
         if facts.get('conf') is not None:
-            add(f"판정 확신도: {facts['conf']:.0%}")
+            add(f"판정 점수: {facts['conf']:.2f}")
         if facts.get('breaker'):
             add(f"해당 구역 전원: {facts['breaker']}")
         return '\n'.join(L)
@@ -3094,7 +3094,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.monitor.a_kind.setText(name)
         self.monitor.a_kind.setStyleSheet(
             f'color:{col};border:none;background:transparent;')
-        self.monitor.a_conf.setText(f'확신도 {ev.get("conf", 0):.0%}')
+        self.monitor.a_conf.setText(f'판정 점수 {ev.get("conf", 0):.2f}')
         self.monitor.alert_box.setStyleSheet(
             f'QFrame{{background:{PANEL};border:1px solid {col};'
             f'border-radius:{RADIUS}px;}}')
@@ -3113,7 +3113,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
                                'resolved': None})
         self.evlog.add(ts, et, z, ev.get('conf', 0), '진행 중')
         self.timeline.add(f'{name} 감지 · {z} 구역 '
-                          f'(확신도 {ev.get("conf", 0):.0%})', col)
+                          f'(판정 점수 {ev.get("conf", 0):.2f})', col)
         self._recent.appendleft((ts, f'{name} 감지', col))
         self.dash.set_events(list(self._recent))
         # ⚠ 순서 주의: show_for() 가 자동조치 배지를 기본 문구

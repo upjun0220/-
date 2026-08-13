@@ -1874,7 +1874,7 @@ class EvidencePopup(Dialog):
         et = ev.get('type') or ev.get('event_type')
         self.head.setText(
             f"{EVENT_KO.get(et, '-')} · Zone {ev.get('zone')} · "
-            f"{SEV_KO.get(ev.get('sev'), '')} · 확신도 {ev.get('conf', 0):.0%} · "
+            f"{SEV_KO.get(ev.get('sev'), '')} · 판정 점수 {ev.get('conf', 0):.2f} · "
             f"{time.strftime('%H:%M:%S', time.localtime(rx_ts))}")
         self.head.setStyleSheet(f'color:{RED};border:none;')
         g = ev.get('gates') or {}

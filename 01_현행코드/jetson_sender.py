@@ -216,6 +216,22 @@ except Exception as _rfe:
     RF_MODEL = None; RF_OK = False
     print(f'[RF] 모델 없음/로드실패 -> 규칙만 사용: {_rfe}')
 
+# [8/13 실측] 오늘 낙상 50건/음성 87건, 사람 단위 LOSO, FN 비용 10배로 선택한
+# 안전 우선 이진 모델. 기존 RF는 현재 설치·수집 분포와 맞지 않아 최종 veto로
+# 사용할 수 없다. 이 모델 점수는 캘리브레이션된 확률이 아니라 운영점 선택용 점수다.
+SAFETY_MODEL_PATH = os.path.join(os.path.dirname(__file__), 'fall_safety_classifier.joblib') \
+    if SIMULATE else os.path.expanduser('~/fall_safety_classifier.joblib')
+try:
+    _safety_ck = joblib.load(SAFETY_MODEL_PATH)
+    SAFETY_MODEL = _safety_ck['model']
+    SAFETY_THRESHOLD = float(_safety_ck['threshold'])
+    SAFETY_OK = True
+    print(f'[SAFETY] 낙상 모델 로드 OK threshold={SAFETY_THRESHOLD:.2f} '
+          f'metrics={_safety_ck.get("metrics")}')
+except Exception as _sfe:
+    SAFETY_MODEL = None; SAFETY_THRESHOLD = 1.0; SAFETY_OK = False
+    print(f'[SAFETY] 낙상 모델 로드 실패 -> 기존 규칙으로 강등: {_sfe}')
+
 
 # ═══════════════════════════════════════════════════════════
 # 2. PIPELINE CLASSES
@@ -403,6 +419,16 @@ def _rf_veto(win):
         return RF_MODEL.predict([feats])[0] != 'fall'
     except Exception:
         return False
+
+
+def _safety_fall_score(win):
+    """안전 우선 이진 모델 점수. 실제 확률이 아니며 실패는 숨기지 않는다."""
+    if not SAFETY_OK:
+        return None
+    feats = _rf_features(win)
+    if feats is None:
+        return None
+    return float(SAFETY_MODEL.predict_proba([feats])[0, 1])
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1107,6 +1133,8 @@ def pipeline_loop():
     stat_log_t  = 0.0
     stat_ax = stat_az = 0.0
     stat_hits = stat_tot = 0
+    fall_feature_log_t = 0.0
+    ae_error_logged = False
     stat_last_hit = 0.0
     track_log_t = 0.0
     last_motion_t = -1e9
@@ -1259,6 +1287,8 @@ def pipeline_loop():
             stat_miss   = 0
             stat_zone   = None
             stat_pre    = False
+            fall_feature_log_t = 0.0
+            ae_error_logged = False
             clutter_spots = list(CLUTTER_SPOTS)
             scan_buf    = []
             scan_until  = None
@@ -1789,8 +1819,12 @@ def pipeline_loop():
                     with torch.no_grad():
                         recon = model(X)
                         score = float(torch.mean((recon - X)**2).item())
-                except Exception:
+                    ae_error_logged = False
+                except Exception as e:
                     score = 0.0
+                    if not ae_error_logged:
+                        ae_error_logged = True
+                        add_log(f'AE score 계산 실패 -- 안전 모델은 계속 동작: {type(e).__name__}: {e}')
 
             with _lock:
                 state['sc_h'].append(score)
@@ -1820,19 +1854,57 @@ def pipeline_loop():
                             state['logs'].append(
                                 f'[{ts}] 차단 유지 {BREAKER.tripped_zones()} — 재투입은 수동')
 
-                is_anomaly = score > thr
+                fw = np.array(clf_buf, dtype=np.float32)
+                safety_score = None
+                if len(fw) == CLF_WIN:
+                    try:
+                        safety_score = _safety_fall_score(fw)
+                    except Exception as e:
+                        add_log(f'안전 낙상 모델 계산 실패 -- 기존 규칙으로 강등: {type(e).__name__}: {e}')
 
-                if is_anomaly and not state['ev_active']:
+                # 젯슨 연결 모니터용 1 Hz 판정 피처. 전체 로그 대신 이 줄만 tail/grep한다.
+                if len(fw) == CLF_WIN and time.time() - fall_feature_log_t >= 1.0:
+                    fall_feature_log_t = time.time()
+                    _valid = fw[fw[:, 6] > 0]
+                    if len(_valid) >= 2:
+                        _ds = _valid[:, 4]
+                        print('[FALL-FEAT] '
+                              f'safety={safety_score if safety_score is not None else -1:.3f} '
+                              f'thr={SAFETY_THRESHOLD:.2f} ds_max={_ds.max():.3f} '
+                              f'ds_mean={_ds.mean():.3f} broad={int((_ds >= 0.8).sum())} '
+                              f'h_drop={_valid[:, 1].max()-_valid[:, 1].min():.3f} '
+                              f'horiz={np.hypot(np.ptp(_valid[:, 0]), np.ptp(_valid[:, 2])):.3f}',
+                              flush=True)
+
+                safety_candidate = (safety_score is not None
+                                    and safety_score >= SAFETY_THRESHOLD)
+                # AE는 보조 게이트다. 안전 모델 후보를 막지 않으며 AE 장애 시에도 낙상
+                # 판정은 계속된다. 모델이 없으면 기존 AE+규칙 경로로 강등한다.
+                is_anomaly = score > thr or safety_candidate
+
+                if safety_candidate and not state['ev_active']:
+                    anom_streak = CONFIRM_FRAMES
+                elif is_anomaly and not state['ev_active']:
                     anom_streak += 1
                 else:
                     anom_streak = 0
 
                 if anom_streak >= CONFIRM_FRAMES:
                     anom_streak = 0
-                    fw  = np.array(clf_buf, dtype=np.float32)
                     clf = classify(fw, score, thr)
                     et  = clf['event_type']
                     raw_et = et
+
+                    if safety_candidate:
+                        clf = dict(clf)
+                        evidence = dict(clf.get('evidence') or {})
+                        evidence.update({'safety_score': round(safety_score, 4),
+                                         'safety_threshold': SAFETY_THRESHOLD,
+                                         'score_kind': 'uncalibrated'})
+                        clf.update({'event_type': 'fall_detected', 'severity': 'critical',
+                                    'confidence': round(safety_score, 4),
+                                    'evidence': evidence})
+                        et = raw_et = 'fall_detected'
 
                     # 규칙 낙상 양성인데 RF만 음성이면 정상으로 버리지 않는다.
                     # classify 정본과 차단 조건은 그대로 두고, 확인 경보와 학습 후보를 남긴다.
