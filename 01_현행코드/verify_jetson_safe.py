@@ -249,6 +249,15 @@ ck('elif phase == PH_WAIT_ARM:' in src and "state['phase'] = PH_LIVE" in src,
    '감시 시작 명령으로만 LIVE 전환')
 ck("_is_live = (state['phase'] == PH_LIVE)" in src,
    '판정 경로는 PH_LIVE 에서만 실행')
+ck("if not _is_live or not _occupied:" in src,
+   '퇴실 상태에서 레이더 판정 중지')
+ck("state['phase'] == PH_LIVE and state['occupied']" in src,
+   '퇴실 상태에서 전기 이상 신규 판정 중지')
+ck("feat_buf.clear(); clf_buf.clear()" in src
+   and "fall_pending = None" in src and "stat_since = None" in src,
+   '입퇴실 전환 시 판정 창·낙상·무동작 상태 초기화')
+ck('SAFETY_MODEL' not in src and 'safety_candidate' not in src,
+   'ExtraTrees 운영 판정 경로 제거')
 
 print('\n[7] 판정 로직이 radar_live_full.py 와 동일한가 (주석 제외 코드 비교)')
 
