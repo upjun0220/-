@@ -165,13 +165,6 @@ RECOVER_DSLO   = 0.30
 RECOVER_DSHI   = 0.90
 RECOVER_FRAMES = 4
 FALL_ZACC_MIN  = 0
-# [8/12 임시 시연값] A를 제외한 B/C/D 낙상 30회로 조정.
-# 낙상 27/30, 비낙상 오탐 7/105. 내일 표본 추가 후 반드시 재산정한다.
-FALL_DS_MAX_MIN = 0.75
-FALL_DS_MEAN_MAX = 0.50
-FALL_H_DROP_MIN = 0.25
-FALL_IMPULSE_MIN = 1.50
-FALL_DS_LAST_MAX = 0.65
 POLL_SEC      = 0.4
 
 DEVICE = (torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -597,14 +590,14 @@ VIB_ZONE  = RADAR_ZONE      # 진동은 이 레이더의 도플러로 잰다 = �
 RELAY_PORT = '/dev/ttyUSB2'
 RELAY_BAUD = 9600
 RELAY_ADDR = 1
-RELAY_CH   = 0              # Modbus CH1. NO 배선: 코일 ON=정상 투입, OFF=차단
+RELAY_CH   = 0              # Modbus CH1. NC 배선: 코일 ON=전원 차단
 INA_BUS    = '/dev/i2c-7'
 INA_ADDR   = 0x41
 INA_SHUNT_OHM = 0.005       # M5Stack INA226 10A Isolated 공식 사양: 5 mΩ
 
 
 class RelayRTU:
-    """NO 접점 CH1을 쓰는 최소 Modbus RTU 릴레이 드라이버."""
+    """CH1 한 채널만 쓰는 최소 Modbus RTU 릴레이 드라이버."""
 
     def __init__(self):
         self.connected = False
@@ -641,23 +634,21 @@ class RelayRTU:
     def read(self):
         with self._lk:
             try:
-                # NO 접점은 코일이 꺼지면 열린다. 무여자 상태를 차단으로 해석한다.
-                tripped = not self._read_unlocked()
+                value = self._read_unlocked()
                 self.connected, self.error = True, None
-                return tripped
+                return value
             except Exception as exc:
                 self.connected, self.error = False, str(exc)
                 return None
 
     def write(self, tripped):
-        """NO 접점: True면 코일 OFF로 차단, False면 코일 ON으로 투입."""
+        """NC 접점: True면 코일 ON으로 개방(차단), False면 폐쇄(복구)."""
         with self._lk:
             try:
-                coil_on = not tripped
-                value = 0xFF if coil_on else 0x00
+                value = 0xFF if tripped else 0x00
                 body = bytes((RELAY_ADDR, 0x05, 0, RELAY_CH, value, 0))
                 reply = self._exchange(body, 8)
-                if reply[:-2] != body or self._read_unlocked() != coil_on:
+                if reply[:-2] != body or self._read_unlocked() != tripped:
                     raise OSError(f'Modbus 쓰기 검증 실패: {reply.hex()}')
                 self.connected, self.error = True, None
                 return True
@@ -1014,37 +1005,6 @@ def classify(feat_win, score, thr):
 
     # 5) 그 외 (미미한 움직임) -> 정상
     return _mk('normal', 'normal', 0.0)
-
-
-def classify_demo_bcd(feat_win, score, thr):
-    """[8/12 임시] B/C/D ROI 표본 임계값으로 시연하고 내일 재수집 후 제거한다."""
-    result = classify(feat_win, score, thr)
-    ev = result.get('evidence') or {}
-    ds_peak = float(ev.get('dopstd_max') or 0)
-    ds_mean = float(ev.get('dopstd_mean') or 0)
-    impulse = float(ev.get('impulse_ratio') or 0)
-    h_drop = float(ev.get('h_drop') or 0)
-    ds_last = float(ev.get('ds_last') or 0)
-    gates = {
-        'ds_peak': {'value': ds_peak, 'thr': FALL_DS_MAX_MIN, 'unit': 'm/s',
-                    'cmp': '>=', 'pass': ds_peak >= FALL_DS_MAX_MIN},
-        'ds_mean': {'value': ds_mean, 'thr': FALL_DS_MEAN_MAX, 'unit': 'm/s',
-                    'cmp': '<=', 'pass': ds_mean <= FALL_DS_MEAN_MAX},
-        'impulse': {'value': impulse, 'thr': FALL_IMPULSE_MIN, 'unit': '비율',
-                    'cmp': '>=', 'pass': impulse >= FALL_IMPULSE_MIN},
-        'h_drop': {'value': h_drop, 'thr': FALL_H_DROP_MIN, 'unit': 'm',
-                   'cmp': '>=', 'pass': h_drop >= FALL_H_DROP_MIN},
-        'ds_last': {'value': ds_last, 'thr': FALL_DS_LAST_MAX, 'unit': 'm/s',
-                    'cmp': '<=', 'pass': ds_last <= FALL_DS_LAST_MAX},
-    }
-    detected = float(ev.get('n_mean') or 0) >= 4 and all(g['pass'] for g in gates.values())
-    result = dict(result, gates=gates)
-    if detected:
-        result.update(event_type='fall_detected', severity='critical',
-                      confidence=max(0.85, float(result.get('confidence') or 0)), rejected=[])
-    elif result.get('event_type') == 'fall_detected':
-        result.update(event_type='normal', severity='normal', confidence=0.0, rejected=[])
-    return result
 
 # ═══════════════════════════════════════════════════════════
 # 5. NETWORK  (제어 수신 + 상태 송신)
@@ -1965,9 +1925,6 @@ def pipeline_loop():
                                 inc['resolved'] = ts
                                 break
                         state['logs'].append(f'[{ts}] RESOLVED Zone {zn}: {lbl} (manual ack)')
-                        # ⚠ [8/13 실측] 종료 직후 옛 시작 시각으로 재발화하지 않도록
-                        # 트랙은 유지하고 무동작 판정 시간만 0초부터 다시 센다.
-                        person_track.still_since = time.time()
                         # ⚠ 차단기는 복구하지 않는다 (LOTO / restart prevention).
                         #   재투입은 노트북에서 확인 3개를 받은 뒤 CMD_RESTORE 로만.
                         if BREAKER.any_tripped():
@@ -1984,7 +1941,7 @@ def pipeline_loop():
                 if anom_streak >= CONFIRM_FRAMES:
                     anom_streak = 0
                     fw  = np.array(clf_buf, dtype=np.float32)
-                    clf = classify_demo_bcd(fw, score, thr)
+                    clf = classify(fw, score, thr)
                     et  = clf['event_type']
                     raw_et = et
 

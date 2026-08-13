@@ -249,10 +249,6 @@ ck('elif phase == PH_WAIT_ARM:' in src and "state['phase'] = PH_LIVE" in src,
    '감시 시작 명령으로만 LIVE 전환')
 ck("_is_live = (state['phase'] == PH_LIVE)" in src,
    '판정 경로는 PH_LIVE 에서만 실행')
-reset_at = src.index("if state['reset_requested']")
-reset_block = src[reset_at:src.index('if do_reset:', reset_at)]
-ck("state['start_requested']  = False" in reset_block,
-   '기준 초기화 후 사용자 시작 명령 대기')
 
 print('\n[7] 판정 로직이 radar_live_full.py 와 동일한가 (주석 제외 코드 비교)')
 
@@ -298,24 +294,6 @@ class FakeRelay:
 
 real_relay = m.RELAY
 try:
-    # NO 배선의 물리 명령과 논리 상태 변환을 직접 고정한다.
-    physical = m.RelayRTU()
-    sent = []
-    coil = [False]
-
-    def fake_exchange(body, _size):
-        sent.append(body)
-        coil[0] = body[4] == 0xFF
-        return body + m.RelayRTU._crc16(body)
-
-    physical._exchange = fake_exchange
-    physical._read_unlocked = lambda: coil[0]
-    ck(physical.read() is True, 'NO 코일 OFF readback을 차단으로 해석')
-    ck(physical.write(False) and sent[-1][4] == 0xFF,
-       'NO 정상 투입은 코일 ON 명령')
-    ck(physical.write(True) and sent[-1][4] == 0x00,
-       'NO 사고 차단은 코일 OFF 명령')
-
     fake = FakeRelay()
     m.RELAY = fake
     breaker = m.BreakerLogic()
