@@ -1311,7 +1311,7 @@ class PreparePage(QtWidgets.QWidget):
     def _confirm_reset(self):
         if confirm(self, '기준 초기화',
                    '학습한 정상 기준을 버리고 처음부터 다시 수집합니다.\n'
-                   '초기화하면 퇴장 카운트다운 후 빈 방 스캔이 자동으로 시작됩니다.',
+                   '초기화 후에는 기준 수집 시작을 눌러 빈 방 스캔을 진행해야 합니다.',
                    yes='초기화', no='취소', danger=True):
             self.autoback = True
             self.link.send_cmd(CMD_RESET)
