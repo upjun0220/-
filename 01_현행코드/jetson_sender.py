@@ -1231,6 +1231,13 @@ def pipeline_loop():
                 do_reset = True
 
         if do_reset:
+            try:
+                os.remove(BASELINE_PATH)
+                add_log(f'Baseline file deleted: {BASELINE_PATH}')
+            except FileNotFoundError:
+                add_log('Baseline file already absent')
+            except OSError as e:
+                add_log(f'Baseline file delete FAILED: {e}')
             lms         = LMSFilter()
             feat_buf    = []
             clf_buf     = []
