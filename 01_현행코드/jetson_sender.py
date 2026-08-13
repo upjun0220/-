@@ -61,7 +61,8 @@ try:
     from radar_common import (  # noqa: F401  (아래 목록을 그대로 쓴다)
         SCHEMA_VERSION, DATA_PORT, CTRL_PORT, SEND_HZ, MAX_UDP, MIN_PTS, CLIENT_TTL,
         CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET, CMD_RESOLVE, CMD_RESTORE,
-        CEILING_H, FRAME_INNER_HALF, OCCUPANCY_CORE_HALF, HISTORY_LEN,
+        CMD_ENTER, CMD_EXIT,
+        CEILING_H, FRAME_INNER_HALF, HISTORY_LEN,
         PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
         EVENT_LABELS, EVENT_ZONE, ZONE_IDS, RADAR_ZONE, EVENT_SEV,
         CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH,
@@ -147,7 +148,7 @@ TRACK_STILL_R = 0.35
 TRACK_STILL_KEEP_SEC = 3.0
 
 BASELINE_PATH = '/home/project/baseline_model.pt'
-LOAD_BASELINE = True   # False = 항상 새로 웜업/학습
+LOAD_BASELINE = False  # 설치 확정 전에는 매 실행마다 현장 기준을 다시 수집한다
 
 N_WARMUP      = 150    # real frames for normal baseline (~15 sec at 10 fps)
 # CEILING_H, HISTORY_LEN -> radar_common.py (노트북과 반드시 같아야 하는 값)
@@ -321,122 +322,6 @@ def build_clutter_map(scan_frames):
     return spots
 
 
-class PersonTrack:
-    """입장 움직임으로 생성하고, 구역 내부 소실과 경계 퇴실을 구분하는 단일 트랙."""
-
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.state = 'absent'
-        self.acquire_hits = 0
-        self.last_pos = None
-        self.last_seen = 0.0
-        self.lost_since = None
-        self.present = False
-        self.still_since = None
-        self.still_anchor = None
-        self.smooth_pos = None
-        self.last_centroid = None
-        self.core_seen = False
-        self.exit_band_seen = False
-
-    def anchor(self):
-        if self.state not in ('tracking', 'lost_in_zone') or self.last_centroid is None:
-            return None
-        return {'cx': round(self.last_centroid[0], 3),
-                'cy': round(self.last_centroid[1], 3),
-                'cz': round(self.last_centroid[2], 3)}
-
-    @staticmethod
-    def _compact(points):
-        if len(points) < 6:
-            return False
-        xz = np.asarray([[float(p['x']), float(p['z'])] for p in points])
-        center = np.median(xz, axis=0)
-        return float(np.percentile(np.linalg.norm(xz - center, axis=1), 75)) <= TRACK_COMPACT_R
-
-    @staticmethod
-    def _inside(pos, margin=0.0):
-        if pos is None:
-            return False
-        return (FRAME_ROI_X[0] + margin <= pos[0] <= FRAME_ROI_X[1] - margin
-                and FRAME_ROI_Z[0] + margin <= pos[1] <= FRAME_ROI_Z[1] - margin)
-
-    @staticmethod
-    def _core(pos):
-        return (pos is not None
-                and abs(pos[0]) <= OCCUPANCY_CORE_HALF
-                and abs(pos[1]) <= OCCUPANCY_CORE_HALF)
-
-    def update(self, points, feat, now):
-        pos = (float(feat[0]), float(feat[2])) if feat is not None else None
-        moving = bool(feat is not None and float(feat[4]) >= TRACK_MOTION_DS)
-        present = bool(points and len(points) >= TRACK_N_MIN and self._compact(points))
-        self.present = present
-        matched = (present and pos is not None
-                   and (self.last_pos is None
-                        or np.hypot(pos[0] - self.last_pos[0], pos[1] - self.last_pos[1])
-                        <= TRACK_MATCH_R))
-        if self.state in ('absent', 'entering', 'exited'):
-            self.acquire_hits = self.acquire_hits + 1 if present and moving and self._inside(pos) else 0
-            self.state = 'entering' if self.acquire_hits else 'absent'
-            if self.acquire_hits >= TRACK_ACQUIRE_FRAMES:
-                self.state, self.last_pos, self.last_seen = 'tracking', pos, now
-                self.last_centroid = tuple(float(v) for v in feat[:3])
-                self.core_seen = self._core(pos)
-                self.exit_band_seen = not self.core_seen
-                self.smooth_pos = self.still_anchor = pos
-                self.still_since = now
-                self.acquire_hits = 0
-        elif self.state == 'tracking':
-            if matched:
-                self.last_pos, self.last_seen = pos, now
-                self.last_centroid = tuple(float(v) for v in feat[:3])
-                if self._core(pos):
-                    self.core_seen = True
-                    self.exit_band_seen = False
-                elif self.core_seen:
-                    self.exit_band_seen = True
-                if self.smooth_pos is None:
-                    self.smooth_pos = pos
-                else:
-                    self.smooth_pos = (0.8 * self.smooth_pos[0] + 0.2 * pos[0],
-                                       0.8 * self.smooth_pos[1] + 0.2 * pos[1])
-                if self.still_anchor is None:
-                    self.still_anchor, self.still_since = self.smooth_pos, now
-                elif np.hypot(self.smooth_pos[0] - self.still_anchor[0],
-                              self.smooth_pos[1] - self.still_anchor[1]) > TRACK_STILL_R:
-                    self.still_anchor, self.still_since = self.smooth_pos, now
-            elif now - self.last_seen >= TRACK_LOST_SEC:
-                stable_for = now - self.still_since if self.still_since is not None else 0.0
-                if stable_for < TRACK_STILL_KEEP_SEC:
-                    self.still_since = None
-                if self.exit_band_seen:
-                    self.state, self.lost_since = 'exited', None
-                    self.still_since = None
-                    print(f'[TRACK] tracking->exited: core->band->lost last_pos={self.last_pos}')
-                else:
-                    self.state, self.lost_since = 'lost_in_zone', now
-                    print(f'[TRACK] tracking->lost_in_zone: core fade last_pos={self.last_pos}')
-        elif self.state == 'lost_in_zone' and matched and moving:
-            self.state, self.last_pos, self.last_seen = 'tracking', pos, now
-            self.last_centroid = tuple(float(v) for v in feat[:3])
-            self.lost_since = None
-            if self._core(pos):
-                self.core_seen = True
-                self.exit_band_seen = False
-            self.smooth_pos = pos
-            # 정지 인체의 호흡점·잔여점이 간헐 재출현해도 같은 앵커 주변이면
-            # 무동작 타이머를 유지한다. centroid가 실제로 이동했을 때만 취소한다.
-            if (self.still_anchor is None
-                    or np.hypot(pos[0] - self.still_anchor[0],
-                                pos[1] - self.still_anchor[1]) > TRACK_STILL_R):
-                self.still_anchor = pos
-                self.still_since = now
-        return self.state
-
-
 def _rule_fall_positive(clf):
     """classify 정본을 바꾸지 않고 규칙 양성/RF 음성 불일치만 복원한다."""
     ev = clf.get('evidence') or {}
@@ -562,7 +447,8 @@ state = {
     'height':     None,
     'dop_std':    0.0,
     'zone_state': {},
-    'track_state': 'absent',
+    'occupied': False,       # 운영자가 입실/퇴실 버튼으로 확정한 재실 상태
+    'track_state': 'absent', # UI 호환: occupied=True일 때만 tracking
     'track_anchor': None,
 }
 
@@ -1074,6 +960,18 @@ def control_listener():
                 state['train_requested'] = True
             elif cmd == CMD_RESET:
                 state['reset_requested'] = True
+            elif cmd == CMD_ENTER:
+                state['occupied'] = True
+                state['track_state'] = 'tracking'
+                state['track_anchor'] = None
+                state['logs'].append(f'[{ts}] [BTN] 작업자 입실 확인')
+            elif cmd == CMD_EXIT:
+                state['occupied'] = False
+                state['track_state'] = 'absent'
+                state['track_anchor'] = None
+                state['pre_alert'] = ''
+                state['logs'].append(
+                    f'[{ts}] [BTN] 작업자 퇴실 확인 — 낙상 경보·차단 상태는 유지')
             elif cmd == CMD_RESOLVE:
                 state['resolve_requested'] = True
             elif cmd == CMD_RESTORE:
@@ -1157,6 +1055,7 @@ def sender_loop():
                 'zone_state': state.get('zone_state') or {},
                 'track_state': state.get('track_state', 'absent'),
                 'track_anchor': state.get('track_anchor'),
+                'occupied': state.get('occupied', False),
                 'cfg': {'N_WARMUP': N_WARMUP, 'SCAN_SEC': SCAN_SEC,
                         'CEILING_H': CEILING_H, 'JSON_PATH': JSON_PATH,
                         'CURR_LIMIT': CURR_LIMIT, 'VOLT_MIN': VOLT_MIN,
@@ -1212,21 +1111,18 @@ def pipeline_loop():
     track_log_t = 0.0
     last_motion_t = -1e9
     motion_run = 0
-    person_track = PersonTrack()
-
     def _track_log(points_n, centroid, now):
-        """현장 진단용 트랙 상태를 1초에 한 번 즉시 출력한다."""
+        """현장 진단용 수동 재실 상태를 1초에 한 번 즉시 출력한다."""
         nonlocal track_log_t
         if now - track_log_t < 1.0:
             return
         track_log_t = now
-        still = (None if person_track.still_since is None
-                 else max(0.0, now - person_track.still_since))
         ctext = ('none' if centroid is None else
                  f'({centroid[0]:.3f},{centroid[1]:.3f},{centroid[2]:.3f})')
-        ttext = 'off' if still is None else f'{still:.1f}s/{STAT_CRIT_SEC:.0f}s'
-        print(f'[TRACK] state={person_track.state} centroid={ctext} '
-              f'points={points_n} still={ttext}', flush=True)
+        with _lock:
+            occupied = state['occupied']
+        print(f'[OCCUPANCY] state={"occupied" if occupied else "vacant"} '
+              f'centroid={ctext} points={points_n}', flush=True)
 
     clutter_spots = list(CLUTTER_SPOTS)
     scan_buf      = []
@@ -1304,11 +1200,10 @@ def pipeline_loop():
             arm_reset = state['arm_reset_requested']
             state['arm_reset_requested'] = False
         if arm_reset:
-            person_track.reset()
             stat_since = None; stat_zone = None; stat_miss = 0; stat_pre = False
             stat_hits = stat_tot = 0
             with _lock:
-                state['track_state'] = 'absent'
+                state['track_state'] = 'tracking' if state['occupied'] else 'absent'
                 state['track_anchor'] = None
                 state['latest_pts'] = []
                 state['centroid'] = None
@@ -1369,8 +1264,8 @@ def pipeline_loop():
                 read_offset = os.path.getsize(JSON_PATH)
             except OSError:
                 read_offset = 0
-            person_track.reset()
             with _lock:
+                state['occupied'] = False
                 state['scan_left'] = None
                 state['track_state'] = 'absent'
                 state['track_anchor'] = None
@@ -1439,13 +1334,12 @@ def pipeline_loop():
                     for r in EXCLUDE_REGIONS)]
             if not frame_pts:
                 _track_now = time.time()
-                person_track.update([], None, _track_now)
                 _track_log(0, None, _track_now)
                 with _lock:
                     state['latest_pts'] = []
                     state['centroid'] = None
-                    state['track_state'] = person_track.state
-                    state['track_anchor'] = person_track.anchor()
+                    state['track_state'] = 'tracking' if state['occupied'] else 'absent'
+                    state['track_anchor'] = None
                 stat_miss += 1
                 if stat_miss >= STAT_MISS_TOL:
                     stat_since = None; stat_zone = None; stat_pre = False
@@ -1494,13 +1388,12 @@ def pipeline_loop():
                                         for _sx, _sy, _sz, _sr, _dy in clutter_spots)]
                 if not frame_pts:
                     _track_now = time.time()
-                    person_track.update([], None, _track_now)
                     _track_log(0, None, _track_now)
                     with _lock:
                         state['latest_pts'] = []
                         state['centroid'] = None
-                        state['track_state'] = person_track.state
-                        state['track_anchor'] = person_track.anchor()
+                        state['track_state'] = 'tracking' if state['occupied'] else 'absent'
+                        state['track_anchor'] = None
                     stat_miss += 1
                     if stat_miss >= STAT_MISS_TOL:
                         stat_since = None; stat_zone = None; stat_pre = False
@@ -1524,7 +1417,6 @@ def pipeline_loop():
             prev_c_full    = feat_full[:3].copy()
             prev_zvel_full = float(feat_full[7])
             ema_zacc_full  = float(feat_full[8])
-            track_state = person_track.update(frame_pts, feat, _now_t)
             _track_log(len(frame_pts), feat[:3], _now_t)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
@@ -1544,8 +1436,8 @@ def pipeline_loop():
                                      'cz': round(float(feat[2]), 3)}
                 state['height']   = round(cz, 3)
                 state['dop_std']  = round(float(feat[4]), 3)
-                state['track_state'] = track_state
-                state['track_anchor'] = person_track.anchor()
+                state['track_state'] = 'tracking' if state['occupied'] else 'absent'
+                state['track_anchor'] = None
                 # ── [7/31] 전기 설비 읽기 + 차단 판정 (젯슨이 실행) ──
                 _pw = _read_power()
                 state['power'] = _pw
@@ -1800,7 +1692,7 @@ def pipeline_loop():
                 pass
             elif _clutter:
                 pass   # 중립: 카운터/타이머 유지
-            elif (person_track.state == 'lost_in_zone' and _zone_hit
+            elif (False and _zone_hit
                   and _n >= STAT_N_MIN and STAT_DS_MIN < _ds < STAT_DS_MAX and _pos_ok
                   and (stat_since is not None
                        or time.time() - last_motion_t <= STAT_ENTRY_SEC)):
@@ -1875,18 +1767,6 @@ def pipeline_loop():
                 stat_hits = stat_tot = 0
                 with _lock:
                     state['pre_alert'] = ''
-            elif (person_track.still_since is not None
-                  and (person_track.present or person_track.state == 'lost_in_zone')):
-                stat_since = person_track.still_since
-                stat_zone = RADAR_ZONE
-                stat_hits = stat_tot = STAT_MIN_OBS
-                dwell = time.time() - stat_since
-                if dwell >= STAT_PRE_SEC:
-                    stat_pre = True
-                    remain = max(0, int(STAT_CRIT_SEC - dwell))
-                    with _lock:
-                        state['pre_alert'] = (f'PRE-ALERT  Zone {stat_zone}: no-motion {int(dwell)}s'
-                                              f'  --  MOVE to cancel  ({remain}s to CRITICAL)')
             else:
                 stat_since = None; stat_zone = None; stat_pre = False
                 stat_hits = stat_tot = 0
@@ -2026,10 +1906,7 @@ def pipeline_loop():
                         _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
 
                 # ── 정지형 2차 경보: critical latch ──
-                if (person_track.still_since is not None
-                        and (person_track.present or person_track.state == 'lost_in_zone')
-                        and not state['ev_active']
-                        and time.time() - person_track.still_since >= STAT_CRIT_SEC):
+                if False:  # 수동 재실 전환 후 무동작 판정은 별도 실측 전까지 비활성
                     et2 = 'stationary_anomaly'
                     zn2 = stat_zone or EVENT_ZONE.get(et2, RADAR_ZONE)
                     dwell = time.time() - stat_since

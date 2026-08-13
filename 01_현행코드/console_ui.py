@@ -87,7 +87,7 @@ from radar_core import (
     ST_NORMAL, ST_UNACK, ST_ACK,
 )
 from radar_common import (
-    LINK_TIMEOUT, CMD_RESOLVE, CMD_RESTORE, CEILING_H,
+    LINK_TIMEOUT, CMD_RESOLVE, CMD_RESTORE, CMD_ENTER, CMD_EXIT, CEILING_H,
     PH_READY, PH_LIVE, PHASE_KO, parse_pre_alert,
     EVENT_KO, ZONE_IDS, ZONE_KO, RADAR_ZONE, ZONE_DEVICE, zone_equipped,
     SEV_KO, GATE_META, REJECT_KO, EVIDENCE_KO, sev_color, event_sev,
@@ -1561,6 +1561,8 @@ class MonitorPage(QtWidgets.QWidget):
     resolve = QtCore.pyqtSignal()
     prepare = QtCore.pyqtSignal()
     mode_changed = QtCore.pyqtSignal()   # 3D↔2D 전환 — ConsoleV2 가 즉시 재렌더
+    enter_confirmed = QtCore.pyqtSignal()
+    exit_confirmed = QtCore.pyqtSignal()
 
     def __init__(self, has_prepare=True):
         super().__init__()
@@ -1593,6 +1595,20 @@ class MonitorPage(QtWidgets.QWidget):
         self.clock = lb('', F_LABEL, DIM)
         head.addWidget(self.clock)
         v.addLayout(head)
+
+        # 입·퇴실은 센서 추정이 아니라 운영자 확인값이다. 판정 버튼과 섞지 않는다.
+        occ = hbox(s=SP2)
+        occ.addWidget(eyebrow('작업자 재실'))
+        self.occupancy = lb('퇴실', F_LABEL, DIM, bold=True)
+        occ.addWidget(self.occupancy)
+        occ.addStretch()
+        self.enter_btn = button('입실 확인', 'primary', F_LABEL, 30, 96)
+        self.exit_btn = button('퇴실 확인', 'ghost', F_LABEL, 30, 96)
+        self.enter_btn.clicked.connect(self.enter_confirmed.emit)
+        self.exit_btn.clicked.connect(self.exit_confirmed.emit)
+        occ.addWidget(self.enter_btn)
+        occ.addWidget(self.exit_btn)
+        v.addLayout(occ)
 
         # ── 경보 배너 ──
         self.banner = QtWidgets.QFrame()
@@ -2648,6 +2664,8 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.monitor.resolve.connect(self.do_resolve)
         self.monitor.prepare.connect(self.go_prepare)
         self.monitor.mode_changed.connect(self._refresh_scene)
+        self.monitor.enter_confirmed.connect(lambda: self._set_occupancy(True))
+        self.monitor.exit_confirmed.connect(lambda: self._set_occupancy(False))
         self.stack.addWidget(as_page(self.monitor))
         self.scene = self.monitor.scene
         self.track = self.scene.track          # SettingsPopup 진단 탭이 참조한다
@@ -2868,6 +2886,15 @@ class ConsoleV2(QtWidgets.QMainWindow):
         if not alive:
             self.scene.set_stale(True, '데이터 없음\n젯슨 연결이 끊겼습니다')
 
+    def _set_occupancy(self, occupied):
+        """운영자 재실 확인. 낙상 판정·경보·차단 상태에는 손대지 않는다."""
+        if not self.link:
+            return
+        cmd = CMD_ENTER if occupied else CMD_EXIT
+        if self.link.send_cmd(cmd):
+            self.timeline.add('작업자 입실 확인' if occupied else '작업자 퇴실 확인',
+                              GREEN if occupied else DIM)
+
     # ══════════════════════════════════════════════════════════════════
     # 패킷 수신 (도착 즉시 렌더)
     # ══════════════════════════════════════════════════════════════════
@@ -2921,6 +2948,12 @@ class ConsoleV2(QtWidgets.QMainWindow):
             return
 
         self.scene.set_stale(False)
+
+        occupied = bool(pkt.get('occupied'))
+        self.monitor.occupancy.setText('재실' if occupied else '퇴실')
+        self.monitor.occupancy.setStyleSheet(f'color:{GREEN if occupied else DIM};')
+        self.monitor.enter_btn.setEnabled(not occupied)
+        self.monitor.exit_btn.setEnabled(occupied)
 
         ph = pkt.get('phase')
         if ph != self._phase:

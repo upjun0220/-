@@ -44,6 +44,8 @@ CMD_TRAIN = 'train'         # LSTM-AE 학습 시작
 CMD_RESET = 'reset'         # 베이스라인 초기화
 CMD_RESOLVE = 'resolve'     # 경보 상황 종료 (사람이 확인함)
 CMD_RESTORE = 'restore'     # 차단된 전원 재투입 (LOTO 확인 후)
+CMD_ENTER = 'enter'         # 운영자 입실 확인
+CMD_EXIT = 'exit'           # 운영자 퇴실 확인
 
 # ══════════════════════════════════════════════════════════════════════
 # 2. 물리 · 좌표계
