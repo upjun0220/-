@@ -294,6 +294,24 @@ class FakeRelay:
 
 real_relay = m.RELAY
 try:
+    # NO 배선의 물리 명령과 논리 상태 변환을 직접 고정한다.
+    physical = m.RelayRTU()
+    sent = []
+    coil = [False]
+
+    def fake_exchange(body, _size):
+        sent.append(body)
+        coil[0] = body[4] == 0xFF
+        return body + m.RelayRTU._crc16(body)
+
+    physical._exchange = fake_exchange
+    physical._read_unlocked = lambda: coil[0]
+    ck(physical.read() is True, 'NO 코일 OFF readback을 차단으로 해석')
+    ck(physical.write(False) and sent[-1][4] == 0xFF,
+       'NO 정상 투입은 코일 ON 명령')
+    ck(physical.write(True) and sent[-1][4] == 0x00,
+       'NO 사고 차단은 코일 OFF 명령')
+
     fake = FakeRelay()
     m.RELAY = fake
     breaker = m.BreakerLogic()
