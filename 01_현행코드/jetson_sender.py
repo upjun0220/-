@@ -210,10 +210,12 @@ try:
     _rf_ck    = joblib.load(RF_MODEL_PATH)
     RF_MODEL  = _rf_ck['model']
     RF_FEATURES = _rf_ck['features']
+    RF_THRESHOLD = float(_rf_ck.get('threshold', 0.5))
     RF_OK     = True
-    print(f'[RF] fall_classifier 로드 OK ({len(RF_FEATURES)} feats) -> wave 오탐 억제 활성')
+    print(f'[RF] fall_classifier 로드 OK ({len(RF_FEATURES)} feats, '
+          f'threshold={RF_THRESHOLD:.6f})')
 except Exception as _rfe:
-    RF_MODEL = None; RF_OK = False
+    RF_MODEL = None; RF_THRESHOLD = 1.0; RF_OK = False
     print(f'[RF] 모델 없음/로드실패 -> 규칙만 사용: {_rfe}')
 
 # ═══════════════════════════════════════════════════════════
@@ -402,6 +404,19 @@ def _rf_veto(win):
         return RF_MODEL.predict([feats])[0] != 'fall'
     except Exception:
         return False
+
+
+def _rf_fall_score(win):
+    """19피처 RF의 낙상 점수. 확률 보정값이 아니라 운영 임계 비교용 점수다."""
+    if not RF_OK:
+        return None
+    feats = _rf_features(win)
+    if feats is None:
+        return None
+    classes = list(RF_MODEL.classes_)
+    if 'fall' not in classes:
+        raise ValueError(f'RF classes에 fall 없음: {classes}')
+    return float(RF_MODEL.predict_proba([feats])[0, classes.index('fall')])
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1846,9 +1861,14 @@ def pipeline_loop():
                                 f'[{ts}] 차단 유지 {BREAKER.tripped_zones()} — 재투입은 수동')
 
                 fw = np.array(clf_buf, dtype=np.float32)
-                is_anomaly = score > thr
+                rf_score = _rf_fall_score(fw) if len(fw) == CLF_WIN else None
+                rf_candidate = rf_score is not None and rf_score >= RF_THRESHOLD
+                # [8/14 실측] RF는 AE와 기존 규칙이 놓친 약한 낙상을 직접 후보로 올린다.
+                is_anomaly = score > thr or rf_candidate
 
-                if is_anomaly and not state['ev_active']:
+                if rf_candidate and not state['ev_active']:
+                    anom_streak = CONFIRM_FRAMES
+                elif is_anomaly and not state['ev_active']:
                     anom_streak += 1
                 else:
                     anom_streak = 0
@@ -1859,9 +1879,18 @@ def pipeline_loop():
                     et  = clf['event_type']
                     raw_et = et
 
+                    if rf_candidate:
+                        clf = dict(clf)
+                        evidence = dict(clf.get('evidence') or {})
+                        evidence.update({'rf_score': round(rf_score, 6),
+                                         'rf_threshold': round(RF_THRESHOLD, 6),
+                                         'score_kind': 'rf_uncalibrated'})
+                        clf.update({'event_type': 'fall_detected', 'severity': 'critical',
+                                    'confidence': round(rf_score, 4), 'evidence': evidence})
+                        et = raw_et = 'fall_detected'
                     # 규칙 낙상 양성인데 RF만 음성이면 정상으로 버리지 않는다.
                     # classify 정본과 차단 조건은 그대로 두고, 확인 경보와 학습 후보를 남긴다.
-                    if et == 'normal' and RF_OK and _rule_fall_positive(clf):
+                    elif et == 'normal' and RF_OK and _rule_fall_positive(clf):
                         clf = dict(clf)
                         clf.update({'event_type': 'fall_suspected', 'severity': 'warning',
                                     'confidence': max(0.70, float(clf.get('confidence') or 0))})
@@ -1883,6 +1912,8 @@ def pipeline_loop():
                                 _lf.write(json.dumps({
                                     't': round(time.time(), 2),
                                     'verdict': raw_et, 'pend': f'{pend_et}:{pend_cnt}',
+                                    'rf_score': (round(rf_score, 6) if rf_score is not None else None),
+                                    'rf_thr': (round(RF_THRESHOLD, 6) if RF_OK else None),
                                     'ds_max': round(float(_dsl.max()), 3),
                                     'ds_first': round(float(_dsl[:_h].mean()), 3),
                                     'ds_last': round(float(_dsl[_h:].mean()), 3),
@@ -1928,11 +1959,13 @@ def pipeline_loop():
                         pass
                     elif et == 'fall_detected' and POSTFALL_GATE:
                         zn = EVENT_ZONE.get(et, RADAR_ZONE)
-                        fall_pending = {'deadline': time.time() + POSTFALL_HOLD, 'clf': clf,
-                                        'zn': zn, 'score_x': (score / thr if thr > 0 else 0.0)}
-                        recover_streak = 0
-                        state['logs'].append(
-                            f'[{ts}] Fall 후보 -- 지속확인 중 ({POSTFALL_HOLD:.1f}s, 일어나 걸으면 취소)')
+                        # 반복 RF 후보가 deadline을 매 프레임 연장하면 경보가 영원히 확정되지 않는다.
+                        if fall_pending is None:
+                            fall_pending = {'deadline': time.time() + POSTFALL_HOLD, 'clf': clf,
+                                            'zn': zn, 'score_x': (score / thr if thr > 0 else 0.0)}
+                            recover_streak = 0
+                            state['logs'].append(
+                                f'[{ts}] Fall 후보 -- 지속확인 중 ({POSTFALL_HOLD:.1f}s, 일어나 걸으면 취소)')
                     else:
                         zn = EVENT_ZONE.get(et, RADAR_ZONE)
                         _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
