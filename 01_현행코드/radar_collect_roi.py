@@ -66,9 +66,9 @@ ROI_Z = (-FRAME_INNER_HALF, FRAME_INNER_HALF)
 ROI_Y = (NEAR_FIELD_MIN_RANGE, CEILING_H + 0.25)
 POLL_SEC         = 0.2
 UPDATE_MS        = 800
-WINDOW_SEC       = 2.0        # 버튼 클릭 시 저장할 직전 구간 (초)
+WINDOW_SEC       = 3.0        # [8/14 실측] 클릭 지연을 포함해 버튼 직전 3초를 저장한다.
 FPS_EST          = 10
-WINDOW_FRAMES    = int(WINDOW_SEC * FPS_EST)   # ~20 frames
+WINDOW_FRAMES    = int(WINDOW_SEC * FPS_EST)   # ~30 frames
 DEBUG_TIMING     = False
 
 # ROI 낙상 문턱 재검증에 필요한 양성·난음성만 수집한다.
@@ -451,7 +451,7 @@ def build_info():
         lines.append(f'    Output: {OUT_PATH}')
     else:
         lines.append('>> Right AFTER the motion, click its button.')
-        lines.append('   (button = saves last 2s window with label)')
+        lines.append(f'   (button = saves last {WINDOW_SEC:.0f}s window with label)')
     return '\n'.join(lines)
 
 
