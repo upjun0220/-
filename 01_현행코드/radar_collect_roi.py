@@ -111,6 +111,7 @@ state = {
     'empty_until': None,
     'empty_frames': [],
     'empty_msg': 'not recorded',
+    'fall_stats': {p: None for p in 'ABCDE'},
 }
 
 
@@ -256,6 +257,22 @@ def pipeline_safe():
 # ═══════════════════════════════════════════════════════════
 # SAVE ONE LABELED SAMPLE
 # ═══════════════════════════════════════════════════════════
+def fall_metrics(window):
+    """저장한 2초 낙상 창을 현장에서 바로 비교할 최소 요약값으로 만든다."""
+    ds = [float(f['dop_std']) for f in window]
+    dp = [abs(float(f['dop_mean'])) for f in window]
+    hs = [float(f['height']) for f in window]
+    xs = [float(f['cx']) for f in window]
+    zs = [float(f['cz']) for f in window]
+    ns = [float(f['n']) for f in window]
+    return {
+        'ds_max': max(ds), 'ds_mean': float(np.mean(ds)),
+        'dp_max': max(dp), 'h_drop': max(hs) - min(hs),
+        'horiz': float(np.hypot(max(xs) - min(xs), max(zs) - min(zs))),
+        'n_mean': float(np.mean(ns)),
+    }
+
+
 def save_sample(label):
     with _lock:
         window = list(state['window'])
@@ -291,6 +308,10 @@ def save_sample(label):
         state['counts'][label] += 1
         c = state['counts'][label]
         state['last_saved'] = f'{CLASS_LABEL[label]} saved ({c}/{TARGET[label]})'
+        if label == 'fall':
+            stats = fall_metrics(window)
+            stats['count'] = c
+            state['fall_stats'][CUR_PERSON] = stats
     print(f'[SAVE] {label} #{c}  ({len(window)} frames) -> {OUT_PATH}')
 
 
@@ -380,6 +401,7 @@ def build_info():
         last_dt  = state['last_data_t']
         empty_until = state['empty_until']
         empty_msg = state['empty_msg']
+        fall_stats = dict(state['fall_stats'])
     stale = (time.time() - last_dt > 5.0) if last_dt > 0 else True
 
     lines = []
@@ -410,6 +432,17 @@ def build_info():
     lines.append('  ---- explore (separability check) ----')
     for c in EXPLORE_CLASSES:
         lines.append(f"  {CLASS_LABEL[c]:<12} {counts[c]:>2}/{TARGET[c]}")
+    lines.append('')
+    lines.append('[LATEST FALL BY PERSON]')
+    lines.append('    #  ds(max/mean) dp|max| hDrop horiz nMean')
+    for person in 'ABCDE':
+        s = fall_stats[person]
+        if s is None:
+            lines.append(f'  {person}  -- (not recorded)')
+        else:
+            lines.append(
+                f"  {person} {s['count']:02d}  {s['ds_max']:.2f}/{s['ds_mean']:.2f}  "
+                f"{s['dp_max']:.2f}  {s['h_drop']:.2f}  {s['horiz']:.2f}  {s['n_mean']:.1f}")
     lines.append('')
     lines.append(f'LAST: {last}')
     lines.append('')
