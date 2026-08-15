@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""두 수집 세션을 합쳐 사람 단위 LOSO로 낙상 RandomForest를 학습한다.
+"""사람 단위 LOSO로 낙상 RandomForest를 학습한다.
 
 실행 환경: 내 PC PowerShell 또는 젯슨 터미널
   python train_fall_safety.py --data <8/13.jsonl> <8/14.jsonl> --output fall_classifier.joblib
+  python train_fall_safety.py --data <3초.jsonl> --empty <빈방.jsonl> --window 30 \
+      --exclude A:crouch:2 --exclude E:fall:10 --output fall_classifier_hybrid30.joblib
 
 운영점은 LOSO 예측에서 wave 오탐이 0건인 가장 낮은 임계값이다.
 fast_sit은 실제 표본이 없고 사용자 결정으로 다음 지시까지 제외한다.
@@ -11,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+from collections import Counter, defaultdict
 
 import joblib
 import numpy as np
@@ -22,10 +25,59 @@ FEATURES = ['ds_max', 'ds_mean', 'ds_first', 'ds_last', 'impulse', 'ds_broad',
             'end_low_ratio', 'net_drop_ratio', 'max_drop_ratio', 'horiz_range',
             'horiz_disp', 'n_peak_ratio', 'n_cv', 'n_trend', 'mean_dop_abs']
 USED_LABELS = {'fall', 'crouch', 'wave', 'walk', 'normal'}
+HEIGHT_BG_GRID = 0.10
+HEIGHT_BG_OCCUPANCY = 0.80
+HEIGHT_Y_PERCENTILE = 70.0  # 천장 좌표 y의 상위 30% = 바닥에서 낮은 쪽 30%
+FRAME_HALF = 0.72
+ROI_Y = (0.50, 2.55)
 
 
-def extract(sample):
-    fr = [f for f in sample['frames'] if f['n'] > 0]
+def _roi_points(points):
+    return [p for p in points
+            if (-FRAME_HALF <= p['x'] <= FRAME_HALF
+                and ROI_Y[0] <= p['y'] <= ROI_Y[1]
+                and -FRAME_HALF <= p['z'] <= FRAME_HALF)]
+
+
+def _voxel(point):
+    return (round(point['x'] / HEIGHT_BG_GRID),
+            round(point['y'] / HEIGHT_BG_GRID),
+            round(point['z'] / HEIGHT_BG_GRID))
+
+
+def build_height_background(path):
+    """빈방 프레임 80% 이상에서 반복된 10 cm 복셀만 높이용 배경으로 고정한다."""
+    with open(path, encoding='utf-8') as fh:
+        row = json.loads(next(fh))
+    frames = row.get('frames') or []
+    if not frames:
+        raise ValueError('빈방 파일에 frames가 없습니다.')
+    counts = Counter()
+    for frame in frames:
+        counts.update({_voxel(p) for p in _roi_points(frame.get('points') or [])})
+    return {voxel for voxel, hits in counts.items()
+            if hits / len(frames) >= HEIGHT_BG_OCCUPANCY}
+
+
+def apply_height_background(sample, background):
+    """도플러·점수는 원본을 두고 위치만 10 cm 배경 제거 후 낮은 분포로 바꾼다."""
+    frames = []
+    for original in sample['frames']:
+        frame = dict(original)
+        points = [p for p in _roi_points(original.get('raw_pts') or [])
+                  if _voxel(p) not in background]
+        if points:
+            frame['cx'] = float(np.median([p['x'] for p in points]))
+            frame['cy'] = float(np.percentile([p['y'] for p in points],
+                                               HEIGHT_Y_PERCENTILE))
+            frame['cz'] = float(np.median([p['z'] for p in points]))
+        # 전부 제거된 프레임은 실시간에서도 가능한 원본 centroid로 즉시 대체한다.
+        frames.append(frame)
+    return frames
+
+
+def extract(frames):
+    fr = [f for f in frames if f['n'] > 0]
     if len(fr) < 4:
         return None
     cx = np.array([f['cx'] for f in fr]); cy = np.array([f['cy'] for f in fr])
@@ -54,8 +106,20 @@ def extract(sample):
             float(np.abs(dop).mean())]
 
 
-def load(paths):
+def _parse_exclusions(values):
+    parsed = set()
+    for value in values:
+        try:
+            person, label, occurrence = value.split(':')
+            parsed.add((person.upper(), label, int(occurrence)))
+        except ValueError as exc:
+            raise ValueError(f'제외 형식은 PERSON:LABEL:COUNT 입니다: {value}') from exc
+    return parsed
+
+
+def load(paths, background=None, window=None, exclusions=()):
     out = []
+    occurrences = defaultdict(int)
     for path in paths:
         source = os.path.basename(path)
         with open(path, encoding='utf-8') as fh:
@@ -69,9 +133,23 @@ def load(paths):
                 if label not in USED_LABELS:
                     continue
                 frames = row.get('frames') or []
-                if len(frames) < 4 or frames[-1]['t'] - frames[0]['t'] > 2.5:
+                key = (str(row.get('person', '')).upper(), label)
+                occurrences[key] += 1
+                if (key[0], key[1], occurrences[key]) in exclusions:
                     continue
-                feat = extract(row)
+                if window is not None:
+                    if len(frames) < window:
+                        continue
+                    frames = frames[-window:]
+                if len(frames) < 4:
+                    continue
+                if window is None and frames[-1]['t'] - frames[0]['t'] > 2.5:
+                    continue
+                if background is not None:
+                    row = dict(row)
+                    row['frames'] = frames
+                    frames = apply_height_background(row, background)
+                feat = extract(frames)
                 if feat is not None:
                     out.append((feat, label == 'fall', row['person'], label, source))
     return out
@@ -83,13 +161,30 @@ def make_model():
                                   random_state=42, n_jobs=-1)
 
 
+def _sha256(path):
+    with open(path, 'rb') as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--data', nargs='+', required=True)
+    ap.add_argument('--empty', help='10 cm 높이 전용 배경맵을 만들 빈방 jsonl')
+    ap.add_argument('--window', type=int, help='각 표본에서 사용할 마지막 프레임 수')
+    ap.add_argument('--exclude', action='append', default=[],
+                    help='제외할 표본 PERSON:LABEL:발생순번 (여러 번 지정 가능)')
     ap.add_argument('--output', default='fall_classifier.joblib')
     args = ap.parse_args()
+    if bool(args.empty) != bool(args.window):
+        ap.error('--empty와 --window는 함께 지정해야 합니다.')
+    if args.empty and args.window != 30:
+        ap.error('용도 분리 RF의 운영 창은 30프레임이어야 합니다.')
 
-    rows = load(args.data)
+    background = build_height_background(args.empty) if args.empty else None
+    exclusions = _parse_exclusions(args.exclude)
+    rows = load(args.data, background, args.window, exclusions)
+    if not rows:
+        ap.error('학습 가능한 표본이 없습니다.')
     x = np.asarray([r[0] for r in rows]); y = np.asarray([r[1] for r in rows])
     groups = np.asarray([r[2] for r in rows]); labels = np.asarray([r[3] for r in rows])
     scores = np.zeros(len(y))
@@ -120,13 +215,23 @@ def main():
     model = make_model().fit(x, final_y)
     hashes = {}
     for path in args.data:
-        with open(path, 'rb') as fh:
-            hashes[os.path.basename(path)] = hashlib.sha256(fh.read()).hexdigest()
+        hashes[os.path.basename(path)] = _sha256(path)
     joblib.dump({'model': model, 'features': FEATURES, 'threshold': threshold,
                  'threshold_policy': 'LOSO max recall with wave FP=0',
                  'excluded_labels': ['fast_sit'], 'metrics': metrics,
                  'samples': {'fall': int(y.sum()), 'negative': int((~y).sum())},
-                 'source_sha256': hashes}, args.output)
+                 'source_sha256': hashes,
+                 'window_frames': args.window,
+                 'feature_mode': ('raw_motion_height_bg10_low30'
+                                  if background is not None else 'raw'),
+                 'height_background': sorted(background) if background is not None else [],
+                 'height_background_config': {
+                     'grid_m': HEIGHT_BG_GRID,
+                     'min_occupancy': HEIGHT_BG_OCCUPANCY,
+                     'y_percentile': HEIGHT_Y_PERCENTILE,
+                     'empty_sha256': _sha256(args.empty) if args.empty else None,
+                 },
+                 'excluded_samples': sorted(args.exclude)}, args.output)
     print(f'threshold={threshold:.6f} TP={metrics["tp"]} FN={metrics["fn"]} '
           f'FP={metrics["fp"]} TN={metrics["tn"]} wave_FP={metrics["wave_fp"]}')
     print(json.dumps(metrics['per_person'], ensure_ascii=False))

@@ -218,6 +218,30 @@ except Exception as _rfe:
     RF_MODEL = None; RF_THRESHOLD = 1.0; RF_OK = False
     print(f'[RF] 모델 없음/로드실패 -> 규칙만 사용: {_rfe}')
 
+# [8/15 실측] 30프레임 RF는 기존 20프레임 classify/RF veto와 입력 분포가 다르다.
+# 기존 모델을 덮어쓰지 않고 직접 낙상 후보 전용으로 분리해 복원 가능성을 보존한다.
+RF30_MODEL_PATH = os.path.expanduser(os.environ.get(
+    'RADAR_RF30_MODEL', '~/fall_classifier_hybrid30.joblib'))
+try:
+    _rf30_ck = joblib.load(RF30_MODEL_PATH)
+    if _rf30_ck.get('feature_mode') != 'raw_motion_height_bg10_low30':
+        raise ValueError(f"지원하지 않는 feature_mode: {_rf30_ck.get('feature_mode')}")
+    RF30_MODEL = _rf30_ck['model']
+    RF30_THRESHOLD = float(_rf30_ck['threshold'])
+    RF30_WINDOW = int(_rf30_ck['window_frames'])
+    RF30_BG = {tuple(v) for v in _rf30_ck['height_background']}
+    RF30_GRID = float(_rf30_ck['height_background_config']['grid_m'])
+    RF30_Y_PERCENTILE = float(_rf30_ck['height_background_config']['y_percentile'])
+    RF30_OK = RF30_WINDOW == 30 and bool(RF30_BG)
+    if not RF30_OK:
+        raise ValueError(f'window={RF30_WINDOW}, background={len(RF30_BG)}')
+    print(f'[RF30] 용도분리 모델 로드 OK (window={RF30_WINDOW}, '
+          f'background={len(RF30_BG)}, threshold={RF30_THRESHOLD:.6f})')
+except Exception as _rf30e:
+    RF30_MODEL = None; RF30_THRESHOLD = 1.0; RF30_WINDOW = 30
+    RF30_BG = set(); RF30_GRID = 0.10; RF30_Y_PERCENTILE = 70.0; RF30_OK = False
+    print(f'[RF30] 모델 없음/로드실패 -> 기존 20프레임 RF 유지: {_rf30e}')
+
 # ═══════════════════════════════════════════════════════════
 # 2. PIPELINE CLASSES
 # ═══════════════════════════════════════════════════════════
@@ -417,6 +441,43 @@ def _rf_fall_score(win):
     if 'fall' not in classes:
         raise ValueError(f'RF classes에 fall 없음: {classes}')
     return float(RF_MODEL.predict_proba([feats])[0, classes.index('fall')])
+
+
+def _rf30_height_points(frame_pts):
+    """RF30 학습 때 고정한 10 cm 배경 복셀만 높이·UI 경로에서 제거한다."""
+    if not RF30_OK:
+        return frame_pts
+    return [p for p in frame_pts
+            if (round(p['x'] / RF30_GRID), round(p['y'] / RF30_GRID),
+                round(p['z'] / RF30_GRID)) not in RF30_BG]
+
+
+def _rf30_feature(frame_pts, prev_c=None, prev_zvel=0.0, dt=None, ema_zacc=0.0,
+                  ema_a=0.5):
+    """도플러·세기·점수는 원본, 위치만 배경 제거 후 낮은 30%로 계산한다."""
+    feat = extract_features(frame_pts)
+    height_pts = _rf30_height_points(frame_pts)
+    if not height_pts:
+        return feat, frame_pts
+    xyz = np.array([[p['x'], p['y'], p['z']] for p in height_pts], dtype=np.float32)
+    c = np.array([np.median(xyz[:, 0]), np.percentile(xyz[:, 1], RF30_Y_PERCENTILE),
+                  np.median(xyz[:, 2])], dtype=np.float32)
+    z_vel = float(prev_c[1] - c[1]) if prev_c is not None else 0.0
+    raw_acc = ((z_vel - float(prev_zvel)) / dt
+               if dt is not None and dt > 1e-6 and prev_c is not None else 0.0)
+    z_accel = float(ema_a * raw_acc + (1.0 - ema_a) * float(ema_zacc))
+    feat[:3] = c; feat[7] = z_vel; feat[8] = z_accel
+    return feat, height_pts
+
+
+def _rf30_fall_score(win):
+    if not RF30_OK:
+        return None
+    feats = _rf_features(win)
+    classes = list(RF30_MODEL.classes_)
+    if 'fall' not in classes:
+        raise ValueError(f'RF30 classes에 fall 없음: {classes}')
+    return float(RF30_MODEL.predict_proba([feats])[0, classes.index('fall')])
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1102,6 +1163,7 @@ def pipeline_loop():
     lms         = LMSFilter()
     feat_buf    = []
     clf_buf     = []
+    rf30_buf    = []
     warmup_feat = []
     prev_c      = None
     prev_zvel   = 0.0
@@ -1111,6 +1173,9 @@ def pipeline_loop():
     prev_c_full    = None
     prev_zvel_full = 0.0
     ema_zacc_full  = 0.0
+    prev_c_rf30    = None
+    prev_zvel_rf30 = 0.0
+    ema_zacc_rf30  = 0.0
     anom_streak = 0
     pend_et     = None
     pend_cnt    = 0
@@ -1218,9 +1283,10 @@ def pipeline_loop():
             occupancy_reset = state['occupancy_reset_requested']
             state['occupancy_reset_requested'] = False
         if occupancy_reset:
-            feat_buf.clear(); clf_buf.clear()
+            feat_buf.clear(); clf_buf.clear(); rf30_buf.clear()
             prev_c = None; prev_zvel = 0.0; ema_zacc = 0.0
             prev_c_full = None; prev_zvel_full = 0.0; ema_zacc_full = 0.0
+            prev_c_rf30 = None; prev_zvel_rf30 = 0.0; ema_zacc_rf30 = 0.0
             anom_streak = 0; pend_et = None; pend_cnt = 0
             fall_hits.clear(); fall_pending = None; recover_streak = 0
             stat_since = None; stat_zone = None; stat_miss = 0; stat_pre = False
@@ -1275,6 +1341,7 @@ def pipeline_loop():
             lms         = LMSFilter()
             feat_buf    = []
             clf_buf     = []
+            rf30_buf    = []
             warmup_feat = []
             prev_c      = None
             prev_zvel   = 0.0
@@ -1283,6 +1350,9 @@ def pipeline_loop():
             prev_c_full    = None
             prev_zvel_full = 0.0
             ema_zacc_full  = 0.0
+            prev_c_rf30    = None
+            prev_zvel_rf30 = 0.0
+            ema_zacc_rf30  = 0.0
             anom_streak = 0
             pend_et     = None
             pend_cnt    = 0
@@ -1439,10 +1509,11 @@ def pipeline_loop():
                     stat_miss += 1
                     if stat_miss >= STAT_MISS_TOL:
                         stat_since = None; stat_zone = None; stat_pre = False
-                    continue
+                    # 높이/AE용 큰 마스크가 전부 지워도 원본 frame_pts_full의
+                    # 도플러·RF30 판정까지 버리면 용도 분리가 무효가 된다.
+                    # 아래에서 AE는 0점 피처, RF30은 원본 피처로 각각 처리한다.
 
             with _lock:
-                state['latest_pts']  = frame_pts
                 state['last_data_t'] = time.time()
 
             ys  = [p['y'] for p in frame_pts]
@@ -1459,6 +1530,11 @@ def pipeline_loop():
             prev_c_full    = feat_full[:3].copy()
             prev_zvel_full = float(feat_full[7])
             ema_zacc_full  = float(feat_full[8])
+            feat_rf30, height_pts = _rf30_feature(
+                frame_pts_full, prev_c_rf30, prev_zvel_rf30, _dt, ema_zacc_rf30)
+            prev_c_rf30    = feat_rf30[:3].copy()
+            prev_zvel_rf30 = float(feat_rf30[7])
+            ema_zacc_rf30  = float(feat_rf30[8])
             _track_log(len(frame_pts), feat[:3], _now_t)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
@@ -1470,13 +1546,15 @@ def pipeline_loop():
             with _lock:
                 state['cz_h'].append(cz)
                 state['ds_h'].append(float(feat[4]))
+                state['latest_pts'] = height_pts if RF30_OK and height_pts else frame_pts
                 # ── [7/31] 노트북 3D/수치 패널용 프레임 요약 ──
                 #   포인트 원본은 latest_pts 로 이미 나가고, 여기선 파생값만.
                 #   누적·형상추정·렌더는 전부 노트북이 한다(명세 원칙 3).
-                state['centroid'] = {'cx': round(float(feat[0]), 3),
-                                     'cy': round(float(feat[1]), 3),
-                                     'cz': round(float(feat[2]), 3)}
-                state['height']   = round(cz, 3)
+                _display_feat = feat_rf30 if RF30_OK else feat
+                state['centroid'] = {'cx': round(float(_display_feat[0]), 3),
+                                     'cy': round(float(_display_feat[1]), 3),
+                                     'cz': round(float(_display_feat[2]), 3)}
+                state['height']   = round(CEILING_H - float(_display_feat[1]), 3)
                 state['dop_std']  = round(float(feat[4]), 3)
                 state['track_state'] = 'tracking' if state['occupied'] else 'absent'
                 state['track_anchor'] = None
@@ -1688,6 +1766,9 @@ def pipeline_loop():
             clf_buf.append(feat_full.tolist())
             if len(clf_buf) > CLF_WIN:
                 clf_buf.pop(0)
+            rf30_buf.append(feat_rf30.tolist())
+            if len(rf30_buf) > RF30_WINDOW:
+                rf30_buf.pop(0)
 
             # ── 낙상 지속확인 게이트 (매 프레임) ──
             if POSTFALL_GATE and fall_pending is not None:
@@ -1861,8 +1942,16 @@ def pipeline_loop():
                                 f'[{ts}] 차단 유지 {BREAKER.tripped_zones()} — 재투입은 수동')
 
                 fw = np.array(clf_buf, dtype=np.float32)
-                rf_score = _rf_fall_score(fw) if len(fw) == CLF_WIN else None
-                rf_candidate = rf_score is not None and rf_score >= RF_THRESHOLD
+                rf30w = np.array(rf30_buf, dtype=np.float32)
+                if RF30_OK and len(rf30w) == RF30_WINDOW:
+                    rf_score = _rf30_fall_score(rf30w)
+                    rf_threshold = RF30_THRESHOLD
+                    rf_kind = 'hybrid30'
+                else:
+                    rf_score = _rf_fall_score(fw) if len(fw) == CLF_WIN else None
+                    rf_threshold = RF_THRESHOLD
+                    rf_kind = 'legacy20'
+                rf_candidate = rf_score is not None and rf_score >= rf_threshold
                 # [8/14 실측] RF는 AE와 기존 규칙이 놓친 약한 낙상을 직접 후보로 올린다.
                 is_anomaly = score > thr or rf_candidate
 
@@ -1883,7 +1972,8 @@ def pipeline_loop():
                         clf = dict(clf)
                         evidence = dict(clf.get('evidence') or {})
                         evidence.update({'rf_score': round(rf_score, 6),
-                                         'rf_threshold': round(RF_THRESHOLD, 6),
+                                         'rf_threshold': round(rf_threshold, 6),
+                                         'rf_model': rf_kind,
                                          'score_kind': 'rf_uncalibrated'})
                         clf.update({'event_type': 'fall_detected', 'severity': 'critical',
                                     'confidence': round(rf_score, 4), 'evidence': evidence})
@@ -1913,7 +2003,9 @@ def pipeline_loop():
                                     't': round(time.time(), 2),
                                     'verdict': raw_et, 'pend': f'{pend_et}:{pend_cnt}',
                                     'rf_score': (round(rf_score, 6) if rf_score is not None else None),
-                                    'rf_thr': (round(RF_THRESHOLD, 6) if RF_OK else None),
+                                    'rf_thr': (round(rf_threshold, 6)
+                                               if rf_score is not None else None),
+                                    'rf_model': rf_kind,
                                     'ds_max': round(float(_dsl.max()), 3),
                                     'ds_first': round(float(_dsl[:_h].mean()), 3),
                                     'ds_last': round(float(_dsl[_h:].mean()), 3),
