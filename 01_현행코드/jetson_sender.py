@@ -134,6 +134,8 @@ CLUTTER_REMOVE_POINTS = True
 STAT_PRE_SEC  = 10.0   # [7/12] 15->10: 데모 시 15s 완전정지 유지가 어려워(실측 dwell 최대 6.9s)
                        #   1차: Zone 내 정지 이만큼 지속 -> PRE-ALERT(경고, 비latch)
 STAT_CRIT_SEC = 30.0   # 2차: 계속 무동작 -> stationary 경보(critical, latch)
+STAT_RESET_DS = 0.38   # [8/17 시험 후보] 현재 프레임 실측 전까지 확정값 아님
+STAT_RESET_FRAMES = 3  # 순간 케이블·고스트 스파이크 한 번으로 타이머를 지우지 않는다
 MAINT_MODE    = False  # True = 계획 정비 중(LOTO/작업허가) -> 정지형 경보 억제
 STAT_MISS_TOL = 3      # [7/12] 10->3: 이탈 프레임 10개 용인이 '이동 중 타이머 생존 ->
                        #   오발화'의 주원인. 3프레임(~0.3s)만 용인.
@@ -345,6 +347,44 @@ def build_clutter_map(scan_frames):
               SCAN_GRID * 0.45, SCAN_GRID_Y * 0.45)
              for (gx, gy, gz), k in cnt.most_common(SCAN_MAX_SPOTS) if k >= SCAN_MIN_HITS]
     return spots
+
+
+class StationaryGate:
+    """수동 재실 중 마지막 확인 움직임부터 경과시간을 재는 최소 상태기."""
+
+    def __init__(self, reset_ds=STAT_RESET_DS, reset_frames=STAT_RESET_FRAMES):
+        self.reset_ds = reset_ds
+        self.reset_frames = reset_frames
+        self.reset()
+
+    def reset(self):
+        self.since = None
+        self.motion_hits = 0
+        self.alerted = False
+
+    def update(self, now, active, dop_std=None):
+        if not active:
+            self.reset()
+            return {'dwell': 0.0, 'pre': False, 'critical': False, 'motion_reset': False}
+        if self.since is None:
+            self.since = now
+
+        motion_reset = False
+        if dop_std is not None:
+            if dop_std >= self.reset_ds:
+                self.motion_hits += 1
+                if self.motion_hits >= self.reset_frames:
+                    self.since = now
+                    self.motion_hits = 0
+                    self.alerted = False
+                    motion_reset = True
+            else:
+                self.motion_hits = 0
+
+        dwell = max(0.0, now - self.since)
+        critical = dwell >= STAT_CRIT_SEC and not self.alerted
+        return {'dwell': dwell, 'pre': dwell >= STAT_PRE_SEC and not self.alerted,
+                'critical': critical, 'motion_reset': motion_reset}
 
 
 def _rule_fall_positive(clf):
@@ -1194,6 +1234,7 @@ def pipeline_loop():
     track_log_t = 0.0
     last_motion_t = -1e9
     motion_run = 0
+    stationary_gate = StationaryGate()
     def _track_log(points_n, centroid, now):
         """현장 진단용 수동 재실 상태를 1초에 한 번 즉시 출력한다."""
         nonlocal track_log_t
@@ -1236,6 +1277,39 @@ def pipeline_loop():
         spots_txt = ', '.join(f'(x{x:+.2f},y{y:+.2f},z{z:+.2f})' for x, y, z, _, _ in learned) or 'none'
         add_log(f'Scan done: {len(learned)} clutter spot(s) learned [{spots_txt}]')
         add_log(f'>> STEP IN NOW -- OFF-NADIR (to the SIDE). Collection starts in {int(STEP_IN_SEC)}s.')
+
+    def _stationary_tick(dop_std=None):
+        """포인트가 없어도 호출해 수동 재실 타이머를 단조 증가시킨다."""
+        now = time.monotonic()
+        with _lock:
+            active = state['phase'] == PH_LIVE and state['occupied'] and not MAINT_MODE
+        result = stationary_gate.update(now, active, dop_std)
+        dwell = result['dwell']
+        with _lock:
+            if result['pre']:
+                remain = max(0, int(STAT_CRIT_SEC - dwell))
+                state['pre_alert'] = (f'PRE-ALERT  Zone {RADAR_ZONE}: no-motion {int(dwell)}s'
+                                      f'  --  MOVE to cancel  ({remain}s to CRITICAL)')
+            else:
+                state['pre_alert'] = ''
+
+            if result['critical'] and not state['ev_active']:
+                ts = datetime.now().strftime('%H:%M:%S')
+                clf = {
+                    'severity': EVENT_SEV.get('stationary_anomaly', 'warning'),
+                    'confidence': 0.95,
+                    'evidence': {'dwell': round(dwell, 1),
+                                 'reset_ds': STAT_RESET_DS,
+                                 'reset_frames': STAT_RESET_FRAMES},
+                    'gates': {'occupied': {'pass': True}, 'dwell': {'pass': True}},
+                    'rejected': [],
+                }
+                _latch_event('stationary_anomaly', clf, RADAR_ZONE, ts, 1.0)
+                stationary_gate.alerted = True
+
+        if result['motion_reset']:
+            add_log(f'STATIONARY timer reset: confirmed motion (dop_std>={STAT_RESET_DS:.2f} '
+                    f'x{STAT_RESET_FRAMES})')
 
     # ── 저장된 baseline 재사용: 있으면 스캔/웜업/학습 건너뛰고 바로 LIVE ──
     if LOAD_BASELINE and os.path.exists(BASELINE_PATH):
@@ -1283,6 +1357,7 @@ def pipeline_loop():
             occupancy_reset = state['occupancy_reset_requested']
             state['occupancy_reset_requested'] = False
         if occupancy_reset:
+            stationary_gate.reset()
             feat_buf.clear(); clf_buf.clear(); rf30_buf.clear()
             prev_c = None; prev_zvel = 0.0; ema_zacc = 0.0
             prev_c_full = None; prev_zvel_full = 0.0; ema_zacc_full = 0.0
@@ -1300,6 +1375,7 @@ def pipeline_loop():
             arm_reset = state['arm_reset_requested']
             state['arm_reset_requested'] = False
         if arm_reset:
+            stationary_gate.reset()
             stat_since = None; stat_zone = None; stat_miss = 0; stat_pre = False
             stat_hits = stat_tot = 0
             with _lock:
@@ -1384,6 +1460,8 @@ def pipeline_loop():
                 state['latest_pts'] = []
                 state['centroid'] = None
 
+        # JSONL 프레임이 없거나 정지 인체가 사라져도 경과시간은 계속 간다.
+        _stationary_tick()
         time.sleep(POLL_SEC)
 
         # ── Load new frames (JSONL, offset-based tail read) ──
@@ -1896,6 +1974,9 @@ def pipeline_loop():
                 stat_hits = stat_tot = 0
                 with _lock:
                     state['pre_alert'] = ''
+
+            # [8/17] 수동 occupied 기반 정지형. 위 코드는 회귀 비교용 비활성 경로다.
+            _stationary_tick(_ds)
 
             score = 0.0
             if len(feat_buf) == SEQ_LEN:

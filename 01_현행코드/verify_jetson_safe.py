@@ -156,6 +156,22 @@ for k, want in (('STAT_MISS_TOL', 3), ('STAT_PRE_SEC', 10.0), ('STAT_CRIT_SEC', 
     got = getattr(m, k, None)
     ck(got == want, f'{k} = {want}', '' if got == want else f'실제 {got}')
 
+print('\n[2-A] 수동 재실 정지형 상태기')
+gate = m.StationaryGate(reset_ds=0.38, reset_frames=3)
+ck(not gate.update(0.0, False)['pre'], '퇴실 상태에서는 타이머 비활성')
+gate.update(0.0, True, 0.05)
+ck(gate.update(10.0, True, None)['pre'], '점군 소실 중에도 10초 PRE-ALERT 유지')
+ck(not gate.update(29.9, True, None)['critical'], '30초 전에는 본 경보 없음')
+ck(gate.update(30.0, True, None)['critical'], '30초에 정지형 warning 1회 발생')
+gate.reset(); gate.update(0.0, True, 0.05)
+gate.update(5.0, True, 0.50); gate.update(5.1, True, 0.05)
+ck(gate.update(10.0, True, None)['pre'], '순간 도플러 스파이크 1회는 타이머 유지')
+gate.update(10.1, True, 0.50); gate.update(10.2, True, 0.50)
+reset = gate.update(10.3, True, 0.50)
+ck(reset['motion_reset'] and not reset['pre'], '확인 움직임 3프레임이면 타이머 초기화')
+ck(not gate.update(20.0, False, None)['pre'] and gate.since is None,
+   '퇴실 명령은 정지형 상태 하드 리셋')
+
 print('\n[3] --simulate 로 로드 (노트북 검증 모드)')
 ms, err = load_sender(['jetson_sender.py', '--simulate', '--fast'])
 ck(ms is not None, '모듈 로드', err or '')
