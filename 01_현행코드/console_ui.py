@@ -1667,7 +1667,8 @@ class MonitorPage(QtWidgets.QWidget):
         lg = hbox(self.legend, s=SP2)
         for mark, color, text in (('●', CYAN, '원시 점(누적)'),
                                   ('●', AMBER, '머리 추정점'),
-                                  ('─', GREEN, '인체 도식 · 관절 미측정')):
+                                  ('─', GREEN, '인체 도식 · 관절 미측정'),
+                                  ('▦', '#1E4C75', '시설 배치 시각화')):
             lg.addWidget(lb(mark, F_CAP, color))
             lg.addWidget(lb(text, F_CAP, FAINT))
         self._legend_w = self.legend.sizeHint().width()
