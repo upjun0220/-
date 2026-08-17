@@ -897,39 +897,101 @@ def _facility_scene_geometry():
         for z in (z1, z2):
             dots.extend((x, y, z) for x in xs for y in ys)
 
+    def add_front_details(x1, x2, y, height, lines, dots):
+        """배전반 전면을 도어·계기·환기구 점군으로 나눈다."""
+        width = x2 - x1
+        for z in (0.12, 0.62, height - 0.22):
+            lines.append(np.array(((x1 + 0.05, y, z),
+                                   (x2 - 0.05, y, z)), dtype=np.float32))
+        for x in (x1 + 0.05, x2 - 0.05):
+            lines.append(np.array(((x, y, 0.10),
+                                   (x, y, height - 0.08)), dtype=np.float32))
+        # 계기창과 하부 환기구는 면 전체를 채우지 않고 스캔 반환점처럼 끊는다.
+        add_box((x1 + width * 0.25, x1 + width * 0.75,
+                 y - 0.012, y, height * 0.63, height * 0.75),
+                lines, dots, 0.055)
+        for x in np.linspace(x1 + 0.12, x2 - 0.12, 4):
+            lines.append(np.array(((x, y - 0.014, 0.25),
+                                   (x, y - 0.014, 0.43)), dtype=np.float32))
+
+    def add_trench_segment(x1, x2, y1, y2, lines, dots):
+        add_box((x1, x2, y1, y2, 0.008, 0.035), lines, dots, 0.065)
+        if x2 - x1 >= y2 - y1:
+            for x in np.arange(x1 + 0.06, x2, 0.12):
+                lines.append(np.array(((x, y1, 0.038), (x, y2, 0.038))))
+        else:
+            for y in np.arange(y1 + 0.06, y2, 0.12):
+                lines.append(np.array(((x1, y, 0.038), (x2, y, 0.038))))
+
     fixed_lines, fixed_dots = [], []
-    # ROI 반폭 0.72m 바깥쪽을 조밀하게 둘러싼 변전실 배치.
+    # ROI 반폭 0.72m 주변을 실제 변전실처럼 끊김 없이 둘러싼 데모 배치.
+    # 벽은 남쪽 진입부를 열어 초기 카메라 시야와 사람 점군을 가리지 않는다.
+    add_box((-1.42, 1.42, 1.34, 1.40, 0.0, 2.05),
+            fixed_lines, fixed_dots, 0.12)
+    add_box((-1.42, -1.36, -0.92, 1.34, 0.0, 2.05),
+            fixed_lines, fixed_dots, 0.12)
+    add_box((1.36, 1.42, -0.92, 1.34, 0.0, 2.05),
+            fixed_lines, fixed_dots, 0.12)
+
     # 후면 고압 배전반 4면
     for x1 in (-1.34, -0.68, -0.02, 0.64):
         add_box((x1, x1 + 0.62, 0.98, 1.34, 0.0, 1.85),
-                fixed_lines, fixed_dots)
-        # 문·계기부·환기구가 상자 하나로만 보이지 않게 앞면을 나눈다.
-        add_box((x1 + 0.12, x1 + 0.50, 0.965, 0.98, 0.35, 0.48),
-                fixed_lines, fixed_dots, 0.07)
-        add_box((x1 + 0.20, x1 + 0.42, 0.96, 0.98, 1.18, 1.32),
-                fixed_lines, fixed_dots, 0.07)
-    # 좌측 저압 분전반과 보호·제어반
-    add_box((-1.28, -0.88, 0.06, 0.70, 0.0, 1.55), fixed_lines, fixed_dots)
-    add_box((-1.28, -0.88, -0.70, -0.12, 0.0, 1.35), fixed_lines, fixed_dots)
-    # 배전반 전면 절연매트·케이블 트렌치, 우측 비상정지함
-    add_box((-1.34, 1.26, 0.84, 0.94, 0.01, 0.035), fixed_lines, fixed_dots, 0.08)
-    for x1 in np.linspace(-1.30, 1.10, 7):
-        add_box((x1, x1 + 0.28, 0.74, 0.82, 0.01, 0.055),
                 fixed_lines, fixed_dots, 0.08)
+        add_front_details(x1, x1 + 0.62, 0.975, 1.85,
+                          fixed_lines, fixed_dots)
+    # 좌측 저압 분전반과 보호·제어반
+    for y1, y2, height in ((0.08, 0.68, 1.55), (-0.68, -0.12, 1.35)):
+        add_box((-1.34, -0.94, y1, y2, 0.0, height),
+                fixed_lines, fixed_dots, 0.075)
+        # 옆에서 보는 캐비닛도 모듈 경계와 손잡이가 드러나게 나눈다.
+        for y in np.linspace(y1 + 0.10, y2 - 0.10, 3):
+            fixed_lines.append(np.array(((-0.935, y, 0.12),
+                                         (-0.935, y, height - 0.10))))
+            add_box((-0.95, -0.925, y - 0.025, y + 0.025,
+                     height * 0.55, height * 0.62),
+                    fixed_lines, fixed_dots, 0.04)
+
+    # 절연매트, U자 케이블 트렌치, 우측 서비스 기둥·제어함.
+    add_box((-1.26, 0.48, 0.78, 0.91, 0.008, 0.026),
+            fixed_lines, fixed_dots, 0.065)
+    for x1 in np.arange(-1.18, 0.44, 0.16):
+        fixed_lines.append(np.array(((x1, 0.785, 0.030),
+                                     (x1 + 0.08, 0.905, 0.030))))
+    add_trench_segment(-0.91, -0.79, -0.82, 0.76, fixed_lines, fixed_dots)
+    add_trench_segment(-0.79, 0.88, -0.82, -0.70, fixed_lines, fixed_dots)
+    add_trench_segment(0.76, 0.88, -0.70, 0.76, fixed_lines, fixed_dots)
+    add_box((1.14, 1.34, -0.22, 0.30, 0.0, 1.75),
+            fixed_lines, fixed_dots, 0.075)
     add_box((0.86, 1.06, 0.28, 0.48, 0.72, 1.12), fixed_lines, fixed_dots, 0.07)
+    # 남쪽 출입구 문턱과 양쪽 문설주만 그려 중앙 진입 방향은 비운다.
+    add_box((-1.36, -0.48, -0.98, -0.90, 0.0, 0.10),
+            fixed_lines, fixed_dots, 0.08)
+    add_box((0.48, 1.36, -0.98, -0.90, 0.0, 0.10),
+            fixed_lines, fixed_dots, 0.08)
 
     machine_lines, machine_dots = [], []
-    # ROI 우측 위: 산업용 모터+송풍기 대신 시연 시 선풍기를 놓는 자리.
-    add_box((0.28, 0.62, 0.30, 0.58, 0.06, 0.14), machine_lines, machine_dots, 0.06)
+    # ROI 오른쪽 경계(x=0.72)에 일부만 걸친다. 중심은 ROI 밖이며,
+    # 시연 때 이 좌표에 선풍기를 놓고 화면에는 산업용 회전체로 표현한다.
+    add_box((0.61, 1.18, 0.25, 0.65, 0.05, 0.14), machine_lines, machine_dots, 0.055)
     theta = np.linspace(0.0, 2.0 * np.pi, 36, endpoint=False)
-    for x, radius in ((0.34, 0.13), (0.50, 0.13), (0.58, 0.19)):
+    for x, radius in ((0.70, 0.14), (0.88, 0.14), (1.04, 0.22)):
         ring = np.column_stack((np.full_like(theta, x),
-                                0.43 + radius * np.cos(theta),
-                                0.34 + radius * np.sin(theta)))
+                                0.45 + radius * np.cos(theta),
+                                0.38 + radius * np.sin(theta)))
         machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
                              for i in range(len(ring)))
         machine_dots.extend(ring)
-    machine_lines.append(np.array(((0.34, 0.43, 0.34), (0.58, 0.43, 0.34))))
+    # 모터 축, 송풍기 보호망, 결합부와 제어함.
+    machine_lines.append(np.array(((0.68, 0.45, 0.38), (1.10, 0.45, 0.38))))
+    for radius in np.linspace(0.05, 0.20, 4):
+        ring = np.column_stack((np.full_like(theta, 1.045),
+                                0.45 + radius * np.cos(theta),
+                                0.38 + radius * np.sin(theta)))
+        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                             for i in range(len(ring)))
+        machine_dots.extend(ring[::2])
+    add_box((0.92, 1.10, 0.15, 0.27, 0.12, 0.45),
+            machine_lines, machine_dots, 0.05)
     return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
             np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32))
 
