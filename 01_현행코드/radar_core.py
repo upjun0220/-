@@ -924,73 +924,74 @@ def _facility_scene_geometry():
                 lines.append(np.array(((x1, y, 0.038), (x2, y, 0.038))))
 
     fixed_lines, fixed_dots = [], []
-    # ROI 반폭 0.72m 주변을 실제 변전실처럼 끊김 없이 둘러싼 데모 배치.
-    # 벽은 남쪽 진입부를 열어 초기 카메라 시야와 사람 점군을 가리지 않는다.
-    add_box((-1.42, 1.42, 1.34, 1.40, 0.0, 2.05),
+    # ROI는 그대로 두고 시설 바닥만 약 4.8×4.2m로 넓힌다. 후면 서비스 벽 외에는
+    # 낮은 경계만 둬 초기 시점이 케이지처럼 닫히지 않게 한다.
+    add_box((-2.35, 2.35, 1.72, 1.80, 0.0, 2.05),
             fixed_lines, fixed_dots, 0.12)
-    add_box((-1.42, -1.36, -0.92, 1.34, 0.0, 2.05),
-            fixed_lines, fixed_dots, 0.12)
-    add_box((1.36, 1.42, -0.92, 1.34, 0.0, 2.05),
-            fixed_lines, fixed_dots, 0.12)
+    add_box((-2.35, -2.27, -1.65, 1.72, 0.0, 0.22),
+            fixed_lines, fixed_dots, 0.10)
+    add_box((2.27, 2.35, -1.65, 1.72, 0.0, 0.22),
+            fixed_lines, fixed_dots, 0.10)
 
     # 후면 고압 배전반 4면
-    for x1 in (-1.34, -0.68, -0.02, 0.64):
-        add_box((x1, x1 + 0.62, 0.98, 1.34, 0.0, 1.85),
+    for x1 in (-1.62, -0.84, -0.06, 0.72):
+        add_box((x1, x1 + 0.72, 1.30, 1.72, 0.0, 1.85),
                 fixed_lines, fixed_dots, 0.08)
-        add_front_details(x1, x1 + 0.62, 0.975, 1.85,
+        add_front_details(x1, x1 + 0.72, 1.295, 1.85,
                           fixed_lines, fixed_dots)
     # 좌측 저압 분전반과 보호·제어반
     for y1, y2, height in ((0.08, 0.68, 1.55), (-0.68, -0.12, 1.35)):
-        add_box((-1.34, -0.94, y1, y2, 0.0, height),
+        add_box((-2.08, -1.58, y1, y2, 0.0, height),
                 fixed_lines, fixed_dots, 0.075)
         # 옆에서 보는 캐비닛도 모듈 경계와 손잡이가 드러나게 나눈다.
         for y in np.linspace(y1 + 0.10, y2 - 0.10, 3):
-            fixed_lines.append(np.array(((-0.935, y, 0.12),
-                                         (-0.935, y, height - 0.10))))
-            add_box((-0.95, -0.925, y - 0.025, y + 0.025,
+            fixed_lines.append(np.array(((-1.575, y, 0.12),
+                                         (-1.575, y, height - 0.10))))
+            add_box((-1.59, -1.565, y - 0.025, y + 0.025,
                      height * 0.55, height * 0.62),
                     fixed_lines, fixed_dots, 0.04)
 
     # 절연매트, U자 케이블 트렌치, 우측 서비스 기둥·제어함.
-    add_box((-1.26, 0.48, 0.78, 0.91, 0.008, 0.026),
+    add_box((-1.55, 0.20, 1.08, 1.21, 0.008, 0.026),
             fixed_lines, fixed_dots, 0.065)
-    for x1 in np.arange(-1.18, 0.44, 0.16):
-        fixed_lines.append(np.array(((x1, 0.785, 0.030),
-                                     (x1 + 0.08, 0.905, 0.030))))
-    add_trench_segment(-0.91, -0.79, -0.82, 0.76, fixed_lines, fixed_dots)
-    add_trench_segment(-0.79, 0.88, -0.82, -0.70, fixed_lines, fixed_dots)
-    add_trench_segment(0.76, 0.88, -0.70, 0.76, fixed_lines, fixed_dots)
-    add_box((1.14, 1.34, -0.22, 0.30, 0.0, 1.75),
+    for x1 in np.arange(-1.47, 0.16, 0.16):
+        fixed_lines.append(np.array(((x1, 1.085, 0.030),
+                                     (x1 + 0.08, 1.205, 0.030))))
+    add_trench_segment(-1.28, -1.16, -1.18, 0.98, fixed_lines, fixed_dots)
+    add_trench_segment(-1.16, 1.62, -1.18, -1.06, fixed_lines, fixed_dots)
+    add_trench_segment(1.50, 1.62, -1.06, 0.22, fixed_lines, fixed_dots)
+    add_box((1.92, 2.12, -0.20, 0.32, 0.0, 1.35),
             fixed_lines, fixed_dots, 0.075)
-    add_box((0.86, 1.06, 0.28, 0.48, 0.72, 1.12), fixed_lines, fixed_dots, 0.07)
+    add_box((1.72, 1.90, 0.18, 0.38, 0.62, 1.02), fixed_lines, fixed_dots, 0.07)
     # 남쪽 출입구 문턱과 양쪽 문설주만 그려 중앙 진입 방향은 비운다.
-    add_box((-1.36, -0.48, -0.98, -0.90, 0.0, 0.10),
+    add_box((-2.27, -0.58, -1.72, -1.64, 0.0, 0.10),
             fixed_lines, fixed_dots, 0.08)
-    add_box((0.48, 1.36, -0.98, -0.90, 0.0, 0.10),
+    add_box((0.58, 2.27, -1.72, -1.64, 0.0, 0.10),
             fixed_lines, fixed_dots, 0.08)
 
     machine_lines, machine_dots = [], []
-    # ROI 오른쪽 경계(x=0.72)에 일부만 걸친다. 중심은 ROI 밖이며,
-    # 시연 때 이 좌표에 선풍기를 놓고 화면에는 산업용 회전체로 표현한다.
-    add_box((0.61, 1.18, 0.25, 0.65, 0.05, 0.14), machine_lines, machine_dots, 0.055)
+    # 대형 1.4×0.9m 회전체의 베이스 모서리 0.3×0.3m만 ROI 우측 상단에
+    # 걸친다. 시연 선풍기는 그 겹침 좌표에 두며 설비 대부분은 ROI 밖이다.
+    add_box((0.42, 1.82, 0.42, 1.32, 0.05, 0.14),
+            machine_lines, machine_dots, 0.065)
     theta = np.linspace(0.0, 2.0 * np.pi, 36, endpoint=False)
-    for x, radius in ((0.70, 0.14), (0.88, 0.14), (1.04, 0.22)):
+    for x, radius in ((0.68, 0.22), (0.98, 0.25), (1.45, 0.39)):
         ring = np.column_stack((np.full_like(theta, x),
-                                0.45 + radius * np.cos(theta),
-                                0.38 + radius * np.sin(theta)))
+                                0.87 + radius * np.cos(theta),
+                                0.50 + radius * np.sin(theta)))
         machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
                              for i in range(len(ring)))
         machine_dots.extend(ring)
     # 모터 축, 송풍기 보호망, 결합부와 제어함.
-    machine_lines.append(np.array(((0.68, 0.45, 0.38), (1.10, 0.45, 0.38))))
-    for radius in np.linspace(0.05, 0.20, 4):
-        ring = np.column_stack((np.full_like(theta, 1.045),
-                                0.45 + radius * np.cos(theta),
-                                0.38 + radius * np.sin(theta)))
+    machine_lines.append(np.array(((0.56, 0.87, 0.50), (1.62, 0.87, 0.50))))
+    for radius in np.linspace(0.10, 0.37, 4):
+        ring = np.column_stack((np.full_like(theta, 1.45),
+                                0.87 + radius * np.cos(theta),
+                                0.50 + radius * np.sin(theta)))
         machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
                              for i in range(len(ring)))
         machine_dots.extend(ring[::2])
-    add_box((0.92, 1.10, 0.15, 0.27, 0.12, 0.45),
+    add_box((1.62, 1.80, 0.28, 0.43, 0.12, 0.52),
             machine_lines, machine_dots, 0.05)
     return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
             np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32))
@@ -1043,10 +1044,10 @@ class Track3D(QtWidgets.QWidget):
     def _build_gl(self, v):
         self.gl = gl.GLViewWidget()
         self.gl.setBackgroundColor(pg.mkColor(PANEL))
-        self.gl.setCameraPosition(distance=5.4, elevation=16, azimuth=48)
-        self._cam0 = dict(distance=5.4, elevation=16, azimuth=48)
+        self.gl.setCameraPosition(distance=7.0, elevation=22, azimuth=48)
+        self._cam0 = dict(distance=7.0, elevation=22, azimuth=48)
         g = gl.GLGridItem()
-        g.setSize(4, 4)
+        g.setSize(6, 5)
         g.setSpacing(0.5, 0.5)
         g.setColor(pg.mkColor(GRID))
         self.gl.addItem(g)
