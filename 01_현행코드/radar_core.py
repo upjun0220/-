@@ -654,6 +654,34 @@ def _mannequin_mesh():
     return mesh.astype(np.float32), faces.astype(np.uint32)
 
 
+@lru_cache(maxsize=4)
+def _incident_mannequin_mesh(kind):
+    """동일 OBJ를 몸 중심선에 따라 굽혀 시연용 사고 자세를 만든다."""
+    unit, faces = _mannequin_mesh()
+    t = unit[:, 2]
+    paths = {
+        'fall': ((-0.48, -0.28, -0.02, 0.27, 0.48),
+                 (0.08, -0.04, 0.00, 0.06, -0.03),
+                 (-0.03, 0.08, 0.00, 0.05, -0.02)),
+        'electric': ((0.00, 0.02, 0.00, -0.12, -0.22),
+                     (0.00, 0.00, 0.00, -0.05, -0.10),
+                     (-0.50, -0.27, 0.00, 0.29, 0.47)),
+        'pinching': ((-0.04, -0.02, 0.00, 0.16, 0.27),
+                     (0.00, 0.00, 0.00, 0.08, 0.14),
+                     (-0.50, -0.28, 0.00, 0.27, 0.44)),
+        'stationary': ((0.00, 0.00, 0.00, 0.00, 0.00),
+                       (0.00, 0.00, 0.00, 0.00, 0.00),
+                       (-0.50, -0.25, 0.00, 0.25, 0.50)),
+    }
+    px, py, pz = paths.get(kind, paths['stationary'])
+    knots = np.linspace(0.0, 1.0, 5)
+    posed = unit.copy()
+    posed[:, 0] += np.interp(t, knots, px)
+    posed[:, 1] += np.interp(t, knots, py)
+    posed[:, 2] = np.interp(t, knots, pz)
+    return posed.astype(np.float32), faces
+
+
 def body_mesh(center, axis, length, right):
     """서 있는 추정 형상에 CC0 단일 표면 마네킹을 맞춘다.
 
@@ -1173,6 +1201,9 @@ class Track3D(QtWidgets.QWidget):
         self.body_rim.hide()
         self.gl.addItem(self.body_rim)
         self._body_sev = None
+        self._incident_kind = None
+        self._body_unit = body_unit
+        self._body_faces = body_faces
         self.sc = gl.GLScatterPlotItem(size=6.0, color=pg.glColor(CYAN))
         self.gl.addItem(self.sc)
         # 인체 도식 — mode='lines' 로 끊긴 선분들을 한 아이템에 그린다
@@ -1226,7 +1257,8 @@ class Track3D(QtWidgets.QWidget):
             return c, c, c
         return CYAN, GREEN, AMBER
 
-    def push(self, st, sev='normal', hide_shape=False):
+    def push(self, st, sev='normal', hide_shape=False, incident=None):
+        incident = incident if incident is not None else getattr(self, '_incident', None)
         track_state = st.get('track_state', 'tracking')
         self.pose.push(st.get('points') or [], st.get('centroid'),
                        tracked=(track_state == 'tracking'))
@@ -1249,25 +1281,56 @@ class Track3D(QtWidgets.QWidget):
             self.anchor.setData(pos=np.zeros((0, 3), dtype=np.float32))
         else:
             self.anchor.setData([], [])
-        return self.redraw(sev, hide_shape)
+        return self.redraw(sev, hide_shape, incident)
 
-    def redraw(self, sev='normal', hide_shape=False):
+    def redraw(self, sev='normal', hide_shape=False, incident=None):
         """새 프레임을 먹지 않고 이미 누적된 값으로만 다시 그린다.
 
         ⚠ [8/02] push() 를 다시 부르면 pose.push() 가 같은 프레임을 누적
           버퍼에 중복 적재한다. 모드 전환처럼 새 패킷 없이 화면만 맞춰야
           할 때(ConsoleV2._refresh_scene) 는 이 쪽을 쓴다.
         """
+        incident = incident if incident is not None else getattr(self, '_incident', None)
         pts = self.pose.cloud()
         p = self.pose.estimate()
         pt_c, fig_c, hd_c = self.sev_colors(sev)
         if self.gl is not None:
+            incident_kind = incident and incident.get('kind')
+            if incident_kind != self._incident_kind:
+                if incident_kind:
+                    # 전체 시설 시점에서는 사고 인체가 설비 점군에 묻힌다.
+                    # 시연 사고 동안만 ROI 남측에서 가까이 보고 해제 시 복귀한다.
+                    self.gl.setCameraPosition(distance=10.5, elevation=26, azimuth=-48)
+                    posed, faces = _incident_mannequin_mesh(incident_kind)
+                    self.body.setMeshData(vertexes=posed, faces=faces)
+                    self.body_rim.setMeshData(vertexes=posed, faces=faces)
+                elif self._incident_kind:
+                    self.gl.setCameraPosition(**self._cam0)
+                    self.body.setMeshData(vertexes=self._body_unit,
+                                          faces=self._body_faces)
+                    self.body_rim.setMeshData(vertexes=self._body_unit,
+                                              faces=self._body_faces)
+                self._incident_kind = incident_kind
             if len(pts):
                 arr = np.column_stack([pts[:, 0], pts[:, 2], CEILING_H - pts[:, 1]])
                 self.sc.setData(pos=arr, color=pg.glColor(pt_c), size=6.0)
             if len(self.trail) > 2:
                 self.tr.setData(pos=np.array(self.trail))
-            if p and p['shape_ok'] and not hide_shape:
+            if incident:
+                # 사고 포즈는 센서 자세 복원이 아니라 사건 종류를 빠르게 읽게 하는
+                # 시각화다. 운영 패킷에는 없고 명시적 시연 패킷에서만 활성화한다.
+                self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32))
+                self.hd.setData(pos=np.zeros((0, 3), dtype=np.float32))
+                transform = self._incident_transform(incident)
+                self.body.setTransform(transform)
+                self.body_rim.setTransform(transform)
+                color = pg.glColor(fig_c)
+                self.body.setColor((*color[:3], 0.42))
+                self.body_rim.setColor((*color[:3], 0.20))
+                self._body_sev = sev
+                self.body.show()
+                self.body_rim.show()
+            elif p and p['shape_ok'] and not hide_shape:
                 self.hd.setData(pos=np.array([self.to_disp(p['head'])]),
                                 color=pg.glColor(hd_c))
                 if p['posture'] == 'standing':
@@ -1313,6 +1376,26 @@ class Track3D(QtWidgets.QWidget):
                 self.cap.setData([], [])
                 self.hd.setData([], [])
         return p
+
+    @staticmethod
+    def _incident_transform(incident):
+        """시연 전용 OBJ 포즈. 위치·자세가 실측이라는 의미는 없다."""
+        kind = incident.get('kind', 'stationary')
+        x, y = incident.get('pos', (0.0, 0.0))
+        phase = np.sin(time.monotonic() * 5.0)
+        length = 1.62
+        if kind == 'fall':
+            center = np.array((x, y, 0.20))
+        elif kind == 'electric':
+            center = np.array((x, y - 0.03 * phase, 0.78))
+        elif kind == 'pinching':
+            center = np.array((x + 0.03 * phase, y, 0.76))
+        else:
+            center = np.array((x, y, 0.81))
+        matrix = np.eye(4, dtype=float)
+        matrix[:3, :3] *= length
+        matrix[:3, 3] = center
+        return pg.Transform3D(matrix)
 
     # ── 좌표 변환 ─────────────────────────────────────────────────────
     #  레이더 원좌표 (x, y=센서로부터의 거리, z) → 화면 (x, z, 바닥기준 높이)
