@@ -924,77 +924,141 @@ def _facility_scene_geometry():
                 lines.append(np.array(((x1, y, 0.038), (x2, y, 0.038))))
 
     fixed_lines, fixed_dots = [], []
-    # ROI는 그대로 두고 시설 바닥만 약 4.8×4.2m로 넓힌다. 후면 서비스 벽 외에는
-    # 낮은 경계만 둬 초기 시점이 케이지처럼 닫히지 않게 한다.
-    add_box((-2.35, 2.35, 1.72, 1.80, 0.0, 2.05),
-            fixed_lines, fixed_dots, 0.12)
-    add_box((-2.35, -2.27, -1.65, 1.72, 0.0, 0.22),
-            fixed_lines, fixed_dots, 0.10)
-    add_box((2.27, 2.35, -1.65, 1.72, 0.0, 0.22),
-            fixed_lines, fixed_dots, 0.10)
+    # ROI는 ±0.72m 그대로 두고 시설 시각화만 약 9×7m로 넓힌다.
+    # 후면 서비스 벽 외에는 낮은 경계만 두어 점검·피난 통로를 열어 둔다.
+    add_box((-4.45, 4.45, 3.30, 3.40, 0.0, 2.25),
+            fixed_lines, fixed_dots, 0.14)
+    for x1, x2 in ((-4.45, -0.72), (0.72, 4.45)):
+        add_box((x1, x2, -3.40, -3.30, 0.0, 0.16),
+                fixed_lines, fixed_dots, 0.12)
+    for x1, x2 in ((-4.45, -4.35), (4.35, 4.45)):
+        add_box((x1, x2, -3.30, 3.30, 0.0, 0.18),
+                fixed_lines, fixed_dots, 0.12)
 
-    # 후면 고압 배전반 4면
-    for x1 in (-1.62, -0.84, -0.06, 0.72):
-        add_box((x1, x1 + 0.72, 1.30, 1.72, 0.0, 1.85),
-                fixed_lines, fixed_dots, 0.08)
-        add_front_details(x1, x1 + 0.72, 1.295, 1.85,
+    # 북측 고압·저압 배전반 5면과 넓은 전면 인출 통로.
+    for x1 in (-2.25, -1.39, -0.53, 0.33, 1.19):
+        add_box((x1, x1 + 0.80, 2.45, 3.26, 0.0, 1.95),
+                fixed_lines, fixed_dots, 0.085)
+        add_front_details(x1, x1 + 0.80, 2.445, 1.95,
                           fixed_lines, fixed_dots)
-    # 좌측 저압 분전반과 보호·제어반
-    for y1, y2, height in ((0.08, 0.68, 1.55), (-0.68, -0.12, 1.35)):
-        add_box((-2.08, -1.58, y1, y2, 0.0, height),
-                fixed_lines, fixed_dots, 0.075)
-        # 옆에서 보는 캐비닛도 모듈 경계와 손잡이가 드러나게 나눈다.
-        for y in np.linspace(y1 + 0.10, y2 - 0.10, 3):
-            fixed_lines.append(np.array(((-1.575, y, 0.12),
-                                         (-1.575, y, height - 0.10))))
-            add_box((-1.59, -1.565, y - 0.025, y + 0.025,
-                     height * 0.55, height * 0.62),
-                    fixed_lines, fixed_dots, 0.04)
+    # 서측 보호·제어반 2면. ROI와 출입 동선 사이를 비운다.
+    for y1, y2, height in ((0.55, 1.55, 1.60), (-1.55, -0.55, 1.45)):
+        add_box((-4.05, -3.35, y1, y2, 0.0, height),
+                fixed_lines, fixed_dots, 0.08)
+        for y in np.linspace(y1 + 0.16, y2 - 0.16, 3):
+            fixed_lines.append(np.array(((-3.345, y, 0.12),
+                                         (-3.345, y, height - 0.10))))
 
-    # 절연매트, U자 케이블 트렌치, 우측 서비스 기둥·제어함.
-    add_box((-1.55, 0.20, 1.08, 1.21, 0.008, 0.026),
-            fixed_lines, fixed_dots, 0.065)
-    for x1 in np.arange(-1.47, 0.16, 0.16):
-        fixed_lines.append(np.array(((x1, 1.085, 0.030),
-                                     (x1 + 0.08, 1.205, 0.030))))
-    add_trench_segment(-1.28, -1.16, -1.18, 0.98, fixed_lines, fixed_dots)
-    add_trench_segment(-1.16, 1.62, -1.18, -1.06, fixed_lines, fixed_dots)
-    add_trench_segment(1.50, 1.62, -1.06, 0.22, fixed_lines, fixed_dots)
-    add_box((1.92, 2.12, -0.20, 0.32, 0.0, 1.35),
-            fixed_lines, fixed_dots, 0.075)
-    add_box((1.72, 1.90, 0.18, 0.38, 0.62, 1.02), fixed_lines, fixed_dots, 0.07)
-    # 남쪽 출입구 문턱과 양쪽 문설주만 그려 중앙 진입 방향은 비운다.
-    add_box((-2.27, -0.58, -1.72, -1.64, 0.0, 0.10),
-            fixed_lines, fixed_dots, 0.08)
-    add_box((0.58, 2.27, -1.72, -1.64, 0.0, 0.10),
-            fixed_lines, fixed_dots, 0.08)
+    # 배전반 전면 케이블 트렌치와 회전체 제어반으로 향하는 한 갈래.
+    add_trench_segment(-2.45, 2.20, 2.08, 2.22, fixed_lines, fixed_dots)
+    add_trench_segment(2.06, 2.20, 0.20, 2.08, fixed_lines, fixed_dots)
+    add_box((3.25, 3.52, 0.22, 0.52, 0.0, 1.35),
+            fixed_lines, fixed_dots, 0.07)
+
+    # 배전반 상부 케이블 래더·버스덕트: 두 레일과 촘촘한 가로대.
+    for y in (3.02, 3.20):
+        fixed_lines.append(np.array(((-3.65, y, 2.18),
+                                     (3.55, y, 2.18))))
+    for x in np.arange(-3.65, 3.56, 0.22):
+        fixed_lines.append(np.array(((x, 3.02, 2.18), (x, 3.20, 2.18))))
+    for x in (2.65, 2.83):
+        fixed_lines.append(np.array(((x, 1.95, 2.18), (x, 3.20, 2.18))))
+    for y in np.arange(1.95, 3.21, 0.22):
+        fixed_lines.append(np.array(((2.65, y, 2.18), (2.83, y, 2.18))))
+
+    # 동측 급·배기 루버 두 면과 남측 배수 그레이팅.
+    for y1, y2 in ((0.85, 1.75), (-1.75, -0.85)):
+        add_box((4.22, 4.34, y1, y2, 0.35, 1.45),
+                fixed_lines, fixed_dots, 0.07)
+        for z in np.arange(0.45, 1.40, 0.11):
+            fixed_lines.append(np.array(((4.205, y1 + 0.08, z),
+                                         (4.205, y2 - 0.08, z))))
+    add_box((1.30, 2.10, -3.12, -2.72, 0.006, 0.028),
+            fixed_lines, fixed_dots, 0.055)
+    for x in np.arange(1.36, 2.08, 0.10):
+        fixed_lines.append(np.array(((x, -3.10, 0.032),
+                                     (x, -2.74, 0.032))))
 
     machine_lines, machine_dots = [], []
-    # 대형 1.4×0.9m 회전체의 베이스 모서리 0.3×0.3m만 ROI 우측 상단에
-    # 걸친다. 시연 선풍기는 그 겹침 좌표에 두며 설비 대부분은 ROI 밖이다.
-    add_box((0.42, 1.82, 0.42, 1.32, 0.05, 0.14),
-            machine_lines, machine_dots, 0.065)
-    theta = np.linspace(0.0, 2.0 * np.pi, 36, endpoint=False)
-    for x, radius in ((0.68, 0.22), (0.98, 0.25), (1.45, 0.39)):
+    # 대형 2.6×1.6m 회전체. 좌하단 0.3×0.3m만 ROI 우측 상단과 겹친다.
+    add_box((0.42, 3.02, 0.42, 2.02, 0.05, 0.16),
+            machine_lines, machine_dots, 0.07)
+    theta = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
+    # 좌측 모터 냉각팬 커버가 실제 선풍기 시연 겹침 위치다.
+    for x, radius in ((0.48, 0.30), (0.86, 0.34), (1.35, 0.36), (2.18, 0.62)):
         ring = np.column_stack((np.full_like(theta, x),
-                                0.87 + radius * np.cos(theta),
-                                0.50 + radius * np.sin(theta)))
+                                1.18 + radius * np.cos(theta),
+                                0.72 + radius * np.sin(theta)))
         machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
                              for i in range(len(ring)))
         machine_dots.extend(ring)
-    # 모터 축, 송풍기 보호망, 결합부와 제어함.
-    machine_lines.append(np.array(((0.56, 0.87, 0.50), (1.62, 0.87, 0.50))))
-    for radius in np.linspace(0.10, 0.37, 4):
-        ring = np.column_stack((np.full_like(theta, 1.45),
-                                0.87 + radius * np.cos(theta),
-                                0.50 + radius * np.sin(theta)))
+    machine_lines.append(np.array(((0.46, 1.18, 0.72),
+                                   (2.78, 1.18, 0.72))))
+    # 모터 냉각핀: 축 방향의 반복 링으로 산업용 모터 외피를 드러낸다.
+    for x in np.linspace(0.64, 1.42, 11):
+        ring = np.column_stack((np.full_like(theta, x),
+                                1.18 + 0.35 * np.cos(theta),
+                                0.72 + 0.35 * np.sin(theta)))
         machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
                              for i in range(len(ring)))
         machine_dots.extend(ring[::2])
-    add_box((1.62, 1.80, 0.28, 0.43, 0.12, 0.52),
-            machine_lines, machine_dots, 0.05)
+    # 결합부 보호망: 양쪽 링과 길이 방향 바를 결합한다.
+    guard_rings = []
+    for x in (1.50, 1.88):
+        ring = np.column_stack((np.full_like(theta, x),
+                                1.18 + 0.32 * np.cos(theta),
+                                0.72 + 0.32 * np.sin(theta)))
+        guard_rings.append(ring)
+        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                             for i in range(len(ring)))
+        machine_dots.extend(ring)
+    for i in range(0, len(theta), 4):
+        machine_lines.append(np.array((guard_rings[0][i], guard_rings[1][i])))
+    # 송풍기 케이싱 방사형 리브와 중심 허브.
+    hub = np.array((2.18, 1.18, 0.72))
+    for angle in theta[::4]:
+        rim = np.array((2.18, 1.18 + 0.58 * np.cos(angle),
+                        0.72 + 0.58 * np.sin(angle)))
+        machine_lines.append(np.array((hub, rim)))
+    for radius in np.linspace(0.14, 0.58, 5):
+        ring = np.column_stack((np.full_like(theta, 2.18),
+                                1.18 + radius * np.cos(theta),
+                                0.72 + radius * np.sin(theta)))
+        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                             for i in range(len(ring)))
+        machine_dots.extend(ring[::2])
+    # 베이스 크로스멤버와 네 모서리 앵커 풋.
+    for x1 in (0.62, 1.46, 2.30):
+        add_box((x1, x1 + 0.14, 0.50, 1.94, 0.16, 0.23),
+                machine_lines, machine_dots, 0.06)
+    for x, y in ((0.48, 0.48), (2.76, 0.48), (0.48, 1.76), (2.76, 1.76)):
+        add_box((x, x + 0.20, y, y + 0.20, 0.0, 0.12),
+                machine_lines, machine_dots, 0.05)
+    # 흡·배기 배관과 로컬 제어대.
+    for x1, x2, y, z in ((2.18, 3.35, 1.70, 1.30),
+                         (2.70, 3.55, 0.68, 0.82)):
+        machine_lines.append(np.array(((x1, y, z), (x2, y, z))))
+        for x in (x1 + 0.16, x2 - 0.16):
+            ring = np.column_stack((np.full_like(theta, x),
+                                    y + 0.12 * np.cos(theta),
+                                    z + 0.12 * np.sin(theta)))
+            machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                                 for i in range(len(ring)))
+            machine_dots.extend(ring[::2])
+    add_box((3.20, 3.48, 0.22, 0.50, 0.10, 0.95),
+            machine_lines, machine_dots, 0.06)
+
+    # 접지 동바는 등급색이 아닌 시설 식별용 저채도 황동색으로 별도 렌더링한다.
+    ground_lines = [np.array(((-4.18, -3.08, 0.20),
+                              (-4.18, 3.12, 0.20))),
+                    np.array(((-4.18, 3.12, 0.20),
+                              (3.95, 3.12, 0.20)))]
+    for target in ((-3.35, 1.05, 0.12), (-3.35, -1.05, 0.12),
+                   (-1.80, 2.45, 0.12), (0.42, 1.18, 0.12)):
+        ground_lines.append(np.array(((-4.18, target[1], 0.20), target)))
     return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
-            np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32))
+            np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32),
+            np.vstack(ground_lines))
 
 
 class Track3D(QtWidgets.QWidget):
@@ -1044,10 +1108,10 @@ class Track3D(QtWidgets.QWidget):
     def _build_gl(self, v):
         self.gl = gl.GLViewWidget()
         self.gl.setBackgroundColor(pg.mkColor(PANEL))
-        self.gl.setCameraPosition(distance=7.0, elevation=22, azimuth=48)
-        self._cam0 = dict(distance=7.0, elevation=22, azimuth=48)
+        self.gl.setCameraPosition(distance=11.0, elevation=30, azimuth=48)
+        self._cam0 = dict(distance=11.0, elevation=30, azimuth=48)
         g = gl.GLGridItem()
-        g.setSize(6, 5)
+        g.setSize(10, 8)
         g.setSpacing(0.5, 0.5)
         g.setColor(pg.mkColor(GRID))
         self.gl.addItem(g)
@@ -1070,7 +1134,8 @@ class Track3D(QtWidgets.QWidget):
                                               width=1.0, antialias=True))
         # ⚠ 실측이 아닌 데모 설비 배치. 남색으로 낮춰 원시 점군(청록)과
         #   경보 색(빨강·주황)을 가리지 않고, 카메라 복원처럼 보이지 않게 한다.
-        env_lines, env_dots, machine_lines, machine_dots = _facility_scene_geometry()
+        (env_lines, env_dots, machine_lines, machine_dots,
+         ground_lines) = _facility_scene_geometry()
         self.env_lines = gl.GLLinePlotItem(
             pos=env_lines, color=(0.10, 0.24, 0.38, 0.62), width=1.0,
             antialias=True, mode='lines')
@@ -1081,10 +1146,14 @@ class Track3D(QtWidgets.QWidget):
             antialias=True, mode='lines')
         self.machine_dots = gl.GLScatterPlotItem(
             pos=machine_dots, color=(0.38, 0.32, 0.72, 0.62), size=2.4)
+        self.ground_lines = gl.GLLinePlotItem(
+            pos=ground_lines, color=(0.55, 0.38, 0.10, 0.72), width=1.2,
+            antialias=True, mode='lines')
         self.gl.addItem(self.env_lines)
         self.gl.addItem(self.env_dots)
         self.gl.addItem(self.machine_lines)
         self.gl.addItem(self.machine_dots)
+        self.gl.addItem(self.ground_lines)
         # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
         body_unit, body_faces = _mannequin_mesh()
         body_unit = body_unit.copy()
