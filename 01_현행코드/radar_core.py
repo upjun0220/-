@@ -935,12 +935,16 @@ def _facility_scene_geometry():
         add_box((x1, x2, -3.30, 3.30, 0.0, 0.18),
                 fixed_lines, fixed_dots, 0.12)
 
-    # 북측 고압·저압 배전반 5면과 넓은 전면 인출 통로.
-    for x1 in (-2.25, -1.39, -0.53, 0.33, 1.19):
-        add_box((x1, x1 + 0.80, 2.45, 3.26, 0.0, 1.95),
+    # 북측 개방면을 변압기에 내주고 고압·저압 배전반 5면은 동측 벽으로 옮긴다.
+    for y1 in (-2.55, -1.69, -0.83, 0.03, 0.89):
+        add_box((3.35, 4.15, y1, y1 + 0.80, 0.0, 1.95),
                 fixed_lines, fixed_dots, 0.085)
-        add_front_details(x1, x1 + 0.80, 2.445, 1.95,
-                          fixed_lines, fixed_dots)
+        for z in (0.12, 0.62, 1.73):
+            fixed_lines.append(np.array(((3.345, y1 + 0.05, z),
+                                         (3.345, y1 + 0.75, z))))
+        for y in (y1 + 0.05, y1 + 0.75):
+            fixed_lines.append(np.array(((3.345, y, 0.10),
+                                         (3.345, y, 1.87))))
     # 서측 보호·제어반 2면. ROI와 출입 동선 사이를 비운다.
     for y1, y2, height in ((0.55, 1.55, 1.60), (-1.55, -0.55, 1.45)):
         add_box((-4.05, -3.35, y1, y2, 0.0, height),
@@ -949,11 +953,10 @@ def _facility_scene_geometry():
             fixed_lines.append(np.array(((-3.345, y, 0.12),
                                          (-3.345, y, height - 0.10))))
 
-    # 배전반 전면 케이블 트렌치와 변압기 단자함으로 향하는 한 갈래.
-    add_trench_segment(-2.45, 2.20, 2.08, 2.22, fixed_lines, fixed_dots)
-    add_trench_segment(2.06, 2.20, 0.20, 2.08, fixed_lines, fixed_dots)
-    add_box((3.25, 3.52, 0.22, 0.52, 0.0, 1.35),
-            fixed_lines, fixed_dots, 0.07)
+    # 동측 배전반 전면 트렌치와 변압기 단자함으로 향하는 한 갈래.
+    add_trench_segment(3.02, 3.16, -2.70, 2.18, fixed_lines, fixed_dots)
+    add_trench_segment(-1.10, 3.16, 2.04, 2.18, fixed_lines, fixed_dots)
+    add_trench_segment(-1.10, -0.96, 0.72, 2.04, fixed_lines, fixed_dots)
 
     # 배전반 상부 케이블 래더·버스덕트: 두 레일과 촘촘한 가로대.
     for y in (3.02, 3.20):
@@ -961,18 +964,18 @@ def _facility_scene_geometry():
                                      (3.55, y, 2.18))))
     for x in np.arange(-3.65, 3.56, 0.22):
         fixed_lines.append(np.array(((x, 3.02, 2.18), (x, 3.20, 2.18))))
-    for x in (2.65, 2.83):
-        fixed_lines.append(np.array(((x, 1.95, 2.18), (x, 3.20, 2.18))))
-    for y in np.arange(1.95, 3.21, 0.22):
-        fixed_lines.append(np.array(((2.65, y, 2.18), (2.83, y, 2.18))))
+    for x in (3.72, 3.90):
+        fixed_lines.append(np.array(((x, -2.75, 2.18), (x, 3.20, 2.18))))
+    for y in np.arange(-2.75, 3.21, 0.22):
+        fixed_lines.append(np.array(((3.72, y, 2.18), (3.90, y, 2.18))))
 
-    # 동측 급·배기 루버 두 면과 남측 배수 그레이팅.
-    for y1, y2 in ((0.85, 1.75), (-1.75, -0.85)):
-        add_box((4.22, 4.34, y1, y2, 0.35, 1.45),
+    # 후면 양끝 급·배기 루버와 남측 배수 그레이팅.
+    for x1, x2 in ((-3.85, -2.95), (2.45, 3.35)):
+        add_box((x1, x2, 3.18, 3.29, 0.35, 1.45),
                 fixed_lines, fixed_dots, 0.07)
         for z in np.arange(0.45, 1.40, 0.11):
-            fixed_lines.append(np.array(((4.205, y1 + 0.08, z),
-                                         (4.205, y2 - 0.08, z))))
+            fixed_lines.append(np.array(((x1 + 0.08, 3.175, z),
+                                         (x2 - 0.08, 3.175, z))))
     add_box((1.30, 2.10, -3.12, -2.72, 0.006, 0.028),
             fixed_lines, fixed_dots, 0.055)
     for x in np.arange(1.36, 2.08, 0.10):
@@ -980,12 +983,12 @@ def _facility_scene_geometry():
                                      (x, -2.74, 0.032))))
 
     machine_lines, machine_dots = [], []
-    # 대형 2.6×1.6m 건식 변압기. 기존 설비의 크기·위치와 ROI 겹침을 보존한다.
-    add_box((0.42, 3.02, 0.42, 2.02, 0.05, 0.16),
+    # 대형 2.6×1.6m 건식 변압기. 북측 개방면에서 ROI 상단과 일부만 겹친다.
+    add_box((-1.30, 1.30, 0.42, 2.02, 0.05, 0.16),
             machine_lines, machine_dots, 0.07)
     theta = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
     # 3상 몰드 코일: 수직 반복 링과 모선이 회전축이 아닌 변압기임을 드러낸다.
-    coil_centers = (1.02, 1.72, 2.42)
+    coil_centers = (-0.70, 0.0, 0.70)
     for cx in coil_centers:
         for z in np.linspace(0.48, 1.62, 12):
             ring = np.column_stack((cx + 0.27 * np.cos(theta),
@@ -1001,7 +1004,7 @@ def _facility_scene_geometry():
                                              1.28 + 0.27 * np.sin(angle), 1.62))))
     # 상·하부 철심 프레임, 절연 지지대와 상부 단자.
     for z1, z2 in ((0.27, 0.42), (1.66, 1.82)):
-        add_box((0.68, 2.76, 0.94, 1.62, z1, z2),
+        add_box((-1.04, 1.04, 0.94, 1.62, z1, z2),
                 machine_lines, machine_dots, 0.065)
     for cx in coil_centers:
         add_box((cx - 0.08, cx + 0.08, 1.16, 1.40, 0.16, 0.47),
@@ -1011,8 +1014,8 @@ def _facility_scene_geometry():
     machine_lines.extend(np.array(((coil_centers[i], 1.28, 1.96),
                                    (coil_centers[i + 1], 1.28, 1.96)))
                          for i in range(2))
-    # 전면 강제냉각 팬. 첫 팬은 실제 선풍기가 놓일 ROI 우측 모서리와 겹친다.
-    for cx in (0.62, 1.28, 1.94, 2.60):
+    # 우측 전면 강제냉각 팬. 실제 선풍기 위치가 이 설비 부분과 겹치도록 보인다.
+    for cx in (0.20, 0.65, 1.10):
         center = np.array((cx, 0.49, 0.42))
         for radius in (0.10, 0.23):
             ring = np.column_stack((cx + radius * np.cos(theta),
@@ -1025,11 +1028,19 @@ def _facility_scene_geometry():
             rim = np.array((cx + 0.22 * np.cos(angle), 0.49,
                             0.42 + 0.22 * np.sin(angle)))
             machine_lines.append(np.array((center, rim)))
-    # 우측 단자함은 기존 로컬 제어대 위치를 유지한다.
-    add_box((2.72, 3.00, 0.72, 1.84, 0.22, 1.42),
+    # 좌측 단자함과 우측 팬을 분리해 정지형 이상의 위치 문맥을 읽게 한다.
+    add_box((-1.28, -0.45, 0.72, 1.84, 0.22, 1.42),
             machine_lines, machine_dots, 0.06)
-    add_front_details(2.72, 3.00, 0.715, 1.42,
+    add_front_details(-1.28, -0.45, 0.715, 1.42,
                       machine_lines, machine_dots)
+
+    # 표시 전용 관심영역. 판정 경로로 되먹이지 않으며 사이에 중립 완충부를 둔다.
+    electrical_zone = np.array(((-0.72, 0.12, 0.045), (-0.12, 0.12, 0.045),
+                                (-0.12, 0.72, 0.045), (-0.72, 0.72, 0.045),
+                                (-0.72, 0.12, 0.045)), dtype=np.float32)
+    fan_zone = np.array(((0.12, 0.12, 0.045), (0.72, 0.12, 0.045),
+                         (0.72, 0.72, 0.045), (0.12, 0.72, 0.045),
+                         (0.12, 0.12, 0.045)), dtype=np.float32)
 
     # 접지 동바는 등급색이 아닌 시설 식별용 저채도 황동색으로 별도 렌더링한다.
     ground_lines = [np.array(((-4.18, -3.08, 0.20),
@@ -1037,11 +1048,11 @@ def _facility_scene_geometry():
                     np.array(((-4.18, 3.12, 0.20),
                               (3.95, 3.12, 0.20)))]
     for target in ((-3.35, 1.05, 0.12), (-3.35, -1.05, 0.12),
-                   (-1.80, 2.45, 0.12), (0.42, 1.18, 0.12)):
+                   (3.35, -1.25, 0.12), (-1.30, 1.18, 0.12)):
         ground_lines.append(np.array(((-4.18, target[1], 0.20), target)))
     return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
             np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32),
-            np.vstack(ground_lines))
+            np.vstack(ground_lines), electrical_zone, fan_zone)
 
 
 class Track3D(QtWidgets.QWidget):
@@ -1118,7 +1129,7 @@ class Track3D(QtWidgets.QWidget):
         # ⚠ 실측이 아닌 데모 설비 배치. 남색으로 낮춰 원시 점군(청록)과
         #   경보 색(빨강·주황)을 가리지 않고, 카메라 복원처럼 보이지 않게 한다.
         (env_lines, env_dots, machine_lines, machine_dots,
-         ground_lines) = _facility_scene_geometry()
+         ground_lines, electrical_zone, fan_zone) = _facility_scene_geometry()
         self.env_lines = gl.GLLinePlotItem(
             pos=env_lines, color=(0.10, 0.24, 0.38, 0.62), width=1.0,
             antialias=True, mode='lines')
@@ -1132,11 +1143,19 @@ class Track3D(QtWidgets.QWidget):
         self.ground_lines = gl.GLLinePlotItem(
             pos=ground_lines, color=(0.55, 0.38, 0.10, 0.72), width=1.2,
             antialias=True, mode='lines')
+        self.electrical_zone = gl.GLLinePlotItem(
+            pos=electrical_zone, color=(0.96, 0.62, 0.04, 0.92), width=2.3,
+            antialias=True)
+        self.fan_zone = gl.GLLinePlotItem(
+            pos=fan_zone, color=(0.66, 0.52, 0.98, 0.92), width=2.3,
+            antialias=True)
         self.gl.addItem(self.env_lines)
         self.gl.addItem(self.env_dots)
         self.gl.addItem(self.machine_lines)
         self.gl.addItem(self.machine_dots)
         self.gl.addItem(self.ground_lines)
+        self.gl.addItem(self.electrical_zone)
+        self.gl.addItem(self.fan_zone)
         # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
         body_unit, body_faces = _mannequin_mesh()
         body_unit = body_unit.copy()
