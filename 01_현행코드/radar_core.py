@@ -57,6 +57,7 @@ import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
+import facility as fac
 from radar_common import (
     DATA_PORT, CTRL_PORT, HELLO_SEC, LINK_TIMEOUT, SCHEMA_VERSION,
     CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET,
@@ -616,6 +617,32 @@ def stick_segments(center, axis, length, right, spread=1.0):
 
 
 @lru_cache(maxsize=1)
+def _facility_reference_lines():
+    """facility.py 의 벽·설비 윤곽을 레이더 로컬 좌표(cx, cz)로 옮긴다.
+
+    측정값이 아니라 도면상 '알려진 고정 사실'이므로 점군과 다른 옅은 색으로
+    그린다 — 센서가 감지한 게 아니라는 걸 형태로 구분한다.
+    RADAR_ZONE 에 설치된 레이더가 없으면 빈 배열을 돌려준다.
+    """
+    r = fac.RADARS.get(RADAR_ZONE)
+    if not r:
+        return np.zeros((0, 3), dtype=np.float32)
+    rx, ry = r['pos']
+    segs = []
+    for x1, y1, x2, y2 in fac.WALLS:
+        segs.append((x1 - rx, y1 - ry, 0.006))
+        segs.append((x2 - rx, y2 - ry, 0.006))
+    for x, y, w, h in fac.EQUIPMENT:
+        corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+        for i in range(4):
+            x1, y1 = corners[i]
+            x2, y2 = corners[(i + 1) % 4]
+            segs.append((x1 - rx, y1 - ry, 0.006))
+            segs.append((x2 - rx, y2 - ry, 0.006))
+    return np.asarray(segs, dtype=np.float32)
+
+
+@lru_cache(maxsize=1)
 def _mannequin_mesh():
     """리깅으로 정자세를 만든 일체형 CC0 인체 OBJ를 정규화한다."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -941,6 +968,14 @@ class Track3D(QtWidgets.QWidget):
                                     np.full(48, h)])
             self.gl.addItem(gl.GLLinePlotItem(pos=ring, color=(0.13, 0.2, 0.3, 0.55),
                                               width=1.0, antialias=True))
+        # 시설 참조 지오메트리(벽·설비 윤곽) — 측정이 아니라 도면상 고정 사실이므로
+        # 점군·인체 도식과 겹치지 않는 옅은 회색, 라벨 없음으로 구분한다.
+        # facility.py 는 데모 좌표라 부스 실물 프레임(1.44m) 안에는 거의 안 잡힌다 —
+        # 실제 현장 도면으로 교체되면 그 배치가 그대로 여기 반영된다.
+        ref = _facility_reference_lines()
+        if len(ref):
+            self.gl.addItem(gl.GLLinePlotItem(pos=ref, color=(0.39, 0.45, 0.54, 0.4),
+                                              width=1.0, antialias=True, mode='lines'))
         # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
         body_unit, body_faces = _mannequin_mesh()
         body_unit = body_unit.copy()

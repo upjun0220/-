@@ -10,7 +10,15 @@
       "PowerShell(python scripts\\\\validate_handoff.py; echo \"handoff exit=$LASTEXITCODE\"; python scripts\\\\validate_ai_bridge.py; echo \"ai_bridge exit=$LASTEXITCODE\")",
       "PowerShell(python scripts\\\\validate_ai_bridge.py; echo \"exit=$LASTEXITCODE\")",
       "Bash(xargs ls -la)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "PowerShell(py *)",
+      "PowerShell(Stop-Process *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell($env:QT_QPA_PLATFORM='offscreen'; py 01_현행코드\\\\테스트_레이아웃_검증.py; echo \"layout exit=$LASTEXITCODE\")",
+      "PowerShell($env:QT_QPA_PLATFORM='offscreen'; py 01_현행코드\\\\테스트_실데이터_재생.py; echo \"replay exit=$LASTEXITCODE\")",
+      "PowerShell($env:QT_QPA_PLATFORM='offscreen'; py 01_현행코드\\\\테스트_평면도_경보흐름.py; echo \"flow exit=$LASTEXITCODE\")",
+      "Read(//c//**)",
+      "Read(//c/Users/**)"
     ],
     "deny": [
       "PowerShell(git push*)",
