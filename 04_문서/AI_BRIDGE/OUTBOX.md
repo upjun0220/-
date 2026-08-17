@@ -41,3 +41,13 @@ Codex는 규칙 문서 수정권이 없으므로 `AGENTS.md` 및 필요한 스�
 사용자 결정(2026-08-17): 감전·협착·과전류·전압강하 4종은 데모·시뮬·jsonl 어디에도 재현 사례가 없어
 렌더링 검증이 안 됐다. 발표·문서에서 "7종 지원" 대신 "낙상·정지형·진동 3종 실측 검증"으로 표현 변경.
 재현 도구는 만들지 않는다. README/발표자료 수정은 Cowork 담당.
+
+### OUT-010  외부 CLAUDE.md(andrej-karpathy-skills) 반영 제안
+- From: Claude Code
+- Type: 판단사항
+- Needs: 결정
+사용자 요청: `https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md`
+내용을 현재 `CLAUDE.md`에 반영. 그 문서는 "가정 금지·최소 변경·목표 기반 검증"을 다루는 범용 코딩
+지침으로, 이 프로젝트 `CLAUDE.md` §9(필요한 최소만, 추측 기반 추상화 금지) 및 설치된 `ponytail`
+플러그인과 상당 부분 겹친다. §10에 따라 Claude Code는 `CLAUDE.md`를 직접 고치지 않는다.
+Cowork가 §9와 중복 없이 반영할지, 폐기할지 결정 바람.
