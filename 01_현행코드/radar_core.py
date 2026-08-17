@@ -871,7 +871,7 @@ class SopEngine(QtCore.QObject):
 # 4. 3D 포인트 클라우드 — 화면의 메인
 # ══════════════════════════════════════════════════════════════════════
 def _facility_scene_geometry():
-    """데모 변전실과 회전체 설비를 점군·와이어프레임으로 만든다.
+    """데모 변전실과 건식 변압기를 점군·와이어프레임으로 만든다.
 
     실측 점군이 아니라 facility.py와 같은 '시설 배치 시각화'다.
     판정·자세 추정에는 절대 사용하지 않는다.
@@ -949,7 +949,7 @@ def _facility_scene_geometry():
             fixed_lines.append(np.array(((-3.345, y, 0.12),
                                          (-3.345, y, height - 0.10))))
 
-    # 배전반 전면 케이블 트렌치와 회전체 제어반으로 향하는 한 갈래.
+    # 배전반 전면 케이블 트렌치와 변압기 단자함으로 향하는 한 갈래.
     add_trench_segment(-2.45, 2.20, 2.08, 2.22, fixed_lines, fixed_dots)
     add_trench_segment(2.06, 2.20, 0.20, 2.08, fixed_lines, fixed_dots)
     add_box((3.25, 3.52, 0.22, 0.52, 0.0, 1.35),
@@ -980,73 +980,56 @@ def _facility_scene_geometry():
                                      (x, -2.74, 0.032))))
 
     machine_lines, machine_dots = [], []
-    # 대형 2.6×1.6m 회전체. 좌하단 0.3×0.3m만 ROI 우측 상단과 겹친다.
+    # 대형 2.6×1.6m 건식 변압기. 기존 설비의 크기·위치와 ROI 겹침을 보존한다.
     add_box((0.42, 3.02, 0.42, 2.02, 0.05, 0.16),
             machine_lines, machine_dots, 0.07)
     theta = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
-    # 좌측 모터 냉각팬 커버가 실제 선풍기 시연 겹침 위치다.
-    for x, radius in ((0.48, 0.30), (0.86, 0.34), (1.35, 0.36), (2.18, 0.62)):
-        ring = np.column_stack((np.full_like(theta, x),
-                                1.18 + radius * np.cos(theta),
-                                0.72 + radius * np.sin(theta)))
-        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
-                             for i in range(len(ring)))
-        machine_dots.extend(ring)
-    machine_lines.append(np.array(((0.46, 1.18, 0.72),
-                                   (2.78, 1.18, 0.72))))
-    # 모터 냉각핀: 축 방향의 반복 링으로 산업용 모터 외피를 드러낸다.
-    for x in np.linspace(0.64, 1.42, 11):
-        ring = np.column_stack((np.full_like(theta, x),
-                                1.18 + 0.35 * np.cos(theta),
-                                0.72 + 0.35 * np.sin(theta)))
-        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
-                             for i in range(len(ring)))
-        machine_dots.extend(ring[::2])
-    # 결합부 보호망: 양쪽 링과 길이 방향 바를 결합한다.
-    guard_rings = []
-    for x in (1.50, 1.88):
-        ring = np.column_stack((np.full_like(theta, x),
-                                1.18 + 0.32 * np.cos(theta),
-                                0.72 + 0.32 * np.sin(theta)))
-        guard_rings.append(ring)
-        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
-                             for i in range(len(ring)))
-        machine_dots.extend(ring)
-    for i in range(0, len(theta), 4):
-        machine_lines.append(np.array((guard_rings[0][i], guard_rings[1][i])))
-    # 송풍기 케이싱 방사형 리브와 중심 허브.
-    hub = np.array((2.18, 1.18, 0.72))
-    for angle in theta[::4]:
-        rim = np.array((2.18, 1.18 + 0.58 * np.cos(angle),
-                        0.72 + 0.58 * np.sin(angle)))
-        machine_lines.append(np.array((hub, rim)))
-    for radius in np.linspace(0.14, 0.58, 5):
-        ring = np.column_stack((np.full_like(theta, 2.18),
-                                1.18 + radius * np.cos(theta),
-                                0.72 + radius * np.sin(theta)))
-        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
-                             for i in range(len(ring)))
-        machine_dots.extend(ring[::2])
-    # 베이스 크로스멤버와 네 모서리 앵커 풋.
-    for x1 in (0.62, 1.46, 2.30):
-        add_box((x1, x1 + 0.14, 0.50, 1.94, 0.16, 0.23),
-                machine_lines, machine_dots, 0.06)
-    for x, y in ((0.48, 0.48), (2.76, 0.48), (0.48, 1.76), (2.76, 1.76)):
-        add_box((x, x + 0.20, y, y + 0.20, 0.0, 0.12),
-                machine_lines, machine_dots, 0.05)
-    # 흡·배기 배관과 로컬 제어대.
-    for x1, x2, y, z in ((2.18, 3.35, 1.70, 1.30),
-                         (2.70, 3.55, 0.68, 0.82)):
-        machine_lines.append(np.array(((x1, y, z), (x2, y, z))))
-        for x in (x1 + 0.16, x2 - 0.16):
-            ring = np.column_stack((np.full_like(theta, x),
-                                    y + 0.12 * np.cos(theta),
-                                    z + 0.12 * np.sin(theta)))
+    # 3상 몰드 코일: 수직 반복 링과 모선이 회전축이 아닌 변압기임을 드러낸다.
+    coil_centers = (1.02, 1.72, 2.42)
+    for cx in coil_centers:
+        for z in np.linspace(0.48, 1.62, 12):
+            ring = np.column_stack((cx + 0.27 * np.cos(theta),
+                                    1.28 + 0.27 * np.sin(theta),
+                                    np.full_like(theta, z)))
             machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
                                  for i in range(len(ring)))
             machine_dots.extend(ring[::2])
-    add_box((3.20, 3.48, 0.22, 0.50, 0.10, 0.95),
+        for angle in theta[::8]:
+            machine_lines.append(np.array(((cx + 0.27 * np.cos(angle),
+                                             1.28 + 0.27 * np.sin(angle), 0.48),
+                                            (cx + 0.27 * np.cos(angle),
+                                             1.28 + 0.27 * np.sin(angle), 1.62))))
+    # 상·하부 철심 프레임, 절연 지지대와 상부 단자.
+    for z1, z2 in ((0.27, 0.42), (1.66, 1.82)):
+        add_box((0.68, 2.76, 0.94, 1.62, z1, z2),
+                machine_lines, machine_dots, 0.065)
+    for cx in coil_centers:
+        add_box((cx - 0.08, cx + 0.08, 1.16, 1.40, 0.16, 0.47),
+                machine_lines, machine_dots, 0.05)
+        add_box((cx - 0.07, cx + 0.07, 1.19, 1.37, 1.82, 2.02),
+                machine_lines, machine_dots, 0.045)
+    machine_lines.extend(np.array(((coil_centers[i], 1.28, 1.96),
+                                   (coil_centers[i + 1], 1.28, 1.96)))
+                         for i in range(2))
+    # 전면 강제냉각 팬. 첫 팬은 실제 선풍기가 놓일 ROI 우측 모서리와 겹친다.
+    for cx in (0.62, 1.28, 1.94, 2.60):
+        center = np.array((cx, 0.49, 0.42))
+        for radius in (0.10, 0.23):
+            ring = np.column_stack((cx + radius * np.cos(theta),
+                                    np.full_like(theta, 0.49),
+                                    0.42 + radius * np.sin(theta)))
+            machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                                 for i in range(len(ring)))
+            machine_dots.extend(ring[::2])
+        for angle in theta[::8]:
+            rim = np.array((cx + 0.22 * np.cos(angle), 0.49,
+                            0.42 + 0.22 * np.sin(angle)))
+            machine_lines.append(np.array((center, rim)))
+    # 우측 단자함은 기존 로컬 제어대 위치를 유지한다.
+    add_box((2.72, 3.00, 0.72, 1.84, 0.22, 1.42),
             machine_lines, machine_dots, 0.06)
+    add_front_details(2.72, 3.00, 0.715, 1.42,
+                      machine_lines, machine_dots)
 
     # 접지 동바는 등급색이 아닌 시설 식별용 저채도 황동색으로 별도 렌더링한다.
     ground_lines = [np.array(((-4.18, -3.08, 0.20),
