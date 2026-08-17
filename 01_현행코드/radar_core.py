@@ -1108,8 +1108,8 @@ class Track3D(QtWidgets.QWidget):
     def _build_gl(self, v):
         self.gl = gl.GLViewWidget()
         self.gl.setBackgroundColor(pg.mkColor(PANEL))
-        self.gl.setCameraPosition(distance=11.0, elevation=30, azimuth=48)
-        self._cam0 = dict(distance=11.0, elevation=30, azimuth=48)
+        self.gl.setCameraPosition(distance=19.0, elevation=30, azimuth=48)
+        self._cam0 = dict(distance=19.0, elevation=30, azimuth=48)
         g = gl.GLGridItem()
         g.setSize(10, 8)
         g.setSpacing(0.5, 0.5)
