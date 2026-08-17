@@ -1,0 +1,8290 @@
+{
+  "version": "1.0.0",
+  "gitCommitHash": "8f52fad72ba78a8e56426b5b0f8236e0a19c964c",
+  "generatedAt": "2026-08-17T15:05:01.708Z",
+  "files": {
+    ".agents/skills/jetson-deploy/SKILL.md": {
+      "filePath": ".agents/skills/jetson-deploy/SKILL.md",
+      "contentHash": "7bc1f12da9178bd3db572880746a124c6d8ebdc3e2405454a127e52c8c71b165",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 70,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/next-task/SKILL.md": {
+      "filePath": ".agents/skills/next-task/SKILL.md",
+      "contentHash": "acffe1f76aefc3110d87872beff4e288c7bf31b11946d023278f3c48c9b5daf6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 65,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/radar-guard-hmi/SKILL.md": {
+      "filePath": ".agents/skills/radar-guard-hmi/SKILL.md",
+      "contentHash": "e4500f2e473f88551f5bb9fd9d91fa00866323305f4d98950a534ef8399510d6",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 106,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/radar-guard-hmi/references/ui-design-system.md": {
+      "filePath": ".agents/skills/radar-guard-hmi/references/ui-design-system.md",
+      "contentHash": "ec173b49fe52c9ae52ca7e7ac0791e982618f29e65dddf73942a6c8facc7bfd2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 162,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/readme-log/SKILL.md": {
+      "filePath": ".agents/skills/readme-log/SKILL.md",
+      "contentHash": "ce0731664a2e9ac6dd69a4f98a0fbb99455acf109d662e1cda63267e864a7fd9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 65,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/replay-regression/SKILL.md": {
+      "filePath": ".agents/skills/replay-regression/SKILL.md",
+      "contentHash": "5b7011c10864ee90afd279d82ce442146b12afced77f9425e0cac44a9d55b6ed",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 63,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/session-end/SKILL.md": {
+      "filePath": ".agents/skills/session-end/SKILL.md",
+      "contentHash": "cf5f7e5dffd95950854a6f911261dfdf7d1260dd45445dff6576f2c95d037d82",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 103,
+      "hasStructuralAnalysis": true
+    },
+    ".agents/skills/ui-verify/SKILL.md": {
+      "filePath": ".agents/skills/ui-verify/SKILL.md",
+      "contentHash": "e043632e626266d8b0e0fad16ca70c8dbc7a357f1361059ef6332cbd5d710332",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 80,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/.headroom_wrap_marker.json": {
+      "filePath": ".claude/.headroom_wrap_marker.json",
+      "contentHash": "55de9c7be79ea7d9ae9409ef0c5beeee90a5441a7e60dfa091d32ea6620da5ba",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 1,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/settings.local.json": {
+      "filePath": ".claude/settings.local.json",
+      "contentHash": "0360843ac1c3dc0fcfb30e46d582a1ae415d5a85f6c2f9e94671ccc69d100528",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 58,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/jetson-deploy/SKILL.md": {
+      "filePath": ".claude/skills/jetson-deploy/SKILL.md",
+      "contentHash": "7bc1f12da9178bd3db572880746a124c6d8ebdc3e2405454a127e52c8c71b165",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 70,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/next-task/SKILL.md": {
+      "filePath": ".claude/skills/next-task/SKILL.md",
+      "contentHash": "50673492d2fe87eb043f94f6b633d1756c529b891d15d4287c913ade0c242890",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 65,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/radar-guard-hmi/SKILL.md": {
+      "filePath": ".claude/skills/radar-guard-hmi/SKILL.md",
+      "contentHash": "cb9a99469b431589b898f44f9dc7108cfc955874da546c0d8419c3fe9380f507",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 106,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/radar-guard-hmi/references/ui-design-system.md": {
+      "filePath": ".claude/skills/radar-guard-hmi/references/ui-design-system.md",
+      "contentHash": "ec173b49fe52c9ae52ca7e7ac0791e982618f29e65dddf73942a6c8facc7bfd2",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 162,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/readme-log/SKILL.md": {
+      "filePath": ".claude/skills/readme-log/SKILL.md",
+      "contentHash": "6c4da01e9ad7a50bd1cc878925f40354d876561a1770616e73195d63bc4165b1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 65,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/replay-regression/SKILL.md": {
+      "filePath": ".claude/skills/replay-regression/SKILL.md",
+      "contentHash": "5b7011c10864ee90afd279d82ce442146b12afced77f9425e0cac44a9d55b6ed",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 63,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/session-end/SKILL.md": {
+      "filePath": ".claude/skills/session-end/SKILL.md",
+      "contentHash": "0f9d50adfc8c21120ad23ca90b40679160fd66a6f189b8fc08cbc76580b4c259",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 103,
+      "hasStructuralAnalysis": true
+    },
+    ".claude/skills/ui-verify/SKILL.md": {
+      "filePath": ".claude/skills/ui-verify/SKILL.md",
+      "contentHash": "e043632e626266d8b0e0fad16ca70c8dbc7a357f1361059ef6332cbd5d710332",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 80,
+      "hasStructuralAnalysis": true
+    },
+    ".gitattributes": {
+      "filePath": ".gitattributes",
+      "contentHash": "5d9641a822c472560dffc48fd8185678d05b958b5fcc605448a11ae80f036370",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 2,
+      "hasStructuralAnalysis": false
+    },
+    ".githooks/pre-commit": {
+      "filePath": ".githooks/pre-commit",
+      "contentHash": "0c56359411fd59bef250ae13f823964f81cfad9b6304306543ad834ff1665b68",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 73,
+      "hasStructuralAnalysis": false
+    },
+    ".ua/.understandignore": {
+      "filePath": ".ua/.understandignore",
+      "contentHash": "07a7f754abfd0b9dc2e55a04a14f821c1b39c4d4ccec46c7ff5f97f799f16a05",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 106,
+      "hasStructuralAnalysis": false
+    },
+    "01_현행코드/console_ui.py": {
+      "filePath": "01_현행코드/console_ui.py",
+      "contentHash": "d46a89680eb52e89e14c46728968a8feabb53411410e4028a67c1d77ae5d81a9",
+      "functions": [
+        {
+          "name": "resolve_font",
+          "params": [],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "f",
+          "params": [
+            "size",
+            "bold"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "lb",
+          "params": [
+            "text",
+            "size",
+            "color",
+            "bold",
+            "wrap",
+            "align",
+            "spacing"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "eyebrow",
+          "params": [
+            "text"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "card",
+          "params": [
+            "bg",
+            "border",
+            "radius"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "vbox",
+          "params": [
+            "w",
+            "m",
+            "s"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "hbox",
+          "params": [
+            "w",
+            "m",
+            "s"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "button",
+          "params": [
+            "text",
+            "kind",
+            "size",
+            "height",
+            "width"
+          ],
+          "exported": true,
+          "lineCount": 33
+        },
+        {
+          "name": "styled_combo",
+          "params": [
+            "items"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "styled_line",
+          "params": [
+            "placeholder"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "scrollable",
+          "params": [
+            "inner",
+            "hbar"
+          ],
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "as_page",
+          "params": [
+            "w"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "apply_dark_palette",
+          "params": [
+            "app"
+          ],
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "build_app",
+          "params": [
+            "argv"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 6
+        }
+      ],
+      "classes": [
+        {
+          "name": "StatusDot",
+          "methods": [
+            "__init__",
+            "set",
+            "paintEvent"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "StatusCard",
+          "methods": [
+            "__init__",
+            "_paint",
+            "set"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 39
+        },
+        {
+          "name": "MetricTile",
+          "methods": [
+            "__init__",
+            "_caption",
+            "set"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 38
+        },
+        {
+          "name": "NavButton",
+          "methods": [
+            "__init__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "SideView",
+          "methods": [
+            "__init__",
+            "_ref",
+            "render"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 69
+        },
+        {
+          "name": "SceneView",
+          "methods": [
+            "__init__",
+            "resizeEvent",
+            "set_mode",
+            "mode",
+            "has_3d",
+            "set_stale",
+            "push",
+            "redraw",
+            "reset_camera"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 80
+        },
+        {
+          "name": "ZoneStrip",
+          "methods": [
+            "__init__",
+            "update_state",
+            "paintEvent"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 73
+        },
+        {
+          "name": "FacilityPlan",
+          "methods": [
+            "__init__",
+            "set_zone",
+            "set_worker",
+            "set_blink",
+            "_fit",
+            "_pt",
+            "_rect",
+            "_zone_at",
+            "mouseMoveEvent",
+            "leaveEvent",
+            "mousePressEvent",
+            "paintEvent",
+            "_draw_evac",
+            "_draw_radars",
+            "_draw_labels",
+            "_draw_worker"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 248
+        },
+        {
+          "name": "Timeline",
+          "methods": [
+            "__init__",
+            "_flip",
+            "add"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 77
+        },
+        {
+          "name": "SopView",
+          "methods": [
+            "__init__",
+            "show_for",
+            "set_status",
+            "set_sources"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 76
+        },
+        {
+          "name": "EvidenceView",
+          "methods": [
+            "__init__",
+            "set_event"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 82
+        },
+        {
+          "name": "ActionDrawer",
+          "methods": [
+            "__init__",
+            "set_extra_width",
+            "open_at",
+            "close_drawer",
+            "toggle",
+            "is_open",
+            "_animate"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 87
+        },
+        {
+          "name": "DashboardPage",
+          "methods": [
+            "__init__",
+            "_who_changed",
+            "_enter",
+            "on_packet",
+            "push",
+            "set_events",
+            "set_blink",
+            "update_zones",
+            "set_alarm_count",
+            "refresh"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 259
+        },
+        {
+          "name": "MonitorPage",
+          "methods": [
+            "__init__",
+            "set_pose_text",
+            "fit_legend",
+            "resizeEvent",
+            "_drawer_ack",
+            "_set_mode",
+            "_sync_seg"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 333
+        },
+        {
+          "name": "EventLogPage",
+          "methods": [
+            "__init__",
+            "add",
+            "mark_resolved",
+            "_export"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "SopGuidePage",
+          "methods": [
+            "__init__",
+            "_pick"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 63
+        },
+        {
+          "name": "AiIconButton",
+          "methods": [
+            "__init__",
+            "paintEvent"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 34
+        },
+        {
+          "name": "AssistantDrawer",
+          "methods": [
+            "__init__",
+            "open_drawer",
+            "close_drawer",
+            "closeEvent",
+            "_send",
+            "ask",
+            "_bubble",
+            "_is_smalltalk",
+            "_local_answer",
+            "_work",
+            "_event_for",
+            "_show_answer",
+            "_show_error"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 256
+        },
+        {
+          "name": "SideNav",
+          "methods": [
+            "__init__",
+            "select",
+            "set_user",
+            "set_locked"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "SopEngineV2",
+          "methods": [
+            "request",
+            "_search",
+            "_work_v2",
+            "_work_body",
+            "build_facts",
+            "_fact_block",
+            "_gen_facts",
+            "prewarm"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 168
+        },
+        {
+          "name": "ConsoleV2",
+          "methods": [
+            "__init__",
+            "resizeEvent",
+            "showEvent",
+            "_apply_shell_geometry",
+            "_toggle_nav",
+            "_nav_from_overlay",
+            "_on_action_drawer",
+            "_open_assistant",
+            "_on_assistant_visible",
+            "_navigate",
+            "_set_link_label",
+            "_auto_nav",
+            "cur_sev",
+            "_refresh_scene",
+            "_lock_nav",
+            "on_link",
+            "_set_occupancy",
+            "on_packet",
+            "_show_pre",
+            "_drain_logs",
+            "_pump_state",
+            "_update_tiles",
+            "_stale_tiles",
+            "on_event",
+            "_set_auto_action",
+            "do_ack",
+            "do_resolve",
+            "clear_alarm",
+            "_show_pwr",
+            "do_restore",
+            "begin_session",
+            "enter_console",
+            "go_prepare",
+            "_tick_summary",
+            "tick_ui",
+            "_hero",
+            "closeEvent"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 820
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "html",
+          "specifiers": [
+            "html_escape"
+          ]
+        },
+        {
+          "source": "PyQt5",
+          "specifiers": [
+            "QtCore",
+            "QtGui",
+            "QtWidgets"
+          ]
+        },
+        {
+          "source": "pyqtgraph",
+          "specifiers": [
+            "pg"
+          ]
+        },
+        {
+          "source": "facility",
+          "specifiers": [
+            "fac"
+          ]
+        },
+        {
+          "source": "radar_core",
+          "specifiers": [
+            "core"
+          ]
+        },
+        {
+          "source": "radar_core",
+          "specifiers": [
+            "RadarLink",
+            "INSTANT_ACTION",
+            "PowerPopup",
+            "RestorePopup",
+            "GraphPopup",
+            "SettingsPopup",
+            "RAG_OK",
+            "EMBED_MODEL",
+            "HAS_GL",
+            "ST_NORMAL",
+            "ST_UNACK",
+            "ST_ACK"
+          ]
+        },
+        {
+          "source": "radar_common",
+          "specifiers": [
+            "LINK_TIMEOUT",
+            "CMD_RESOLVE",
+            "CMD_RESTORE",
+            "CMD_ENTER",
+            "CMD_EXIT",
+            "CEILING_H",
+            "PH_READY",
+            "PH_LIVE",
+            "PHASE_KO",
+            "parse_pre_alert",
+            "EVENT_KO",
+            "ZONE_IDS",
+            "ZONE_KO",
+            "RADAR_ZONE",
+            "ZONE_DEVICE",
+            "zone_equipped",
+            "SEV_KO",
+            "GATE_META",
+            "REJECT_KO",
+            "EVIDENCE_KO",
+            "sev_color",
+            "event_sev",
+            "BG",
+            "PANEL",
+            "PANEL_HI",
+            "PANEL_LO",
+            "EDGE",
+            "TXT",
+            "DIM",
+            "FAINT",
+            "CYAN",
+            "GREEN",
+            "AMBER",
+            "RED",
+            "GRID",
+            "BG_ALERT",
+            "BG_OK",
+            "BG_WARN",
+            "BG_SEL",
+            "SEV_BG",
+            "SEV_BG_HI",
+            "RADIUS",
+            "RADIUS_SM"
+          ]
+        }
+      ],
+      "exports": [
+        "resolve_font",
+        "f",
+        "lb",
+        "eyebrow",
+        "card",
+        "vbox",
+        "hbox",
+        "button",
+        "styled_combo",
+        "styled_line",
+        "scrollable",
+        "as_page",
+        "apply_dark_palette",
+        "StatusDot",
+        "StatusCard",
+        "MetricTile",
+        "NavButton",
+        "SideView",
+        "SceneView",
+        "ZoneStrip",
+        "FacilityPlan",
+        "Timeline",
+        "SopView",
+        "EvidenceView",
+        "ActionDrawer",
+        "DashboardPage",
+        "MonitorPage",
+        "EventLogPage",
+        "SopGuidePage",
+        "AiIconButton",
+        "AssistantDrawer",
+        "SideNav",
+        "SopEngineV2",
+        "ConsoleV2",
+        "build_app",
+        "main"
+      ],
+      "totalLines": 3433,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/facility.py": {
+      "filePath": "01_현행코드/facility.py",
+      "contentHash": "9effb67a69a1d7781a04c118e2fe51340362834770242df3ad96d844c3545b29",
+      "functions": [
+        {
+          "name": "to_plan",
+          "params": [
+            "zone",
+            "cx",
+            "cz"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "coverage",
+          "params": [
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 8
+        }
+      ],
+      "classes": [],
+      "imports": [],
+      "exports": [
+        "to_plan",
+        "coverage"
+      ],
+      "totalLines": 124,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/jetson_sender.py": {
+      "filePath": "01_현행코드/jetson_sender.py",
+      "contentHash": "c75ad92c45918e73a255ca992626af396022b2b2ff4e7dbb7ddbb942ca5a0aa1",
+      "functions": [
+        {
+          "name": "extract_features",
+          "params": [
+            "frame_pts",
+            "prev_c",
+            "prev_zvel",
+            "dt",
+            "ema_zacc",
+            "ema_a"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "train_on_real_data",
+          "params": [
+            "feature_list"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "build_clutter_map",
+          "params": [
+            "scan_frames"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "_rule_fall_positive",
+          "params": [
+            "clf"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "_save_fall_suspect",
+          "params": [
+            "fw",
+            "clf"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "_rf_features",
+          "params": [
+            "win"
+          ],
+          "exported": true,
+          "lineCount": 43
+        },
+        {
+          "name": "_rf_veto",
+          "params": [
+            "win"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "_rf_fall_score",
+          "params": [
+            "win"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "classify_equipment",
+          "params": [
+            "curr",
+            "volt",
+            "dop_std"
+          ],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "_read_power",
+          "params": [],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "add_log",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_latch_event",
+          "params": [
+            "et",
+            "clf",
+            "zn",
+            "ts",
+            "score_x"
+          ],
+          "exported": true,
+          "lineCount": 36
+        },
+        {
+          "name": "classify",
+          "params": [
+            "feat_win",
+            "score",
+            "thr"
+          ],
+          "exported": true,
+          "lineCount": 186
+        },
+        {
+          "name": "_register",
+          "params": [
+            "addr"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "_targets",
+          "params": [],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "control_listener",
+          "params": [],
+          "exported": true,
+          "lineCount": 65
+        },
+        {
+          "name": "_slim",
+          "params": [
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "_pack",
+          "params": [
+            "base",
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "sender_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 74
+        },
+        {
+          "name": "pipeline_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 899
+        },
+        {
+          "name": "sim_radar_writer",
+          "params": [],
+          "exported": true,
+          "lineCount": 48
+        },
+        {
+          "name": "pipeline_loop_safe",
+          "params": [],
+          "exported": true,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "LMSFilter",
+          "methods": [
+            "__init__",
+            "filter"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "LSTM_AE",
+          "methods": [
+            "__init__",
+            "forward"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 16
+        },
+        {
+          "name": "RelayRTU",
+          "methods": [
+            "__init__",
+            "_crc16",
+            "_exchange",
+            "_read_unlocked",
+            "read",
+            "write"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "BreakerLogic",
+          "methods": [
+            "__init__",
+            "trip",
+            "on_anomalies",
+            "restore",
+            "tripped_zones",
+            "any_tripped",
+            "snapshot"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 55
+        }
+      ],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "socket",
+          "specifiers": [
+            "socket"
+          ]
+        },
+        {
+          "source": "traceback",
+          "specifiers": [
+            "traceback"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque",
+            "Counter"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        }
+      ],
+      "exports": [
+        "LMSFilter",
+        "extract_features",
+        "LSTM_AE",
+        "train_on_real_data",
+        "build_clutter_map",
+        "_rule_fall_positive",
+        "_save_fall_suspect",
+        "_rf_features",
+        "_rf_veto",
+        "_rf_fall_score",
+        "RelayRTU",
+        "classify_equipment",
+        "BreakerLogic",
+        "_read_power",
+        "add_log",
+        "_latch_event",
+        "classify",
+        "_register",
+        "_targets",
+        "control_listener",
+        "_slim",
+        "_pack",
+        "sender_loop",
+        "pipeline_loop",
+        "sim_radar_writer",
+        "pipeline_loop_safe"
+      ],
+      "totalLines": 2105,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/mannequin_cc0.obj": {
+      "filePath": "01_현행코드/mannequin_cc0.obj",
+      "contentHash": "34fc66db87bb86510b3747e2061ae495b0a663dea679ccb10d845d9a3e930f6c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 97214,
+      "hasStructuralAnalysis": false
+    },
+    "01_현행코드/radar_collect_roi.py": {
+      "filePath": "01_현행코드/radar_collect_roi.py",
+      "contentHash": "4fa4465d185d7849f6050acb1465e05cbed8b7e5409c48fbe8d15532576951db",
+      "functions": [
+        {
+          "name": "apply_roi",
+          "params": [
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "feat_from_frame",
+          "params": [
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "pipeline_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 91
+        },
+        {
+          "name": "pipeline_safe",
+          "params": [],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "fall_metrics",
+          "params": [
+            "window"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "save_sample",
+          "params": [
+            "label"
+          ],
+          "exported": true,
+          "lineCount": 40
+        },
+        {
+          "name": "core_done",
+          "params": [],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "_start_empty",
+          "params": [
+            "_evt"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "_on_key",
+          "params": [
+            "evt"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "build_info",
+          "params": [],
+          "exported": true,
+          "lineCount": 61
+        },
+        {
+          "name": "update",
+          "params": [
+            "_i"
+          ],
+          "exported": true,
+          "lineCount": 19
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "traceback",
+          "specifiers": [
+            "traceback"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib",
+          "specifiers": [
+            "matplotlib"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "matplotlib.widgets",
+          "specifiers": [
+            "Button"
+          ]
+        }
+      ],
+      "exports": [
+        "apply_roi",
+        "feat_from_frame",
+        "pipeline_loop",
+        "pipeline_safe",
+        "fall_metrics",
+        "save_sample",
+        "core_done",
+        "_start_empty",
+        "_on_key",
+        "build_info",
+        "update"
+      ],
+      "totalLines": 519,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/radar_common.py": {
+      "filePath": "01_현행코드/radar_common.py",
+      "contentHash": "8e20ac98d1b3f6599be0b48b1e4e798cdeee63195a60fdc3dea1e3237d75576f",
+      "functions": [
+        {
+          "name": "zone_equipped",
+          "params": [
+            "z"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "pg_conn_str",
+          "params": [
+            "container"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "parse_pre_alert",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "event_sev",
+          "params": [
+            "et",
+            "default"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "sev_color",
+          "params": [
+            "sev"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "gate_ko",
+          "params": [
+            "key"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "gate_why",
+          "params": [
+            "key"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "event_ko",
+          "params": [
+            "et"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "zone_ko",
+          "params": [
+            "z"
+          ],
+          "exported": true,
+          "lineCount": 2
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        }
+      ],
+      "exports": [
+        "zone_equipped",
+        "pg_conn_str",
+        "parse_pre_alert",
+        "event_sev",
+        "sev_color",
+        "gate_ko",
+        "gate_why",
+        "event_ko",
+        "zone_ko"
+      ],
+      "totalLines": 389,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/radar_core.py": {
+      "filePath": "01_현행코드/radar_core.py",
+      "contentHash": "4fda1f1360787827eb8ce6a1d246f3ddd745a86901d694efce5841b27309a6e0",
+      "functions": [
+        {
+          "name": "lb",
+          "params": [
+            "text",
+            "size",
+            "color",
+            "bold",
+            "wrap",
+            "center"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "btn",
+          "params": [
+            "text",
+            "size",
+            "accent",
+            "height",
+            "primary"
+          ],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "panel",
+          "params": [
+            "accent",
+            "hi"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "titled",
+          "params": [
+            "title",
+            "accent",
+            "hi"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "confirm",
+          "params": [
+            "parent",
+            "title",
+            "text",
+            "yes",
+            "no",
+            "danger"
+          ],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "md_to_html",
+          "params": [
+            "t"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "stick_segments",
+          "params": [
+            "center",
+            "axis",
+            "length",
+            "right",
+            "spread"
+          ],
+          "exported": true,
+          "lineCount": 40
+        },
+        {
+          "name": "_facility_reference_lines",
+          "params": [],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "_mannequin_mesh",
+          "params": [],
+          "exported": true,
+          "lineCount": 36
+        },
+        {
+          "name": "body_mesh",
+          "params": [
+            "center",
+            "axis",
+            "length",
+            "right"
+          ],
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "search_sop_documents",
+          "params": [
+            "vs",
+            "ev_type",
+            "situation",
+            "category"
+          ],
+          "exported": true,
+          "lineCount": 30
+        }
+      ],
+      "classes": [
+        {
+          "name": "Dialog",
+          "methods": [
+            "__init__"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "RadarLink",
+          "methods": [
+            "__init__",
+            "send_cmd",
+            "_hello_loop",
+            "run",
+            "_emit_link",
+            "age",
+            "stop"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 99
+        },
+        {
+          "name": "PoseEstimator",
+          "methods": [
+            "__init__",
+            "_xyz",
+            "push",
+            "clear",
+            "_head_point",
+            "cloud",
+            "estimate"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 208
+        },
+        {
+          "name": "SopEngine",
+          "methods": [
+            "__init__",
+            "request",
+            "_work",
+            "_gen",
+            "prewarm"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 92
+        },
+        {
+          "name": "Track3D",
+          "methods": [
+            "__init__",
+            "resizeEvent",
+            "set_stale",
+            "_build_gl",
+            "_build_2d",
+            "reset_camera",
+            "sev_colors",
+            "push",
+            "redraw",
+            "to_disp",
+            "vec_disp",
+            "body_length",
+            "figure_center",
+            "_stick3d",
+            "_body_transform",
+            "stick2d"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 328
+        },
+        {
+          "name": "PreparePage",
+          "methods": [
+            "__init__",
+            "set_zone",
+            "_go",
+            "_confirm_reset",
+            "update_phase"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 196
+        },
+        {
+          "name": "SettingsPopup",
+          "methods": [
+            "__init__",
+            "_sop_tab",
+            "_guess_cat",
+            "_sop_pick",
+            "_sop_prescan",
+            "_on_prescan",
+            "_sop_ingest",
+            "_sop_worker",
+            "_on_progress",
+            "_sop_refresh",
+            "_on_loaded",
+            "_form",
+            "_lab",
+            "_line",
+            "_ro",
+            "_test_link",
+            "_test_ai",
+            "refresh"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 441
+        },
+        {
+          "name": "EvidencePopup",
+          "methods": [
+            "__init__",
+            "set_event"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 74
+        },
+        {
+          "name": "PowerPopup",
+          "methods": [
+            "__init__",
+            "push",
+            "tripped",
+            "refresh"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 66
+        },
+        {
+          "name": "RestorePopup",
+          "methods": [
+            "__init__",
+            "_sync",
+            "ask"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 34
+        },
+        {
+          "name": "QueryPopup",
+          "methods": [
+            "__init__",
+            "_send",
+            "_answer"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 71
+        },
+        {
+          "name": "GraphPopup",
+          "methods": [
+            "__init__",
+            "push"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "_DemoSource",
+          "methods": [
+            "__init__",
+            "read"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 74
+        }
+      ],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "socket",
+          "specifiers": [
+            "socket"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "functools",
+          "specifiers": [
+            "lru_cache"
+          ]
+        },
+        {
+          "source": "html",
+          "specifiers": [
+            "html_escape"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "PyQt5",
+          "specifiers": [
+            "QtCore",
+            "QtGui",
+            "QtWidgets"
+          ]
+        },
+        {
+          "source": "pyqtgraph",
+          "specifiers": [
+            "pg"
+          ]
+        },
+        {
+          "source": "facility",
+          "specifiers": [
+            "fac"
+          ]
+        },
+        {
+          "source": "radar_common",
+          "specifiers": [
+            "DATA_PORT",
+            "CTRL_PORT",
+            "HELLO_SEC",
+            "LINK_TIMEOUT",
+            "SCHEMA_VERSION",
+            "CMD_HELLO",
+            "CMD_START",
+            "CMD_TRAIN",
+            "CMD_RESET",
+            "CEILING_H",
+            "FRAME_INNER_HALF",
+            "OCCUPANCY_CORE_HALF",
+            "HISTORY_LEN",
+            "PH_READY",
+            "PH_WARMUP",
+            "PH_WAIT_TRAIN",
+            "PH_TRAINING",
+            "PH_WAIT_ARM",
+            "PH_LIVE",
+            "PHASE_ORDER",
+            "PHASE_KO",
+            "PHASE_ACTION",
+            "EVENT_KO",
+            "EVENT_CATEGORY",
+            "ZONE_IDS",
+            "ZONE_KO",
+            "RADAR_ZONE",
+            "pg_conn_str",
+            "SEV_KO",
+            "GATE_META",
+            "REJECT_KO",
+            "EVIDENCE_KO",
+            "SOP_CATEGORIES",
+            "CURR_LIMIT",
+            "VOLT_MIN",
+            "VIB_DS_THRESH",
+            "BG",
+            "PANEL",
+            "PANEL_HI",
+            "PANEL_LO",
+            "EDGE",
+            "TXT",
+            "DIM",
+            "FAINT",
+            "CYAN",
+            "GREEN",
+            "AMBER",
+            "RED",
+            "GRID",
+            "sev_color",
+            "SP_XS",
+            "SP_S",
+            "SP_M",
+            "SP_L",
+            "SP_XL",
+            "FS_TITLE",
+            "FS_BODY",
+            "FS_LABEL",
+            "FS_CAPTION"
+          ]
+        }
+      ],
+      "exports": [
+        "lb",
+        "btn",
+        "panel",
+        "titled",
+        "confirm",
+        "md_to_html",
+        "Dialog",
+        "RadarLink",
+        "PoseEstimator",
+        "stick_segments",
+        "_facility_reference_lines",
+        "_mannequin_mesh",
+        "body_mesh",
+        "search_sop_documents",
+        "SopEngine",
+        "Track3D",
+        "PreparePage",
+        "SettingsPopup",
+        "EvidencePopup",
+        "PowerPopup",
+        "RestorePopup",
+        "QueryPopup",
+        "GraphPopup",
+        "_DemoSource"
+      ],
+      "totalLines": 2239,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/replay_jsonl.py": {
+      "filePath": "01_현행코드/replay_jsonl.py",
+      "contentHash": "18ac45543ac7808bfc84aa8299418c1404e2402d23542a5f520161bb5ab5f9ff",
+      "functions": [
+        {
+          "name": "prefilter",
+          "params": [
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "log",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "load_events",
+          "params": [
+            "path"
+          ],
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "summarize",
+          "params": [
+            "path"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "cmd_list",
+          "params": [],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "control_listener",
+          "params": [],
+          "exported": true,
+          "lineCount": 33
+        },
+        {
+          "name": "_targets",
+          "params": [],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "_pack",
+          "params": [
+            "base",
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "sender_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 59
+        },
+        {
+          "name": "_evidence_from",
+          "params": [
+            "frames"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "_gates_from",
+          "params": [
+            "ev"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "_fire",
+          "params": [
+            "et",
+            "frames",
+            "label"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "_clear",
+          "params": [],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "play_event",
+          "params": [
+            "e",
+            "speed",
+            "src"
+          ],
+          "exported": true,
+          "lineCount": 56
+        },
+        {
+          "name": "scenario",
+          "params": [
+            "path",
+            "seq",
+            "speed",
+            "once",
+            "seed"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 44
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "glob",
+          "specifiers": [
+            "glob"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "random",
+          "specifiers": [
+            "random"
+          ]
+        },
+        {
+          "source": "socket",
+          "specifiers": [
+            "socket"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "radar_common",
+          "specifiers": [
+            "SCHEMA_VERSION",
+            "DATA_PORT",
+            "CTRL_PORT",
+            "SEND_HZ",
+            "MAX_UDP",
+            "MIN_PTS",
+            "CLIENT_TTL",
+            "CMD_HELLO",
+            "CMD_RESOLVE",
+            "CMD_RESTORE",
+            "CMD_RESET",
+            "CMD_START",
+            "CMD_TRAIN",
+            "CEILING_H",
+            "HISTORY_LEN",
+            "ZONE_IDS",
+            "RADAR_ZONE",
+            "ZONE_KO",
+            "CURR_LIMIT",
+            "VOLT_MIN",
+            "EVENT_SEV",
+            "PH_LIVE"
+          ]
+        }
+      ],
+      "exports": [
+        "prefilter",
+        "log",
+        "load_events",
+        "summarize",
+        "cmd_list",
+        "control_listener",
+        "_targets",
+        "_pack",
+        "sender_loop",
+        "_evidence_from",
+        "_gates_from",
+        "_fire",
+        "_clear",
+        "play_event",
+        "scenario",
+        "main"
+      ],
+      "totalLines": 508,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/show_fall_analysis.py": {
+      "filePath": "01_현행코드/show_fall_analysis.py",
+      "contentHash": "7421f3189d3b26d9dc05f21ee596a52e3c323af1705e36fe2ecc208627619cd3",
+      "functions": [
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 42
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "joblib",
+          "specifiers": [
+            "joblib"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "sklearn.model_selection",
+          "specifiers": [
+            "LeaveOneGroupOut"
+          ]
+        },
+        {
+          "source": "train_fall_safety",
+          "specifiers": [
+            "extract",
+            "load",
+            "make_model"
+          ]
+        }
+      ],
+      "exports": [
+        "main"
+      ],
+      "totalLines": 64,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/show_live_fall_features.py": {
+      "filePath": "01_현행코드/show_live_fall_features.py",
+      "contentHash": "240fa0d9fe83344d6ac482cc1b9ed8dd51adc7d2eddb4ad27cb03290cf233c6c",
+      "functions": [
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 12
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        }
+      ],
+      "exports": [
+        "main"
+      ],
+      "totalLines": 25,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/sim_jetson.py": {
+      "filePath": "01_현행코드/sim_jetson.py",
+      "contentHash": "aeaa5d4376b6bd226069aae8227922520a7862d395bfeb8c6fd6317a7d578337",
+      "functions": [
+        {
+          "name": "log",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "control_listener",
+          "params": [],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "_targets",
+          "params": [],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "_points",
+          "params": [
+            "cx",
+            "cy",
+            "cz",
+            "n",
+            "spread"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "_fall_event",
+          "params": [],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "scenario",
+          "params": [
+            "fast"
+          ],
+          "exported": true,
+          "lineCount": 61
+        },
+        {
+          "name": "_live_cycle",
+          "params": [
+            "k"
+          ],
+          "exported": true,
+          "lineCount": 48
+        },
+        {
+          "name": "_consume_reset",
+          "params": [],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "_pack",
+          "params": [
+            "base",
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "sender_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 70
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        },
+        {
+          "source": "random",
+          "specifiers": [
+            "random"
+          ]
+        },
+        {
+          "source": "socket",
+          "specifiers": [
+            "socket"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "radar_common",
+          "specifiers": [
+            "SCHEMA_VERSION",
+            "DATA_PORT",
+            "CTRL_PORT",
+            "SEND_HZ",
+            "MAX_UDP",
+            "MIN_PTS",
+            "CLIENT_TTL",
+            "CMD_HELLO",
+            "CMD_START",
+            "CMD_TRAIN",
+            "CMD_RESET",
+            "CMD_RESOLVE",
+            "CMD_RESTORE",
+            "CEILING_H",
+            "HISTORY_LEN",
+            "ZONE_IDS",
+            "CURR_LIMIT",
+            "VOLT_MIN",
+            "VIB_DS_THRESH",
+            "PH_READY",
+            "PH_WARMUP",
+            "PH_WAIT_TRAIN",
+            "PH_TRAINING",
+            "PH_LIVE",
+            "RADAR_ZONE"
+          ]
+        }
+      ],
+      "exports": [
+        "log",
+        "control_listener",
+        "_targets",
+        "_points",
+        "_fall_event",
+        "scenario",
+        "_live_cycle",
+        "_consume_reset",
+        "_pack",
+        "sender_loop"
+      ],
+      "totalLines": 395,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/sop_doctor.py": {
+      "filePath": "01_현행코드/sop_doctor.py",
+      "contentHash": "836da2a5509a97353415c35330aa4757ee351478055108117f619f59b9c7f892",
+      "functions": [
+        {
+          "name": "ok",
+          "params": [
+            "t",
+            "d"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "bad",
+          "params": [
+            "t",
+            "d"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "warn",
+          "params": [
+            "t",
+            "d"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "from_docker",
+          "params": [
+            "container"
+          ],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "embed",
+          "params": [
+            "text"
+          ],
+          "exported": true,
+          "lineCount": 8
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        }
+      ],
+      "exports": [
+        "ok",
+        "bad",
+        "warn",
+        "from_docker",
+        "embed"
+      ],
+      "totalLines": 288,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/train_fall_safety.py": {
+      "filePath": "01_현행코드/train_fall_safety.py",
+      "contentHash": "538e2683067f5d2e6b189d5cb7f49cf43f19c69079e77d9b94aaad11a9ca9ec6",
+      "functions": [
+        {
+          "name": "extract",
+          "params": [
+            "sample"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "load",
+          "params": [
+            "paths"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "make_model",
+          "params": [],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 48
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "argparse",
+          "specifiers": [
+            "argparse"
+          ]
+        },
+        {
+          "source": "hashlib",
+          "specifiers": [
+            "hashlib"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "joblib",
+          "specifiers": [
+            "joblib"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "sklearn.ensemble",
+          "specifiers": [
+            "RandomForestClassifier"
+          ]
+        },
+        {
+          "source": "sklearn.model_selection",
+          "specifiers": [
+            "LeaveOneGroupOut"
+          ]
+        }
+      ],
+      "exports": [
+        "extract",
+        "load",
+        "make_model",
+        "main"
+      ],
+      "totalLines": 138,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/verify_jetson_safe.py": {
+      "filePath": "01_현행코드/verify_jetson_safe.py",
+      "contentHash": "3d9e09f7e8d2a597491c4563d1175c043d34d1684a88cf2b5b8f5a7dfd74cbc5",
+      "functions": [
+        {
+          "name": "ck",
+          "params": [
+            "ok",
+            "name",
+            "detail"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "make_fake_torch",
+          "params": [],
+          "exported": true,
+          "lineCount": 52
+        },
+        {
+          "name": "load_sender",
+          "params": [
+            "argv",
+            "fake_torch"
+          ],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "guard_audit",
+          "params": [
+            "name"
+          ],
+          "exported": true,
+          "lineCount": 31
+        },
+        {
+          "name": "code_of",
+          "params": [
+            "path",
+            "fn"
+          ],
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [
+        {
+          "name": "FakeRelay",
+          "methods": [
+            "__init__",
+            "read",
+            "write"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 17
+        }
+      ],
+      "imports": [
+        {
+          "source": "ast",
+          "specifiers": [
+            "ast"
+          ]
+        },
+        {
+          "source": "importlib",
+          "specifiers": [
+            "importlib"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "types",
+          "specifiers": [
+            "types"
+          ]
+        }
+      ],
+      "exports": [
+        "ck",
+        "make_fake_torch",
+        "load_sender",
+        "guard_audit",
+        "code_of",
+        "FakeRelay"
+      ],
+      "totalLines": 355,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/verify_port.py": {
+      "filePath": "01_현행코드/verify_port.py",
+      "contentHash": "8d1bd416aff41a3cd3cd90c3c249e5c44b58601292e467485b12aff11588fc37",
+      "functions": [
+        {
+          "name": "load_fn",
+          "params": [
+            "path",
+            "names"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "windows_from_events",
+          "params": [
+            "paths",
+            "win"
+          ],
+          "exported": true,
+          "lineCount": 33
+        },
+        {
+          "name": "synth_windows",
+          "params": [
+            "n",
+            "seed"
+          ],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "norm",
+          "params": [
+            "d"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 64
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "glob",
+          "specifiers": [
+            "glob"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        }
+      ],
+      "exports": [
+        "load_fn",
+        "windows_from_events",
+        "synth_windows",
+        "norm",
+        "main"
+      ],
+      "totalLines": 191,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/작업결과_0731.md": {
+      "filePath": "01_현행코드/작업결과_0731.md",
+      "contentHash": "9adc6786f572a0ce192d37a4bf8e7231e5bb0602f7dfc4e439051a32c671e960",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 286,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/테스트_v1결함_재발검사.py": {
+      "filePath": "01_현행코드/테스트_v1결함_재발검사.py",
+      "contentHash": "f971b5224182565496b579f2b1532bf8f25a1a1ad2209bacc08a1eef844bbada",
+      "functions": [
+        {
+          "name": "check",
+          "params": [
+            "name",
+            "cond",
+            "detail"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "pump",
+          "params": [
+            "n"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "fake_exec",
+          "params": [],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "capture_push",
+          "params": [
+            "pkt",
+            "sev",
+            "hide_shape"
+          ],
+          "exported": true,
+          "lineCount": 3
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "traceback",
+          "specifiers": [
+            "traceback"
+          ]
+        },
+        {
+          "source": "console_ui",
+          "specifiers": [
+            "ui"
+          ]
+        },
+        {
+          "source": "radar_core",
+          "specifiers": [
+            "core"
+          ]
+        },
+        {
+          "source": "PyQt5",
+          "specifiers": [
+            "QtWidgets",
+            "QtGui",
+            "QtCore"
+          ]
+        },
+        {
+          "source": "facility",
+          "specifiers": [
+            "fac"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "_np"
+          ]
+        }
+      ],
+      "exports": [
+        "check",
+        "pump",
+        "fake_exec",
+        "capture_push"
+      ],
+      "totalLines": 282,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/테스트_레이아웃_검증.py": {
+      "filePath": "01_현행코드/테스트_레이아웃_검증.py",
+      "contentHash": "8b031daa5a1b3ed1f83db2f12b76bb75f18c7db8d4847f71a3832c9997b2fb25",
+      "functions": [
+        {
+          "name": "check_clipping",
+          "params": [
+            "root",
+            "label"
+          ],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "check_overlap",
+          "params": [
+            "root",
+            "label"
+          ],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "settle",
+          "params": [
+            "n"
+          ],
+          "exported": true,
+          "lineCount": 3
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "traceback",
+          "specifiers": [
+            "traceback"
+          ]
+        },
+        {
+          "source": "console_ui",
+          "specifiers": [
+            "v2"
+          ]
+        },
+        {
+          "source": "PyQt5",
+          "specifiers": [
+            "QtCore",
+            "QtGui",
+            "QtWidgets"
+          ]
+        }
+      ],
+      "exports": [
+        "check_clipping",
+        "check_overlap",
+        "settle"
+      ],
+      "totalLines": 139,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/테스트_실데이터_재생.py": {
+      "filePath": "01_현행코드/테스트_실데이터_재생.py",
+      "contentHash": "375276d5063668e5fc9f01a077c4ee8eb00f6e4a02de158bc323c5bc3040d3c6",
+      "functions": [
+        {
+          "name": "check",
+          "params": [
+            "name",
+            "cond",
+            "detail"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "cap_n_seg",
+          "params": [
+            "cap"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "cap_color_hex",
+          "params": [
+            "cap"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "pump",
+          "params": [
+            "app",
+            "w",
+            "sec"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "wait_for",
+          "params": [
+            "app",
+            "w",
+            "cond",
+            "sec"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 168
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "replay_jsonl",
+          "specifiers": [
+            "rp"
+          ]
+        },
+        {
+          "source": "radar_core",
+          "specifiers": [
+            "core"
+          ]
+        },
+        {
+          "source": "console_ui",
+          "specifiers": [
+            "ui"
+          ]
+        },
+        {
+          "source": "radar_common",
+          "specifiers": [
+            "RADAR_ZONE",
+            "EVENT_KO",
+            "sev_color",
+            "GREEN",
+            "AMBER",
+            "RED"
+          ]
+        }
+      ],
+      "exports": [
+        "check",
+        "cap_n_seg",
+        "cap_color_hex",
+        "pump",
+        "wait_for",
+        "main"
+      ],
+      "totalLines": 271,
+      "hasStructuralAnalysis": true
+    },
+    "01_현행코드/테스트_평면도_경보흐름.py": {
+      "filePath": "01_현행코드/테스트_평면도_경보흐름.py",
+      "contentHash": "6752e102f472f178219443e96ff1d8bb0741635c9be76a4da4b80741b2747882",
+      "functions": [
+        {
+          "name": "ck",
+          "params": [
+            "n",
+            "c",
+            "d"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "spin",
+          "params": [
+            "sec",
+            "cond"
+          ],
+          "exported": true,
+          "lineCount": 7
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "replay_jsonl",
+          "specifiers": [
+            "rp"
+          ]
+        },
+        {
+          "source": "console_ui",
+          "specifiers": [
+            "ui"
+          ]
+        },
+        {
+          "source": "radar_common",
+          "specifiers": [
+            "RADAR_ZONE"
+          ]
+        }
+      ],
+      "exports": [
+        "ck",
+        "spin"
+      ],
+      "totalLines": 97,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/breaker_facility_sim.py": {
+      "filePath": "02_레이더_원본코드/breaker_facility_sim.py",
+      "contentHash": "34b1d0bd33af43c46a982a3e2345ab37568ed706025963c8622a921c262c1001",
+      "functions": [
+        {
+          "name": "classify_equipment",
+          "params": [
+            "curr",
+            "volt",
+            "dop_std"
+          ],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        }
+      ],
+      "classes": [
+        {
+          "name": "BreakerLogic",
+          "methods": [
+            "__init__",
+            "on_anomalies",
+            "resolve",
+            "restore",
+            "tripped_zones",
+            "any_tripped"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 36
+        },
+        {
+          "name": "MockSource",
+          "methods": [
+            "__init__",
+            "set_inject",
+            "clear",
+            "read"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 23
+        },
+        {
+          "name": "Dashboard",
+          "methods": [
+            "__init__",
+            "_title",
+            "_btn",
+            "_log",
+            "_latest",
+            "_inject",
+            "_resolve",
+            "_restore",
+            "tick",
+            "_refresh",
+            "_set_banner"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 190
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "PyQt5.QtWidgets",
+          "specifiers": [
+            "QApplication",
+            "QMainWindow",
+            "QWidget",
+            "QLabel",
+            "QPushButton",
+            "QTextEdit",
+            "QVBoxLayout",
+            "QHBoxLayout",
+            "QFrame"
+          ]
+        },
+        {
+          "source": "PyQt5.QtCore",
+          "specifiers": [
+            "QTimer",
+            "Qt"
+          ]
+        },
+        {
+          "source": "pyqtgraph",
+          "specifiers": [
+            "pg"
+          ]
+        }
+      ],
+      "exports": [
+        "classify_equipment",
+        "BreakerLogic",
+        "MockSource",
+        "Dashboard",
+        "main"
+      ],
+      "totalLines": 386,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/embed_jetson.py": {
+      "filePath": "02_레이더_원본코드/embed_jetson.py",
+      "contentHash": "03582d9fc5a72224f96fe1a908e3f3449e204586c4e7d3c45902a73559061c8d",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "glob",
+          "specifiers": [
+            "glob"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_community.document_loaders",
+          "specifiers": [
+            "PyPDFLoader"
+          ]
+        },
+        {
+          "source": "langchain_text_splitters",
+          "specifiers": [
+            "RecursiveCharacterTextSplitter"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 67,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/profile_3d.cfg": {
+      "filePath": "02_레이더_원본코드/profile_3d.cfg",
+      "contentHash": "5014d32a88495b94d339240b839772b7415be9bbe0e5703505d4740473f14b2b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 70,
+      "hasStructuralAnalysis": false
+    },
+    "02_레이더_원본코드/radar_collect.py": {
+      "filePath": "02_레이더_원본코드/radar_collect.py",
+      "contentHash": "dc9cb2de0c30ec2966595b481332eaef581e88e40f4c17784822fcfc7e5d7066",
+      "functions": [
+        {
+          "name": "feat_from_frame",
+          "params": [
+            "pts"
+          ],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "pipeline_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 102
+        },
+        {
+          "name": "pipeline_safe",
+          "params": [],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "save_sample",
+          "params": [
+            "label"
+          ],
+          "exported": true,
+          "lineCount": 31
+        },
+        {
+          "name": "core_done",
+          "params": [],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "_do_rec",
+          "params": [
+            "_evt"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "_on_key",
+          "params": [
+            "evt"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "build_info",
+          "params": [],
+          "exported": true,
+          "lineCount": 52
+        },
+        {
+          "name": "update",
+          "params": [
+            "_i"
+          ],
+          "exported": true,
+          "lineCount": 30
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "traceback",
+          "specifiers": [
+            "traceback"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque",
+            "Counter"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib",
+          "specifiers": [
+            "matplotlib"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "matplotlib.widgets",
+          "specifiers": [
+            "Button"
+          ]
+        },
+        {
+          "source": "matplotlib.patches",
+          "specifiers": [
+            "Rectangle"
+          ]
+        },
+        {
+          "source": "mpl_toolkits.mplot3d",
+          "specifiers": [
+            "Axes3D"
+          ]
+        }
+      ],
+      "exports": [
+        "feat_from_frame",
+        "pipeline_loop",
+        "pipeline_safe",
+        "save_sample",
+        "core_done",
+        "_do_rec",
+        "_on_key",
+        "build_info",
+        "update"
+      ],
+      "totalLines": 503,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/radar_guard.cfg": {
+      "filePath": "02_레이더_원본코드/radar_guard.cfg",
+      "contentHash": "e4d860b9c738b819201f569ef3880ac73baff194d2ff8369d8c38e02eeef9747",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 51,
+      "hasStructuralAnalysis": false
+    },
+    "02_레이더_원본코드/radar_live_full.py": {
+      "filePath": "02_레이더_원본코드/radar_live_full.py",
+      "contentHash": "bb3ce4c81cd5f4e4f00b7d42d01302c4705b070c6a1ca320e47555183aef7352",
+      "functions": [
+        {
+          "name": "_set_korean_font",
+          "params": [],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "instant_action",
+          "params": [
+            "ev_type"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "extract_features",
+          "params": [
+            "frame_pts",
+            "prev_c",
+            "prev_zvel",
+            "dt",
+            "ema_zacc",
+            "ema_a"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "train_on_real_data",
+          "params": [
+            "feature_list"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "build_clutter_map",
+          "params": [
+            "scan_pts"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "_rf_features",
+          "params": [
+            "win"
+          ],
+          "exported": true,
+          "lineCount": 43
+        },
+        {
+          "name": "_rf_veto",
+          "params": [
+            "win"
+          ],
+          "exported": true,
+          "lineCount": 12
+        },
+        {
+          "name": "_latch_event",
+          "params": [
+            "et",
+            "clf",
+            "zn",
+            "ts",
+            "score_x"
+          ],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "classify",
+          "params": [
+            "feat_win",
+            "score",
+            "thr"
+          ],
+          "exported": true,
+          "lineCount": 186
+        },
+        {
+          "name": "add_log",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "generate_detailed_sop",
+          "params": [
+            "ev_type",
+            "zone",
+            "manual_ctx"
+          ],
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "_prewarm_gemma",
+          "params": [],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "_sop_status",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_make_detailed_sop",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 31
+        },
+        {
+          "name": "run_rag",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_rag_retrieve",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 68
+        },
+        {
+          "name": "pipeline_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 674
+        },
+        {
+          "name": "pipeline_loop_safe",
+          "params": [],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "_step_idx",
+          "params": [
+            "phase",
+            "data_ok"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "update_step_guide",
+          "params": [
+            "phase",
+            "data_ok"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "update_progress_bar",
+          "params": [
+            "phase",
+            "warmup_count"
+          ],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "make_guide_text",
+          "params": [
+            "phase",
+            "data_ok",
+            "ev_active",
+            "ev_type",
+            "ev_zone",
+            "ev_conf",
+            "rag_run",
+            "sop",
+            "warmup_count"
+          ],
+          "exported": true,
+          "lineCount": 90
+        },
+        {
+          "name": "_refresh_sop_popup",
+          "params": [],
+          "exported": true,
+          "lineCount": 37
+        },
+        {
+          "name": "update",
+          "params": [
+            "_i"
+          ],
+          "exported": true,
+          "lineCount": 163
+        }
+      ],
+      "classes": [
+        {
+          "name": "LMSFilter",
+          "methods": [
+            "__init__",
+            "filter"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "LSTM_AE",
+          "methods": [
+            "__init__",
+            "forward"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 16
+        }
+      ],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "textwrap",
+          "specifiers": [
+            "textwrap"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque",
+            "Counter"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib",
+          "specifiers": [
+            "matplotlib"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "matplotlib.gridspec",
+          "specifiers": [
+            "gridspec"
+          ]
+        },
+        {
+          "source": "matplotlib.patches",
+          "specifiers": [
+            "mpatches"
+          ]
+        },
+        {
+          "source": "matplotlib.widgets",
+          "specifiers": [
+            "Button"
+          ]
+        },
+        {
+          "source": "mpl_toolkits.mplot3d",
+          "specifiers": [
+            "Axes3D"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "torch"
+          ]
+        },
+        {
+          "source": "torch.nn",
+          "specifiers": [
+            "nn"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "optim"
+          ]
+        },
+        {
+          "source": "sklearn.preprocessing",
+          "specifiers": [
+            "MinMaxScaler"
+          ]
+        }
+      ],
+      "exports": [
+        "_set_korean_font",
+        "instant_action",
+        "LMSFilter",
+        "extract_features",
+        "LSTM_AE",
+        "train_on_real_data",
+        "build_clutter_map",
+        "_rf_features",
+        "_rf_veto",
+        "_latch_event",
+        "classify",
+        "add_log",
+        "generate_detailed_sop",
+        "_prewarm_gemma",
+        "_sop_status",
+        "_make_detailed_sop",
+        "run_rag",
+        "_rag_retrieve",
+        "pipeline_loop",
+        "pipeline_loop_safe",
+        "_step_idx",
+        "update_step_guide",
+        "update_progress_bar",
+        "make_guide_text",
+        "_refresh_sop_popup",
+        "update"
+      ],
+      "totalLines": 2284,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/radar_parser.py": {
+      "filePath": "02_레이더_원본코드/radar_parser.py",
+      "contentHash": "927116b2dbeaef9d5b4ecd971f422965fd9d7a457260afea066b89b05588cb05",
+      "functions": [
+        {
+          "name": "send_config",
+          "params": [
+            "cfg_path",
+            "port"
+          ],
+          "exported": true,
+          "lineCount": 17
+        },
+        {
+          "name": "parse_frame",
+          "params": [
+            "data"
+          ],
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 75
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "serial",
+          "specifiers": [
+            "serial"
+          ]
+        },
+        {
+          "source": "struct",
+          "specifiers": [
+            "struct"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        }
+      ],
+      "exports": [
+        "send_config",
+        "parse_frame",
+        "main"
+      ],
+      "totalLines": 216,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/radar_viz.py": {
+      "filePath": "02_레이더_원본코드/radar_viz.py",
+      "contentHash": "f2337503a2fd8f8878f40cb551d054d425dc449b525ad780ebf6c6e499929ba3",
+      "functions": [
+        {
+          "name": "load_latest_frame",
+          "params": [],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "update",
+          "params": [
+            "_frame_idx"
+          ],
+          "exported": true,
+          "lineCount": 42
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib",
+          "specifiers": [
+            "matplotlib"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "mpl_toolkits.mplot3d",
+          "specifiers": [
+            "Axes3D"
+          ]
+        },
+        {
+          "source": "matplotlib.animation",
+          "specifiers": [
+            "FuncAnimation"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        }
+      ],
+      "exports": [
+        "load_latest_frame",
+        "update"
+      ],
+      "totalLines": 199,
+      "hasStructuralAnalysis": true
+    },
+    "02_레이더_원본코드/train_fall_classifier.py": {
+      "filePath": "02_레이더_원본코드/train_fall_classifier.py",
+      "contentHash": "9e695d4942b131f44dfdf095e3c7288cc1478b1ba1b228bd0aa36f7b357e37db",
+      "functions": [
+        {
+          "name": "_peaks",
+          "params": [
+            "ds",
+            "thr"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "extract",
+          "params": [
+            "sample"
+          ],
+          "exported": true,
+          "lineCount": 41
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "Counter"
+          ]
+        },
+        {
+          "source": "sklearn.ensemble",
+          "specifiers": [
+            "RandomForestClassifier"
+          ]
+        },
+        {
+          "source": "sklearn.model_selection",
+          "specifiers": [
+            "StratifiedKFold",
+            "cross_val_predict",
+            "LeaveOneOut"
+          ]
+        },
+        {
+          "source": "sklearn.metrics",
+          "specifiers": [
+            "confusion_matrix",
+            "classification_report"
+          ]
+        },
+        {
+          "source": "joblib",
+          "specifiers": [
+            "joblib"
+          ]
+        }
+      ],
+      "exports": [
+        "_peaks",
+        "extract"
+      ],
+      "totalLines": 155,
+      "hasStructuralAnalysis": true
+    },
+    "03_데이터/이벤트_학습용/events_fall_5people_20260813_1.jsonl": {
+      "filePath": "03_데이터/이벤트_학습용/events_fall_5people_20260813_1.jsonl",
+      "contentHash": "93468fdbe104c28ec581f11dcd208c9a0d17a03698113ef2dea073ab603890a5",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 138,
+      "hasStructuralAnalysis": false
+    },
+    "04_문서/AI_BRIDGE/INBOX.md": {
+      "filePath": "04_문서/AI_BRIDGE/INBOX.md",
+      "contentHash": "d10cdb9fc10b026f1c22e88c897b9e966be32f252ae076e5c7d1e5e7f7bbe4d7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 43,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/AI_BRIDGE/OUTBOX.md": {
+      "filePath": "04_문서/AI_BRIDGE/OUTBOX.md",
+      "contentHash": "9fb844ac2cce3e4a12023f761b66451eb2147f001d60b7b4df409a1ad9d739d8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 54,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/AI_BRIDGE/README.md": {
+      "filePath": "04_문서/AI_BRIDGE/README.md",
+      "contentHash": "20d04d50a771a2afe5890b3974f76d2441b3205eb7f75c851ec200a1ac9227ce",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 71,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/AI_BRIDGE/REVIEW.md": {
+      "filePath": "04_문서/AI_BRIDGE/REVIEW.md",
+      "contentHash": "5e2ee5a3d16df33d4972c7ef7cdb6a18f33df0be5ce71b306a4513dd4ad9c169",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 875,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/BACKLOG.md": {
+      "filePath": "04_문서/BACKLOG.md",
+      "contentHash": "53cbf0cd8a98da78e4aa225c1939ad57bf89615b5e2a6a035785164b3ca2ec1b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 46,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/Claude_Code_도입_가이드.md": {
+      "filePath": "04_문서/Claude_Code_도입_가이드.md",
+      "contentHash": "2203bd61f29815906d9407ee253161ac7d99e2867a1fb2fea49bf27161b60263",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 390,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/MSDS_수집_적재_절차_0810.md": {
+      "filePath": "04_문서/MSDS_수집_적재_절차_0810.md",
+      "contentHash": "1056ea6964c803a260f5360af82f8db08e40b9b52c25da34df355bd48ae97518",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 112,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/UI_v2_리디자인_0801.md": {
+      "filePath": "04_문서/UI_v2_리디자인_0801.md",
+      "contentHash": "deaaf517d5b0416a2660b3750706047985c4cb10c5f6483f0b2086e685298090",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 555,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/라이트모드_팔레트_확정_0803.md": {
+      "filePath": "04_문서/라이트모드_팔레트_확정_0803.md",
+      "contentHash": "5a3ed6656202e9de5ea40589eccbf6ce86d3c88e0a54b631658ad10dc8f3ee33",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 169,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/설계/DEBUG_README.md": {
+      "filePath": "04_문서/설계/DEBUG_README.md",
+      "contentHash": "a262bb0768ef61bbd92c2ff3c853b0b1dd5087ac9f7058aa8b243990297db84f",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 318,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/설계/UI_LLM_개편_계획_0726.md": {
+      "filePath": "04_문서/설계/UI_LLM_개편_계획_0726.md",
+      "contentHash": "fe1134aba3288f8005f2bccf0f38bd416359533f01b079819b6621cee2fe8ebc",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 297,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/설계/데이터_인터페이스_명세_v1.md": {
+      "filePath": "04_문서/설계/데이터_인터페이스_명세_v1.md",
+      "contentHash": "afe0aff32da1fcb2b515532a0e4e0576b22c61365867c472ce58c23fe2d018d8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 320,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/설계/젯슨_부하분산_설계.md": {
+      "filePath": "04_문서/설계/젯슨_부하분산_설계.md",
+      "contentHash": "6dce4c942874007abcfd35c7274864978301df318ee66b1189157195ebc91964",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 460,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/설정/CLAUDE_md_사용자전역.md": {
+      "filePath": "04_문서/설정/CLAUDE_md_사용자전역.md",
+      "contentHash": "9d2e16f47e8da0386fff91151e3a4582d78834264cf86795a7a0a36c62d49a53",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 53,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/설정/Claude지침_설정일반용.md": {
+      "filePath": "04_문서/설정/Claude지침_설정일반용.md",
+      "contentHash": "d7ba62d29cf5e7084169438b13c8cb7dd7b270db8c2271c69e2d38c35dfc0b14",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 47,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/젯슨_통합시험_런북_0805.md": {
+      "filePath": "04_문서/젯슨_통합시험_런북_0805.md",
+      "contentHash": "40d3b2bf90487df415794edabaff5b170d269c0068d4172ef65c636ee2efc0f8",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 151,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/진행보고/Radar-Guard_WBS.xlsx": {
+      "filePath": "04_문서/진행보고/Radar-Guard_WBS.xlsx",
+      "contentHash": "9e2deaddec043fdfa5528cbd7c258adfdc19333b5a4ef5806d2b32be8be99571",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 94,
+      "hasStructuralAnalysis": false
+    },
+    "04_문서/진행보고/Radar-Guard_진행보고_0702.md": {
+      "filePath": "04_문서/진행보고/Radar-Guard_진행보고_0702.md",
+      "contentHash": "ba82cf6784805cd41a9e945a4a4519b689cb9cc73b3568fbf5108a21fcdb556e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 69,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/진행보고/WBS_updated.md": {
+      "filePath": "04_문서/진행보고/WBS_updated.md",
+      "contentHash": "c3a1e89d0ab2a31d7d33eb24c9d5f280c6c02ba45104d30123d3b786a9db70c4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 254,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/진행보고/내일_시연_시나리오.md": {
+      "filePath": "04_문서/진행보고/내일_시연_시나리오.md",
+      "contentHash": "501e36c3a771e14020505438896d31fa6b95e4893929b1b072f97fcb2f9b432c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 129,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/진행보고/수집_런북_0707.md": {
+      "filePath": "04_문서/진행보고/수집_런북_0707.md",
+      "contentHash": "f7a968a15115f77920a1f55636c6b7e32f93a0a24b780089e160d71280294b79",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 77,
+      "hasStructuralAnalysis": true
+    },
+    "04_문서/화면_정보구조_확정_0803.md": {
+      "filePath": "04_문서/화면_정보구조_확정_0803.md",
+      "contentHash": "08c5eaa0e3ec13ae78e97db410c7e690328d95558b8a4cd231698427f2261ab0",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 162,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/_구버전/v5_오픈프레임/gen_housing.py": {
+      "filePath": "06_부스_하우징/_구버전/v5_오픈프레임/gen_housing.py",
+      "contentHash": "aba4a021d40c6a61d547c9477c40cdcd07d09be74675630eed13b30024517225",
+      "functions": [
+        {
+          "name": "T",
+          "params": [
+            "x",
+            "y",
+            "z"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "thread_hole_Y",
+          "params": [
+            "x",
+            "z",
+            "L"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "make_tray",
+          "params": [],
+          "exported": true,
+          "lineCount": 75
+        },
+        {
+          "name": "make_lid",
+          "params": [],
+          "exported": true,
+          "lineCount": 17
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "trimesh",
+          "specifiers": [
+            "trimesh"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "trimesh.transformations",
+          "specifiers": [
+            "tf"
+          ]
+        },
+        {
+          "source": "trimesh.creation",
+          "specifiers": [
+            "box",
+            "cylinder",
+            "icosphere"
+          ]
+        }
+      ],
+      "exports": [
+        "T",
+        "thread_hole_Y",
+        "make_tray",
+        "make_lid"
+      ],
+      "totalLines": 187,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/_구버전/기각_목재안/gen_frame_wood_dwg.py": {
+      "filePath": "06_부스_하우징/_구버전/기각_목재안/gen_frame_wood_dwg.py",
+      "contentHash": "95cea9f45defb29493fc907ae80ab1b3156ad9b230a80e44d0e533e474a061d9",
+      "functions": [
+        {
+          "name": "txt",
+          "params": [
+            "x",
+            "y",
+            "t",
+            "sz",
+            "col",
+            "anc",
+            "w",
+            "it"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "line",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "col",
+            "w",
+            "dash",
+            "cap"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "rect",
+          "params": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "fill",
+            "stroke",
+            "sw",
+            "rx"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "poly",
+          "params": [
+            "pts",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "circ",
+          "params": [
+            "x",
+            "y",
+            "r",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "tick",
+          "params": [
+            "x",
+            "y",
+            "ang",
+            "L",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "dim_h",
+          "params": [
+            "x1",
+            "x2",
+            "y",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "dim_v",
+          "params": [
+            "y1",
+            "y2",
+            "x",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "ext_line",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "balloon",
+          "params": [
+            "x",
+            "y",
+            "n"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "wood_v",
+          "params": [
+            "x",
+            "ytop",
+            "ybot",
+            "wpx"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "wood_h",
+          "params": [
+            "xl",
+            "xr",
+            "y",
+            "hpx"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "wood_brace",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "wpx"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "lbracket",
+          "params": [
+            "cx",
+            "cy",
+            "size",
+            "flip"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "title_block",
+          "params": [
+            "sheet_no"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "sheet1",
+          "params": [],
+          "exported": true,
+          "lineCount": 96
+        },
+        {
+          "name": "iso",
+          "params": [
+            "x",
+            "y",
+            "z",
+            "ox",
+            "oy",
+            "s"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "isobox",
+          "params": [
+            "x0",
+            "y0",
+            "z0",
+            "dx",
+            "dy",
+            "dz",
+            "ox",
+            "oy",
+            "s",
+            "ctop",
+            "cfront",
+            "cside"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "sheet2",
+          "params": [],
+          "exported": true,
+          "lineCount": 86
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        },
+        {
+          "source": "cairosvg",
+          "specifiers": [
+            "cairosvg"
+          ]
+        }
+      ],
+      "exports": [
+        "txt",
+        "line",
+        "rect",
+        "poly",
+        "circ",
+        "tick",
+        "dim_h",
+        "dim_v",
+        "ext_line",
+        "balloon",
+        "wood_v",
+        "wood_h",
+        "wood_brace",
+        "lbracket",
+        "title_block",
+        "sheet1",
+        "iso",
+        "isobox",
+        "sheet2"
+      ],
+      "totalLines": 282,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/_구버전/기각_목재안/gen_wood_booth.py": {
+      "filePath": "06_부스_하우징/_구버전/기각_목재안/gen_wood_booth.py",
+      "contentHash": "1c89fbfab5c8dc34ab9c19531232c26be751591fc6999b4824c803a2e01bca48",
+      "functions": [
+        {
+          "name": "txt",
+          "params": [
+            "x",
+            "y",
+            "t",
+            "sz",
+            "col",
+            "anc",
+            "w"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "esc",
+          "params": [
+            "t"
+          ],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "line",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "col",
+            "w",
+            "dash",
+            "cap"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "rect",
+          "params": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "fill",
+            "stroke",
+            "sw",
+            "rx"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "poly",
+          "params": [
+            "pts",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "circ",
+          "params": [
+            "x",
+            "y",
+            "r",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "balloon",
+          "params": [
+            "x",
+            "y",
+            "n",
+            "col",
+            "r"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "tick",
+          "params": [
+            "x",
+            "y",
+            "L",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "dim_v",
+          "params": [
+            "y1",
+            "y2",
+            "x",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "dim_h",
+          "params": [
+            "x1",
+            "x2",
+            "y",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "woodbar",
+          "params": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "active",
+            "grain"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "brace",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "active",
+            "wpx"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "langle",
+          "params": [
+            "x",
+            "y",
+            "s",
+            "flip",
+            "active"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "bolt",
+          "params": [
+            "x",
+            "y",
+            "r",
+            "active"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "sandbag",
+          "params": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "active"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "page_frame",
+          "params": [
+            "title",
+            "pageno",
+            "total",
+            "subtitle"
+          ],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "draw_front",
+          "params": [
+            "E",
+            "ox",
+            "yF",
+            "sc",
+            "active",
+            "dims",
+            "radar"
+          ],
+          "exported": true,
+          "lineCount": 36
+        },
+        {
+          "name": "draw_side",
+          "params": [
+            "E",
+            "ox",
+            "yF",
+            "sc",
+            "active",
+            "dims",
+            "crop"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "svg",
+          "params": [
+            "E"
+          ],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "p_cover",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "p_tools",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 49
+        },
+        {
+          "name": "p_parts",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 38
+        },
+        {
+          "name": "p_drill",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 45
+        },
+        {
+          "name": "step_header",
+          "params": [
+            "E",
+            "n",
+            "title",
+            "note"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "p_step12",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "step_header2",
+          "params": [
+            "E",
+            "n",
+            "title",
+            "x",
+            "y"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "tipbox",
+          "params": [
+            "E",
+            "tag",
+            "t"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "p_step34",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "p_step56",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "p_final",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 27
+        },
+        {
+          "name": "wrap",
+          "params": [
+            "s",
+            "n"
+          ],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "diagram_box",
+          "params": [
+            "E",
+            "x",
+            "y",
+            "w",
+            "h"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "step_page",
+          "params": [
+            "pn",
+            "tot",
+            "n",
+            "title",
+            "note",
+            "drawer",
+            "steps",
+            "warn",
+            "warncol"
+          ],
+          "exported": true,
+          "lineCount": 19
+        },
+        {
+          "name": "d_base",
+          "params": [
+            "E"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "d_front",
+          "params": [
+            "active",
+            "dims"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "d_housing",
+          "params": [
+            "E"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "p_s1",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "p_s2",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "p_s3",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "p_s4",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "p_s5",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "p_s6",
+          "params": [
+            "pn",
+            "tot"
+          ],
+          "exported": true,
+          "lineCount": 6
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        },
+        {
+          "source": "textwrap",
+          "specifiers": [
+            "_wrap"
+          ]
+        },
+        {
+          "source": "cairosvg",
+          "specifiers": [
+            "cairosvg"
+          ]
+        },
+        {
+          "source": "io",
+          "specifiers": [
+            "io"
+          ]
+        },
+        {
+          "source": "pypdf",
+          "specifiers": [
+            "PdfWriter",
+            "PdfReader"
+          ]
+        },
+        {
+          "source": "PIL",
+          "specifiers": [
+            "Image"
+          ]
+        }
+      ],
+      "exports": [
+        "txt",
+        "esc",
+        "line",
+        "rect",
+        "poly",
+        "circ",
+        "balloon",
+        "tick",
+        "dim_v",
+        "dim_h",
+        "woodbar",
+        "brace",
+        "langle",
+        "bolt",
+        "sandbag",
+        "page_frame",
+        "draw_front",
+        "draw_side",
+        "svg",
+        "p_cover",
+        "p_tools",
+        "p_parts",
+        "p_drill",
+        "step_header",
+        "p_step12",
+        "step_header2",
+        "tipbox",
+        "p_step34",
+        "p_step56",
+        "p_final",
+        "wrap",
+        "diagram_box",
+        "step_page",
+        "d_base",
+        "d_front",
+        "d_housing",
+        "p_s1",
+        "p_s2",
+        "p_s3",
+        "p_s4",
+        "p_s5",
+        "p_s6"
+      ],
+      "totalLines": 513,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/_구버전/기각_목재안/목재부스_이미지생성_프롬프트.md": {
+      "filePath": "06_부스_하우징/_구버전/기각_목재안/목재부스_이미지생성_프롬프트.md",
+      "contentHash": "1d664017793c3234a15efb5e1c54bb1ed32f4f64d2b1fd64cd786e773e50c6e3",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 45,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/_구버전/프레임_1.2m구안/gen_frame_dwg.py": {
+      "filePath": "06_부스_하우징/_구버전/프레임_1.2m구안/gen_frame_dwg.py",
+      "contentHash": "6fe17d1e967d02309d3533ffb45bdf9d15d26aab302227a2e83d09cad423cc4e",
+      "functions": [
+        {
+          "name": "T",
+          "params": [
+            "s"
+          ],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "txt",
+          "params": [
+            "x",
+            "y",
+            "t",
+            "sz",
+            "col",
+            "anc",
+            "w",
+            "it"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "line",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "col",
+            "w",
+            "dash"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "rect",
+          "params": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "fill",
+            "stroke",
+            "sw",
+            "rx"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "poly",
+          "params": [
+            "pts",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "circ",
+          "params": [
+            "x",
+            "y",
+            "r",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "tick",
+          "params": [
+            "x",
+            "y",
+            "ang",
+            "L",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "dim_h",
+          "params": [
+            "x1",
+            "x2",
+            "y",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "dim_v",
+          "params": [
+            "y1",
+            "y2",
+            "x",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "ext_line",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "balloon",
+          "params": [
+            "x",
+            "y",
+            "n"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "profile_v",
+          "params": [
+            "x",
+            "ytop",
+            "ybot",
+            "wpx"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "profile_h",
+          "params": [
+            "xl",
+            "xr",
+            "y",
+            "hpx"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "gusset",
+          "params": [
+            "cx",
+            "cy",
+            "size",
+            "flip"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "title_block",
+          "params": [
+            "sheet_no"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "sheet1",
+          "params": [],
+          "exported": true,
+          "lineCount": 82
+        },
+        {
+          "name": "iso",
+          "params": [
+            "x",
+            "y",
+            "z",
+            "ox",
+            "oy",
+            "s"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "isobox",
+          "params": [
+            "x0",
+            "y0",
+            "z0",
+            "dx",
+            "dy",
+            "dz",
+            "ox",
+            "oy",
+            "s",
+            "ctop",
+            "cfront",
+            "cside"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "sheet2",
+          "params": [],
+          "exported": true,
+          "lineCount": 82
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "cairosvg",
+          "specifiers": [
+            "cairosvg"
+          ]
+        },
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        }
+      ],
+      "exports": [
+        "T",
+        "txt",
+        "line",
+        "rect",
+        "poly",
+        "circ",
+        "tick",
+        "dim_h",
+        "dim_v",
+        "ext_line",
+        "balloon",
+        "profile_v",
+        "profile_h",
+        "gusset",
+        "title_block",
+        "sheet1",
+        "iso",
+        "isobox",
+        "sheet2"
+      ],
+      "totalLines": 258,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/현행_v8_4/README.md": {
+      "filePath": "06_부스_하우징/현행_v8_4/README.md",
+      "contentHash": "2f75b99cf68e3e65d99a8d2c6a6d790af8156e4a9c76a806a8a6ecca2e77e7d7",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 406,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/현행_v8_4/gen_alu_sheet.py": {
+      "filePath": "06_부스_하우징/현행_v8_4/gen_alu_sheet.py",
+      "contentHash": "9230deedb6d28f400b93f0dbd21b553ff4ead1711142ee0fdeba13877b869974",
+      "functions": [
+        {
+          "name": "esc",
+          "params": [
+            "t"
+          ],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "txt",
+          "params": [
+            "x",
+            "y",
+            "t",
+            "sz",
+            "col",
+            "anc",
+            "w"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "line",
+          "params": [
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "col",
+            "w",
+            "dash"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "rect",
+          "params": [
+            "x",
+            "y",
+            "w",
+            "h",
+            "fill",
+            "stroke",
+            "sw",
+            "rx"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "poly",
+          "params": [
+            "pts",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "circ",
+          "params": [
+            "x",
+            "y",
+            "r",
+            "fill",
+            "stroke",
+            "sw"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "tick",
+          "params": [
+            "x",
+            "y",
+            "L",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "dim_v",
+          "params": [
+            "y1",
+            "y2",
+            "x",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "dim_h",
+          "params": [
+            "x1",
+            "x2",
+            "y",
+            "t",
+            "col"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "balloon",
+          "params": [
+            "x",
+            "y",
+            "n",
+            "col",
+            "r"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "prof_v",
+          "params": [
+            "x",
+            "ytop",
+            "ybot",
+            "w"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "prof_h",
+          "params": [
+            "xl",
+            "xr",
+            "y",
+            "h"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "gusset",
+          "params": [
+            "cx",
+            "cy",
+            "size",
+            "flip"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "sheet",
+          "params": [],
+          "exported": true,
+          "lineCount": 113
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "math",
+          "specifiers": [
+            "math"
+          ]
+        },
+        {
+          "source": "cairosvg",
+          "specifiers": [
+            "cairosvg"
+          ]
+        },
+        {
+          "source": "io",
+          "specifiers": [
+            "io"
+          ]
+        },
+        {
+          "source": "pypdf",
+          "specifiers": [
+            "PdfWriter",
+            "PdfReader"
+          ]
+        }
+      ],
+      "exports": [
+        "esc",
+        "txt",
+        "line",
+        "rect",
+        "poly",
+        "circ",
+        "tick",
+        "dim_v",
+        "dim_h",
+        "balloon",
+        "prof_v",
+        "prof_h",
+        "gusset",
+        "sheet"
+      ],
+      "totalLines": 167,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/현행_v8_4/gen_clampscrew.py": {
+      "filePath": "06_부스_하우징/현행_v8_4/gen_clampscrew.py",
+      "contentHash": "a54700a4ab9c551dbc91853c5017f249c340547307d1cbbaf00c865fce294a3e",
+      "functions": [
+        {
+          "name": "thread",
+          "params": [
+            "length"
+          ],
+          "exported": true,
+          "lineCount": 8
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "trimesh",
+          "specifiers": [
+            "trimesh"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "trimesh.creation",
+          "specifiers": [
+            "cylinder",
+            "icosphere",
+            "box"
+          ]
+        }
+      ],
+      "exports": [
+        "thread"
+      ],
+      "totalLines": 35,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/현행_v8_4/gen_housing.py": {
+      "filePath": "06_부스_하우징/현행_v8_4/gen_housing.py",
+      "contentHash": "353e9f51a4c7cba13911770abc956bf04686ee7a6270750621ef30a4a9bcbb9c",
+      "functions": [
+        {
+          "name": "mY",
+          "params": [
+            "y"
+          ],
+          "exported": true,
+          "lineCount": 1
+        },
+        {
+          "name": "T",
+          "params": [
+            "x",
+            "y",
+            "z"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "boxc",
+          "params": [
+            "sx",
+            "sy",
+            "sz",
+            "x",
+            "y",
+            "z"
+          ],
+          "exported": true,
+          "lineCount": 3
+        },
+        {
+          "name": "cyl",
+          "params": [
+            "r",
+            "h",
+            "x",
+            "y",
+            "z",
+            "sec"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "thread_hole_Y",
+          "params": [
+            "x",
+            "z",
+            "L"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "make_tray",
+          "params": [],
+          "exported": true,
+          "lineCount": 93
+        },
+        {
+          "name": "make_usb_relief",
+          "params": [],
+          "exported": true,
+          "lineCount": 18
+        },
+        {
+          "name": "make_usb_cuts",
+          "params": [],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "make_lid",
+          "params": [],
+          "exported": true,
+          "lineCount": 25
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "trimesh",
+          "specifiers": [
+            "trimesh"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "trimesh.transformations",
+          "specifiers": [
+            "tf"
+          ]
+        },
+        {
+          "source": "trimesh.creation",
+          "specifiers": [
+            "box",
+            "cylinder",
+            "icosphere"
+          ]
+        }
+      ],
+      "exports": [
+        "mY",
+        "T",
+        "boxc",
+        "cyl",
+        "thread_hole_Y",
+        "make_tray",
+        "make_usb_relief",
+        "make_usb_cuts",
+        "make_lid"
+      ],
+      "totalLines": 392,
+      "hasStructuralAnalysis": true
+    },
+    "06_부스_하우징/현행_v8_4/레이더보드_실측규격.md": {
+      "filePath": "06_부스_하우징/현행_v8_4/레이더보드_실측규격.md",
+      "contentHash": "91ac1504667cb75e7cc06d734395081c997e1bf434e3b954809ffd01e507d824",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 216,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/1주차/1주차_로컬환경구축.md": {
+      "filePath": "08_주차별_진행도/1주차/1주차_로컬환경구축.md",
+      "contentHash": "610107b31e5cab3abab7c853ff578dc9f17945287b5175de7b55a905e11e83dc",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 61,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/1주차/1주차_이론정리_LangChain_RAG_VectorDB.md": {
+      "filePath": "08_주차별_진행도/1주차/1주차_이론정리_LangChain_RAG_VectorDB.md",
+      "contentHash": "87c486d200152e30e58f33e3916ac85a5edc5a1c3176b637c6612a247b652666",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 338,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/2주차/2주차_LangChain기초.md": {
+      "filePath": "08_주차별_진행도/2주차/2주차_LangChain기초.md",
+      "contentHash": "108a2539d735cdb1026e7bcf61d0d9567705579f112894cff1307a51b590bc1e",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 65,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/2주차/week2.py": {
+      "filePath": "08_주차별_진행도/2주차/week2.py",
+      "contentHash": "2a149f6650d46a7c2f2120f14c0a64bad33534df36e65ccc1c2ffd8084e66bbe",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "ChatOllama"
+          ]
+        },
+        {
+          "source": "langchain_core.prompts",
+          "specifiers": [
+            "PromptTemplate"
+          ]
+        },
+        {
+          "source": "langchain_core.output_parsers",
+          "specifiers": [
+            "StrOutputParser"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 23,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/3주차/3주차_청킹_임베딩_적재.md": {
+      "filePath": "08_주차별_진행도/3주차/3주차_청킹_임베딩_적재.md",
+      "contentHash": "ac17a15bcfa7c136ac4b3a600537f053e8dfdc3a22da477d5057ecfab621c397",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 80,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/3주차/week3.py": {
+      "filePath": "08_주차별_진행도/3주차/week3.py",
+      "contentHash": "6f070c3b3e34cbfae3369aa6a817ae6c9ffeadd58eb49c599eace1694932f1f4",
+      "functions": [],
+      "classes": [],
+      "imports": [
+        {
+          "source": "glob",
+          "specifiers": [
+            "glob"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_community.document_loaders",
+          "specifiers": [
+            "PyPDFLoader"
+          ]
+        },
+        {
+          "source": "langchain_text_splitters",
+          "specifiers": [
+            "RecursiveCharacterTextSplitter"
+          ]
+        }
+      ],
+      "exports": [],
+      "totalLines": 67,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/4주차/4주차_Streamlit_RAG_대시보드.md": {
+      "filePath": "08_주차별_진행도/4주차/4주차_Streamlit_RAG_대시보드.md",
+      "contentHash": "2fd6b0576131dde6fd17580cd5ba1757f7f5f4792b3c248a80a4222bcd48f1c4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 106,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/4주차/week4_개선판.py": {
+      "filePath": "08_주차별_진행도/4주차/week4_개선판.py",
+      "contentHash": "afb410ae82e7b081a6e4af4f778cd7a6c7c33e019df233bbb88b2f9ec104912f",
+      "functions": [
+        {
+          "name": "get_vectorstore",
+          "params": [],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "get_llm",
+          "params": [],
+          "exported": true,
+          "lineCount": 6
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "streamlit",
+          "specifiers": [
+            "st"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "ChatOllama",
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_core.prompts",
+          "specifiers": [
+            "PromptTemplate"
+          ]
+        },
+        {
+          "source": "langchain_core.output_parsers",
+          "specifiers": [
+            "StrOutputParser"
+          ]
+        }
+      ],
+      "exports": [
+        "get_vectorstore",
+        "get_llm"
+      ],
+      "totalLines": 156,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/5주차/week5-2.py": {
+      "filePath": "08_주차별_진행도/5주차/week5-2.py",
+      "contentHash": "4bafbca9ca3af378e3c9b6a27830f0c491eeae7ab05c4a93c79f3a7cbdebc760",
+      "functions": [
+        {
+          "name": "make_signal",
+          "params": [
+            "scenario",
+            "n"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "extract_signal_features",
+          "params": [
+            "signal",
+            "fs"
+          ],
+          "returnType": "dict",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "build_pipeline_data",
+          "params": [],
+          "exported": true,
+          "lineCount": 55
+        },
+        {
+          "name": "get_vectorstore",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "get_llm",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "load_scenario",
+          "params": [
+            "event_type",
+            "facility"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "reset_state",
+          "params": [],
+          "exported": true,
+          "lineCount": 4
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta"
+          ]
+        },
+        {
+          "source": "streamlit",
+          "specifiers": [
+            "st"
+          ]
+        },
+        {
+          "source": "plotly.graph_objects",
+          "specifiers": [
+            "go"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "ChatOllama",
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_core.prompts",
+          "specifiers": [
+            "PromptTemplate"
+          ]
+        },
+        {
+          "source": "langchain_core.output_parsers",
+          "specifiers": [
+            "StrOutputParser"
+          ]
+        }
+      ],
+      "exports": [
+        "make_signal",
+        "extract_signal_features",
+        "build_pipeline_data",
+        "get_vectorstore",
+        "get_llm",
+        "load_scenario",
+        "reset_state"
+      ],
+      "totalLines": 636,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/5주차/week5-3.py": {
+      "filePath": "08_주차별_진행도/5주차/week5-3.py",
+      "contentHash": "1b7e231751fdb4ef8850327318a8230d61b5b51b272d3ce52e83eb2b3d57468e",
+      "functions": [
+        {
+          "name": "sec_header",
+          "params": [
+            "icon",
+            "title",
+            "color",
+            "sub"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "make_signal",
+          "params": [
+            "scenario",
+            "n"
+          ],
+          "returnType": "np.ndarray",
+          "exported": true,
+          "lineCount": 22
+        },
+        {
+          "name": "extract_signal_features",
+          "params": [
+            "signal",
+            "fs"
+          ],
+          "returnType": "dict",
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "build_pipeline_data",
+          "params": [],
+          "exported": true,
+          "lineCount": 51
+        },
+        {
+          "name": "get_vectorstore",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "get_llm",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "load_scenario",
+          "params": [
+            "event_type",
+            "facility"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "reset_state",
+          "params": [],
+          "exported": true,
+          "lineCount": 4
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta"
+          ]
+        },
+        {
+          "source": "streamlit",
+          "specifiers": [
+            "st"
+          ]
+        },
+        {
+          "source": "plotly.graph_objects",
+          "specifiers": [
+            "go"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "ChatOllama",
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_core.prompts",
+          "specifiers": [
+            "PromptTemplate"
+          ]
+        },
+        {
+          "source": "langchain_core.output_parsers",
+          "specifiers": [
+            "StrOutputParser"
+          ]
+        }
+      ],
+      "exports": [
+        "sec_header",
+        "make_signal",
+        "extract_signal_features",
+        "build_pipeline_data",
+        "get_vectorstore",
+        "get_llm",
+        "load_scenario",
+        "reset_state"
+      ],
+      "totalLines": 1010,
+      "hasStructuralAnalysis": true
+    },
+    "08_주차별_진행도/5주차/week5.py": {
+      "filePath": "08_주차별_진행도/5주차/week5.py",
+      "contentHash": "e62fc41694414dd208f0f2ab44cd6d8b5e50035d4177c80c62d069cfd212cae1",
+      "functions": [
+        {
+          "name": "get_vectorstore",
+          "params": [],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "get_llm",
+          "params": [],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "load_scenario",
+          "params": [
+            "event_type",
+            "facility"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "reset_state",
+          "params": [],
+          "exported": true,
+          "lineCount": 4
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "streamlit",
+          "specifiers": [
+            "st"
+          ]
+        },
+        {
+          "source": "plotly.graph_objects",
+          "specifiers": [
+            "go"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "ChatOllama",
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_core.prompts",
+          "specifiers": [
+            "PromptTemplate"
+          ]
+        },
+        {
+          "source": "langchain_core.output_parsers",
+          "specifiers": [
+            "StrOutputParser"
+          ]
+        }
+      ],
+      "exports": [
+        "get_vectorstore",
+        "get_llm",
+        "load_scenario",
+        "reset_state"
+      ],
+      "totalLines": 568,
+      "hasStructuralAnalysis": true
+    },
+    "09_참고자료/SOP_수집전략_가이드.md": {
+      "filePath": "09_참고자료/SOP_수집전략_가이드.md",
+      "contentHash": "553450abd15a9a42695760f1c079f039794b88c3ad0771abdee88748f99b2893",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 220,
+      "hasStructuralAnalysis": true
+    },
+    "09_프로젝트_정보/2026-05_1차_멘토링.pptx": {
+      "filePath": "09_프로젝트_정보/2026-05_1차_멘토링.pptx",
+      "contentHash": "5604a6125d95ff2a2156790222076b79f0d2f15b814c69cdcee343a9594bd2f1",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 5990,
+      "hasStructuralAnalysis": false
+    },
+    "09_프로젝트_정보/2026년 한이음 멘토링  안전관리에이전트_260817  공유본.pptx": {
+      "filePath": "09_프로젝트_정보/2026년 한이음 멘토링  안전관리에이전트_260817  공유본.pptx",
+      "contentHash": "3ab67ca550ce86e7e44cd495e3a1cd3d38a08f0c25ba2d994841058f23d30c8c",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 16777,
+      "hasStructuralAnalysis": false
+    },
+    "09_프로젝트_정보/2026년 한이음 멘토링 - 안전관리에이전트 (2).pdf.pptx": {
+      "filePath": "09_프로젝트_정보/2026년 한이음 멘토링 - 안전관리에이전트 (2).pdf.pptx",
+      "contentHash": "718c50fdc7358bf7fe3f02d54a6f8aba680ec6a112ee81d1fef22197ae2a3a64",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 5569,
+      "hasStructuralAnalysis": false
+    },
+    "10_팀협업/import sys -smart breaker.py": {
+      "filePath": "10_팀협업/import sys -smart breaker.py",
+      "contentHash": "f197211eafbbc35078c5d96f496d1d766798b572ca94c6298f35f9f463a1f2c8",
+      "functions": [],
+      "classes": [
+        {
+          "name": "HardwareControlThread",
+          "methods": [
+            "__init__",
+            "run",
+            "stop"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 87
+        },
+        {
+          "name": "RadarFusionDashboard",
+          "methods": [
+            "__init__",
+            "create_plot",
+            "update_graphs",
+            "update_alarms",
+            "closeEvent"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 112
+        }
+      ],
+      "imports": [
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "PyQt5.QtWidgets",
+          "specifiers": [
+            "QApplication",
+            "QMainWindow",
+            "QVBoxLayout",
+            "QHBoxLayout",
+            "QWidget",
+            "QLabel",
+            "QTextEdit"
+          ]
+        },
+        {
+          "source": "PyQt5.QtCore",
+          "specifiers": [
+            "QTimer",
+            "Qt",
+            "QThread",
+            "pyqtSignal"
+          ]
+        },
+        {
+          "source": "pyqtgraph",
+          "specifiers": [
+            "pg"
+          ]
+        },
+        {
+          "source": "pyqtgraph.opengl",
+          "specifiers": [
+            "gl"
+          ]
+        }
+      ],
+      "exports": [
+        "HardwareControlThread",
+        "RadarFusionDashboard"
+      ],
+      "totalLines": 222,
+      "hasStructuralAnalysis": true
+    },
+    "10_팀협업/radar_guard_live.py": {
+      "filePath": "10_팀협업/radar_guard_live.py",
+      "contentHash": "d2793b9424a9b517776b43206509fbcd67b6916936637681192927e106f4c546",
+      "functions": [
+        {
+          "name": "save_model",
+          "params": [
+            "model",
+            "scaler",
+            "threshold",
+            "scenario",
+            "save_dir"
+          ],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "load_trained_model",
+          "params": [
+            "scenario",
+            "save_dir"
+          ],
+          "exported": true,
+          "lineCount": 46
+        },
+        {
+          "name": "classify_event",
+          "params": [
+            "time_signal",
+            "freq_signal",
+            "recon_error",
+            "threshold"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "build_details",
+          "params": [
+            "event_type",
+            "time_signal",
+            "freq_signal",
+            "recon_error",
+            "threshold",
+            "timing"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "jaeguk_breaker",
+          "params": [
+            "event"
+          ],
+          "exported": true,
+          "lineCount": 7
+        },
+        {
+          "name": "print_yubin_preview",
+          "params": [
+            "event"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "run_radar_guard_live",
+          "params": [],
+          "exported": true,
+          "lineCount": 128
+        }
+      ],
+      "classes": [
+        {
+          "name": "TImmWaveParser",
+          "methods": [
+            "__init__",
+            "read_frame",
+            "aggregate_to_scalar",
+            "_parse_tlvs"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 121
+        },
+        {
+          "name": "RadarSignalProcessor",
+          "methods": [
+            "__init__",
+            "lms_filter",
+            "extract_features_realtime"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "LSTM_Autoencoder",
+          "methods": [
+            "__init__",
+            "forward"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 17
+        }
+      ],
+      "imports": [
+        {
+          "source": "struct",
+          "specifiers": [
+            "struct"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "torch"
+          ]
+        },
+        {
+          "source": "torch.nn",
+          "specifiers": [
+            "nn"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "optim"
+          ]
+        },
+        {
+          "source": "sklearn.preprocessing",
+          "specifiers": [
+            "MinMaxScaler"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "serial",
+          "specifiers": [
+            "serial"
+          ]
+        }
+      ],
+      "exports": [
+        "TImmWaveParser",
+        "save_model",
+        "load_trained_model",
+        "RadarSignalProcessor",
+        "LSTM_Autoencoder",
+        "classify_event",
+        "build_details",
+        "jaeguk_breaker",
+        "print_yubin_preview",
+        "run_radar_guard_live"
+      ],
+      "totalLines": 524,
+      "hasStructuralAnalysis": true
+    },
+    "10_팀협업/radar_guard_pipeline.py": {
+      "filePath": "10_팀협업/radar_guard_pipeline.py",
+      "contentHash": "4705f0d226c8c6a4dfc49e949381c6567ed1a54e7b45b0c8b174550e6ca3eae8",
+      "functions": [
+        {
+          "name": "make_mock_data",
+          "params": [
+            "scenario",
+            "n_samples"
+          ],
+          "exported": true,
+          "lineCount": 52
+        },
+        {
+          "name": "seungwon_process",
+          "params": [
+            "scenario",
+            "n_samples"
+          ],
+          "exported": true,
+          "lineCount": 20
+        },
+        {
+          "name": "_cwru_first_de_key",
+          "params": [
+            "mat"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "load_cwru_windows",
+          "params": [
+            "n_windows",
+            "window_size",
+            "fault"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "create_sequences",
+          "params": [
+            "data",
+            "seq_len"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "_train_model_impl",
+          "params": [
+            "scenario"
+          ],
+          "exported": true,
+          "lineCount": 61
+        },
+        {
+          "name": "_save_model_for_jetson",
+          "params": [
+            "model",
+            "scaler",
+            "threshold",
+            "scenario"
+          ],
+          "exported": true,
+          "lineCount": 30
+        },
+        {
+          "name": "get_trained_model",
+          "params": [
+            "scenario"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "classify_event",
+          "params": [
+            "time_signal",
+            "freq_signal",
+            "recon_error",
+            "threshold"
+          ],
+          "exported": true,
+          "lineCount": 39
+        },
+        {
+          "name": "build_details",
+          "params": [
+            "event_type",
+            "time_signal",
+            "freq_signal",
+            "recon_error",
+            "threshold",
+            "timing"
+          ],
+          "exported": true,
+          "lineCount": 39
+        },
+        {
+          "name": "seongjun_detect",
+          "params": [
+            "stage1"
+          ],
+          "exported": true,
+          "lineCount": 59
+        },
+        {
+          "name": "jaeguk_breaker",
+          "params": [
+            "event"
+          ],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "get_vectorstore",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "get_llm",
+          "params": [],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "reset_state",
+          "params": [],
+          "exported": true,
+          "lineCount": 11
+        }
+      ],
+      "classes": [
+        {
+          "name": "RadarSignalProcessor",
+          "methods": [
+            "__init__",
+            "lms_filter",
+            "extract_features"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 21
+        },
+        {
+          "name": "LSTM_Autoencoder",
+          "methods": [
+            "__init__",
+            "forward"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 17
+        }
+      ],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta"
+          ]
+        },
+        {
+          "source": "streamlit",
+          "specifiers": [
+            "st"
+          ]
+        },
+        {
+          "source": "plotly.graph_objects",
+          "specifiers": [
+            "go"
+          ]
+        },
+        {
+          "source": "plotly.subplots",
+          "specifiers": [
+            "make_subplots"
+          ]
+        },
+        {
+          "source": "requests",
+          "specifiers": [
+            "requests"
+          ]
+        },
+        {
+          "source": "io",
+          "specifiers": [
+            "io"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "torch"
+          ]
+        },
+        {
+          "source": "torch.nn",
+          "specifiers": [
+            "nn"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "optim"
+          ]
+        },
+        {
+          "source": "sklearn.preprocessing",
+          "specifiers": [
+            "MinMaxScaler"
+          ]
+        },
+        {
+          "source": "langchain_ollama",
+          "specifiers": [
+            "ChatOllama",
+            "OllamaEmbeddings"
+          ]
+        },
+        {
+          "source": "langchain_community.vectorstores",
+          "specifiers": [
+            "PGVector"
+          ]
+        },
+        {
+          "source": "langchain_core.prompts",
+          "specifiers": [
+            "PromptTemplate"
+          ]
+        },
+        {
+          "source": "langchain_core.output_parsers",
+          "specifiers": [
+            "StrOutputParser"
+          ]
+        }
+      ],
+      "exports": [
+        "RadarSignalProcessor",
+        "make_mock_data",
+        "seungwon_process",
+        "_cwru_first_de_key",
+        "load_cwru_windows",
+        "LSTM_Autoencoder",
+        "create_sequences",
+        "_train_model_impl",
+        "_save_model_for_jetson",
+        "get_trained_model",
+        "classify_event",
+        "build_details",
+        "seongjun_detect",
+        "jaeguk_breaker",
+        "get_vectorstore",
+        "get_llm",
+        "reset_state"
+      ],
+      "totalLines": 1039,
+      "hasStructuralAnalysis": true
+    },
+    "10_팀협업/radar_live_full_option.py": {
+      "filePath": "10_팀협업/radar_live_full_option.py",
+      "contentHash": "111b578c44c56106b4cdea5a5f577afe03b252b0d9c3ce66b3397c14e7f0b086",
+      "functions": [
+        {
+          "name": "extract_features",
+          "params": [
+            "frame_pts",
+            "prev_c"
+          ],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "train_on_real_data",
+          "params": [
+            "feature_list"
+          ],
+          "exported": true,
+          "lineCount": 24
+        },
+        {
+          "name": "classify",
+          "params": [
+            "feat_win",
+            "score",
+            "thr"
+          ],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "add_log",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "run_rag",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 52
+        },
+        {
+          "name": "pipeline_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 254
+        },
+        {
+          "name": "pipeline_loop_safe",
+          "params": [],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "_step_idx",
+          "params": [
+            "phase",
+            "data_ok"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "update_step_guide",
+          "params": [
+            "phase",
+            "data_ok"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "update_progress_bar",
+          "params": [
+            "phase",
+            "warmup_count"
+          ],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "make_guide_text",
+          "params": [
+            "phase",
+            "data_ok",
+            "ev_active",
+            "ev_type",
+            "ev_zone",
+            "ev_conf",
+            "rag_run",
+            "sop",
+            "warmup_count"
+          ],
+          "exported": true,
+          "lineCount": 90
+        },
+        {
+          "name": "update",
+          "params": [
+            "_i"
+          ],
+          "exported": true,
+          "lineCount": 119
+        }
+      ],
+      "classes": [
+        {
+          "name": "LMSFilter",
+          "methods": [
+            "__init__",
+            "filter"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "StaticClutterFilter",
+          "methods": [
+            "__init__",
+            "_key",
+            "_in_manual_zone",
+            "process"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 63
+        },
+        {
+          "name": "LSTM_AE",
+          "methods": [
+            "__init__",
+            "forward"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 16
+        }
+      ],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "textwrap",
+          "specifiers": [
+            "textwrap"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib",
+          "specifiers": [
+            "matplotlib"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "matplotlib.gridspec",
+          "specifiers": [
+            "gridspec"
+          ]
+        },
+        {
+          "source": "matplotlib.patches",
+          "specifiers": [
+            "mpatches"
+          ]
+        },
+        {
+          "source": "matplotlib.widgets",
+          "specifiers": [
+            "Button"
+          ]
+        },
+        {
+          "source": "mpl_toolkits.mplot3d",
+          "specifiers": [
+            "Axes3D"
+          ]
+        },
+        {
+          "source": "matplotlib.animation",
+          "specifiers": [
+            "FuncAnimation"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "torch"
+          ]
+        },
+        {
+          "source": "torch.nn",
+          "specifiers": [
+            "nn"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "optim"
+          ]
+        },
+        {
+          "source": "sklearn.preprocessing",
+          "specifiers": [
+            "MinMaxScaler"
+          ]
+        }
+      ],
+      "exports": [
+        "LMSFilter",
+        "StaticClutterFilter",
+        "extract_features",
+        "LSTM_AE",
+        "train_on_real_data",
+        "classify",
+        "add_log",
+        "run_rag",
+        "pipeline_loop",
+        "pipeline_loop_safe",
+        "_step_idx",
+        "update_step_guide",
+        "update_progress_bar",
+        "make_guide_text",
+        "update"
+      ],
+      "totalLines": 1163,
+      "hasStructuralAnalysis": true
+    },
+    "10_팀협업/감전_판별_유지_근거.md": {
+      "filePath": "10_팀협업/감전_판별_유지_근거.md",
+      "contentHash": "c0e59feb08f227b1b1faadac7feee659f30df49064157ee447580c4f9a6da1f4",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 152,
+      "hasStructuralAnalysis": true
+    },
+    "10_팀협업/데이터_인터페이스_명세서_v1.md": {
+      "filePath": "10_팀협업/데이터_인터페이스_명세서_v1.md",
+      "contentHash": "a69c4db12b81144d563dcc4a99ab327c541a8c4bf9f24f3b35378650ab1af17b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 333,
+      "hasStructuralAnalysis": true
+    },
+    "10_팀협업/파이프라인발표용.PY": {
+      "filePath": "10_팀협업/파이프라인발표용.PY",
+      "contentHash": "33284f140a0dc9e136ddbbb54b3b76bc15fc39e253b53b35095ae0b8bae18484",
+      "functions": [
+        {
+          "name": "_person_points",
+          "params": [
+            "n",
+            "x0",
+            "y0",
+            "z0",
+            "dx",
+            "dy",
+            "dz",
+            "dop_mean",
+            "dop_std",
+            "int_lo",
+            "int_hi"
+          ],
+          "exported": true,
+          "lineCount": 15
+        },
+        {
+          "name": "make_point_cloud",
+          "params": [
+            "scenario",
+            "n_frames"
+          ],
+          "exported": true,
+          "lineCount": 106
+        },
+        {
+          "name": "minseok_generate",
+          "params": [
+            "scenario",
+            "n_frames"
+          ],
+          "exported": true,
+          "lineCount": 40
+        },
+        {
+          "name": "extract_pc_features",
+          "params": [
+            "frame_points",
+            "prev_centroid"
+          ],
+          "exported": true,
+          "lineCount": 36
+        },
+        {
+          "name": "seungwon_process",
+          "params": [
+            "radar_data"
+          ],
+          "exported": true,
+          "lineCount": 45
+        },
+        {
+          "name": "create_sequences",
+          "params": [
+            "data",
+            "seq_len"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "train_model",
+          "params": [],
+          "exported": true,
+          "lineCount": 62
+        },
+        {
+          "name": "classify_event",
+          "params": [
+            "feat_window",
+            "recon_error",
+            "threshold",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 63
+        },
+        {
+          "name": "build_details",
+          "params": [
+            "event_type",
+            "feat_window",
+            "recon_error",
+            "threshold",
+            "timing"
+          ],
+          "exported": true,
+          "lineCount": 46
+        },
+        {
+          "name": "seongjun_detect",
+          "params": [
+            "stage1"
+          ],
+          "exported": true,
+          "lineCount": 75
+        },
+        {
+          "name": "jaeguk_breaker",
+          "params": [
+            "event"
+          ],
+          "exported": true,
+          "lineCount": 54
+        },
+        {
+          "name": "print_yubin_preview",
+          "params": [
+            "event"
+          ],
+          "exported": true,
+          "lineCount": 45
+        },
+        {
+          "name": "plot_result",
+          "params": [
+            "test_loss",
+            "is_anomaly",
+            "threshold",
+            "timing",
+            "clf",
+            "scenario",
+            "features_raw"
+          ],
+          "exported": true,
+          "lineCount": 107
+        },
+        {
+          "name": "test_all_scenarios",
+          "params": [
+            "n_repeat"
+          ],
+          "exported": true,
+          "lineCount": 45
+        }
+      ],
+      "classes": [
+        {
+          "name": "LMSFilter",
+          "methods": [
+            "__init__",
+            "filter"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 14
+        },
+        {
+          "name": "LSTM_AE",
+          "methods": [
+            "__init__",
+            "forward"
+          ],
+          "properties": [],
+          "exported": true,
+          "lineCount": 17
+        }
+      ],
+      "imports": [
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "torch"
+          ]
+        },
+        {
+          "source": "torch.nn",
+          "specifiers": [
+            "nn"
+          ]
+        },
+        {
+          "source": "torch",
+          "specifiers": [
+            "optim"
+          ]
+        },
+        {
+          "source": "sklearn.preprocessing",
+          "specifiers": [
+            "MinMaxScaler"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime",
+            "timedelta"
+          ]
+        },
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        }
+      ],
+      "exports": [
+        "_person_points",
+        "make_point_cloud",
+        "minseok_generate",
+        "LMSFilter",
+        "extract_pc_features",
+        "seungwon_process",
+        "LSTM_AE",
+        "create_sequences",
+        "train_model",
+        "classify_event",
+        "build_details",
+        "seongjun_detect",
+        "jaeguk_breaker",
+        "print_yubin_preview",
+        "plot_result",
+        "test_all_scenarios"
+      ],
+      "totalLines": 963,
+      "hasStructuralAnalysis": true
+    },
+    "AGENTS.md": {
+      "filePath": "AGENTS.md",
+      "contentHash": "b6e0df80bd2e102e6e0c89b7f2d67aaa8375af823d727f91e2248c052ffe100b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 222,
+      "hasStructuralAnalysis": true
+    },
+    "CLAUDE.md": {
+      "filePath": "CLAUDE.md",
+      "contentHash": "4b05c6f51bd3d0c96dd2d53a5a53eaeac0e8602cc9caa9082ede149ea7488cf9",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 218,
+      "hasStructuralAnalysis": true
+    },
+    "HANDOFF.md": {
+      "filePath": "HANDOFF.md",
+      "contentHash": "ee8754041270c222d935595099fa235c7d5a6d69f198cb27f8fbe396fedda415",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 34,
+      "hasStructuralAnalysis": true
+    },
+    "README.md": {
+      "filePath": "README.md",
+      "contentHash": "51856f0bfe3c76cda7ca96e78340f0591706345a23d13970d6357d1360f86e8b",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 3666,
+      "hasStructuralAnalysis": true
+    },
+    "_구버전보관/_구버전_laptop_viewer.py": {
+      "filePath": "_구버전보관/_구버전_laptop_viewer.py",
+      "contentHash": "a3a53e892758f0f8bf4dccecc480b8f4f0cae79ef54c2e1f4f9a3dce87ec6746",
+      "functions": [
+        {
+          "name": "_set_korean_font",
+          "params": [],
+          "exported": true,
+          "lineCount": 13
+        },
+        {
+          "name": "instant_action",
+          "params": [
+            "ev_type"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "add_log",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "generate_detailed_sop",
+          "params": [
+            "ev_type",
+            "zone",
+            "manual_ctx"
+          ],
+          "exported": true,
+          "lineCount": 29
+        },
+        {
+          "name": "_prewarm_gemma",
+          "params": [],
+          "exported": true,
+          "lineCount": 26
+        },
+        {
+          "name": "_sop_status",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "_make_detailed_sop",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 28
+        },
+        {
+          "name": "run_rag",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "_rag_retrieve",
+          "params": [
+            "ev_type",
+            "zone"
+          ],
+          "exported": true,
+          "lineCount": 61
+        },
+        {
+          "name": "send_cmd",
+          "params": [
+            "cmd"
+          ],
+          "exported": true,
+          "lineCount": 6
+        },
+        {
+          "name": "hello_loop",
+          "params": [],
+          "exported": true,
+          "lineCount": 5
+        },
+        {
+          "name": "udp_receiver",
+          "params": [],
+          "exported": true,
+          "lineCount": 71
+        },
+        {
+          "name": "_step_idx",
+          "params": [
+            "phase",
+            "data_ok"
+          ],
+          "exported": true,
+          "lineCount": 10
+        },
+        {
+          "name": "update_step_guide",
+          "params": [
+            "phase",
+            "data_ok"
+          ],
+          "exported": true,
+          "lineCount": 11
+        },
+        {
+          "name": "update_progress_bar",
+          "params": [
+            "phase",
+            "warmup_count"
+          ],
+          "exported": true,
+          "lineCount": 32
+        },
+        {
+          "name": "make_guide_text",
+          "params": [
+            "phase",
+            "data_ok",
+            "ev_active",
+            "ev_type",
+            "ev_zone",
+            "ev_conf",
+            "rag_run",
+            "sop",
+            "warmup_count",
+            "connected"
+          ],
+          "exported": true,
+          "lineCount": 100
+        },
+        {
+          "name": "_refresh_sop_popup",
+          "params": [],
+          "exported": true,
+          "lineCount": 34
+        },
+        {
+          "name": "update",
+          "params": [
+            "_i"
+          ],
+          "exported": true,
+          "lineCount": 170
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "json",
+          "specifiers": [
+            "json"
+          ]
+        },
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        },
+        {
+          "source": "time",
+          "specifiers": [
+            "time"
+          ]
+        },
+        {
+          "source": "socket",
+          "specifiers": [
+            "socket"
+          ]
+        },
+        {
+          "source": "threading",
+          "specifiers": [
+            "threading"
+          ]
+        },
+        {
+          "source": "textwrap",
+          "specifiers": [
+            "textwrap"
+          ]
+        },
+        {
+          "source": "warnings",
+          "specifiers": [
+            "warnings"
+          ]
+        },
+        {
+          "source": "datetime",
+          "specifiers": [
+            "datetime"
+          ]
+        },
+        {
+          "source": "collections",
+          "specifiers": [
+            "deque"
+          ]
+        },
+        {
+          "source": "numpy",
+          "specifiers": [
+            "np"
+          ]
+        },
+        {
+          "source": "matplotlib",
+          "specifiers": [
+            "matplotlib"
+          ]
+        },
+        {
+          "source": "matplotlib.pyplot",
+          "specifiers": [
+            "plt"
+          ]
+        },
+        {
+          "source": "matplotlib.gridspec",
+          "specifiers": [
+            "gridspec"
+          ]
+        },
+        {
+          "source": "matplotlib.patches",
+          "specifiers": [
+            "mpatches"
+          ]
+        },
+        {
+          "source": "matplotlib.widgets",
+          "specifiers": [
+            "Button"
+          ]
+        },
+        {
+          "source": "mpl_toolkits.mplot3d",
+          "specifiers": [
+            "Axes3D"
+          ]
+        }
+      ],
+      "exports": [
+        "_set_korean_font",
+        "instant_action",
+        "add_log",
+        "generate_detailed_sop",
+        "_prewarm_gemma",
+        "_sop_status",
+        "_make_detailed_sop",
+        "run_rag",
+        "_rag_retrieve",
+        "send_cmd",
+        "hello_loop",
+        "udp_receiver",
+        "_step_idx",
+        "update_step_guide",
+        "update_progress_bar",
+        "make_guide_text",
+        "_refresh_sop_popup",
+        "update"
+      ],
+      "totalLines": 1108,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/sync_agent_docs.py": {
+      "filePath": "scripts/sync_agent_docs.py",
+      "contentHash": "5d67ccb3fe0c9a035a8fe60f6d34594e70266d54ce37b570b72871f25ca75ecc",
+      "functions": [
+        {
+          "name": "convert",
+          "params": [
+            "text"
+          ],
+          "exported": true,
+          "lineCount": 4
+        },
+        {
+          "name": "expected_agents_md",
+          "params": [],
+          "exported": true,
+          "lineCount": 8
+        },
+        {
+          "name": "walk",
+          "params": [
+            "base"
+          ],
+          "exported": true,
+          "lineCount": 9
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 40
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "shutil",
+          "specifiers": [
+            "shutil"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        }
+      ],
+      "exports": [
+        "convert",
+        "expected_agents_md",
+        "walk",
+        "main"
+      ],
+      "totalLines": 121,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/validate_ai_bridge.py": {
+      "filePath": "scripts/validate_ai_bridge.py",
+      "contentHash": "2db435aa6f65a29040153a66b242cdb8463a0b15e64b3ae47a683ce70203c3d3",
+      "functions": [
+        {
+          "name": "check_file",
+          "params": [
+            "fname",
+            "prefix"
+          ],
+          "exported": true,
+          "lineCount": 42
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 31
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        }
+      ],
+      "exports": [
+        "check_file",
+        "main"
+      ],
+      "totalLines": 130,
+      "hasStructuralAnalysis": true
+    },
+    "scripts/validate_handoff.py": {
+      "filePath": "scripts/validate_handoff.py",
+      "contentHash": "9366a781101fdf6fe8987d14fa47f116491968d39306cd10f73e5a4578d742e1",
+      "functions": [
+        {
+          "name": "bad",
+          "params": [
+            "msg"
+          ],
+          "exported": true,
+          "lineCount": 2
+        },
+        {
+          "name": "main",
+          "params": [],
+          "exported": true,
+          "lineCount": 74
+        }
+      ],
+      "classes": [],
+      "imports": [
+        {
+          "source": "os",
+          "specifiers": [
+            "os"
+          ]
+        },
+        {
+          "source": "re",
+          "specifiers": [
+            "re"
+          ]
+        },
+        {
+          "source": "sys",
+          "specifiers": [
+            "sys"
+          ]
+        }
+      ],
+      "exports": [
+        "bad",
+        "main"
+      ],
+      "totalLines": 135,
+      "hasStructuralAnalysis": true
+    },
+    "폴더안내.md": {
+      "filePath": "폴더안내.md",
+      "contentHash": "a0cfe4827a860e7df38e2c4aaf7cd628521b2481979cecb440d9784bfd788337",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 88,
+      "hasStructuralAnalysis": true
+    },
+    "화면설계서 고도화 참고사항.md": {
+      "filePath": "화면설계서 고도화 참고사항.md",
+      "contentHash": "3d0f54171bdb2c1ab17a4a9f0cbca128993e1221d48ddaabf54710e31cc88b50",
+      "functions": [],
+      "classes": [],
+      "imports": [],
+      "exports": [],
+      "totalLines": 39,
+      "hasStructuralAnalysis": true
+    }
+  }
+}

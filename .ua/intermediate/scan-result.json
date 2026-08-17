@@ -1,0 +1,852 @@
+{
+  "name": "radar-guard-gsd",
+  "description": "Radar-Guard is a field-worker safety management agent that combines non-contact radar sensing with a vector database for high-security site monitoring; this repository holds the RAG/UI portion of the project (LangChain, pgvector, a Streamlit dashboard) built for the 2026 Hanium Dream-Up contest. Note: this project has over 100 source files; consider scoping analysis to a subdirectory for faster results.",
+  "languages": [
+    "config",
+    "json",
+    "jsonl",
+    "markdown",
+    "python"
+  ],
+  "frameworks": [],
+  "files": [
+    {
+      "path": ".agents/skills/jetson-deploy/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 69,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/next-task/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 64,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/radar-guard-hmi/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 105,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/radar-guard-hmi/references/ui-design-system.md",
+      "language": "markdown",
+      "sizeLines": 161,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/readme-log/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 64,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/replay-regression/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 62,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/session-end/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 102,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".agents/skills/ui-verify/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 79,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/.headroom_wrap_marker.json",
+      "language": "json",
+      "sizeLines": 0,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".claude/settings.local.json",
+      "language": "json",
+      "sizeLines": 57,
+      "fileCategory": "config"
+    },
+    {
+      "path": ".claude/skills/jetson-deploy/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 69,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/next-task/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 64,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/radar-guard-hmi/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 105,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/radar-guard-hmi/references/ui-design-system.md",
+      "language": "markdown",
+      "sizeLines": 161,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/readme-log/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 64,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/replay-regression/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 62,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/session-end/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 102,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".claude/skills/ui-verify/SKILL.md",
+      "language": "markdown",
+      "sizeLines": 79,
+      "fileCategory": "docs"
+    },
+    {
+      "path": ".gitattributes",
+      "language": "unknown",
+      "sizeLines": 1,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".githooks/pre-commit",
+      "language": "unknown",
+      "sizeLines": 72,
+      "fileCategory": "code"
+    },
+    {
+      "path": ".ua/.understandignore",
+      "language": "unknown",
+      "sizeLines": 105,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/console_ui.py",
+      "language": "python",
+      "sizeLines": 3432,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/facility.py",
+      "language": "python",
+      "sizeLines": 123,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/jetson_sender.py",
+      "language": "python",
+      "sizeLines": 2104,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/mannequin_cc0.obj",
+      "language": "obj",
+      "sizeLines": 97213,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/radar_collect_roi.py",
+      "language": "python",
+      "sizeLines": 518,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/radar_common.py",
+      "language": "python",
+      "sizeLines": 388,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/radar_core.py",
+      "language": "python",
+      "sizeLines": 2238,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/replay_jsonl.py",
+      "language": "python",
+      "sizeLines": 507,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/show_fall_analysis.py",
+      "language": "python",
+      "sizeLines": 63,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/show_live_fall_features.py",
+      "language": "python",
+      "sizeLines": 24,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/sim_jetson.py",
+      "language": "python",
+      "sizeLines": 394,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/sop_doctor.py",
+      "language": "python",
+      "sizeLines": 287,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/train_fall_safety.py",
+      "language": "python",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/verify_jetson_safe.py",
+      "language": "python",
+      "sizeLines": 354,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/verify_port.py",
+      "language": "python",
+      "sizeLines": 190,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/작업결과_0731.md",
+      "language": "markdown",
+      "sizeLines": 285,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "01_현행코드/테스트_v1결함_재발검사.py",
+      "language": "python",
+      "sizeLines": 281,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/테스트_레이아웃_검증.py",
+      "language": "python",
+      "sizeLines": 138,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/테스트_실데이터_재생.py",
+      "language": "python",
+      "sizeLines": 270,
+      "fileCategory": "code"
+    },
+    {
+      "path": "01_현행코드/테스트_평면도_경보흐름.py",
+      "language": "python",
+      "sizeLines": 96,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/breaker_facility_sim.py",
+      "language": "python",
+      "sizeLines": 385,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/embed_jetson.py",
+      "language": "python",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/profile_3d.cfg",
+      "language": "config",
+      "sizeLines": 69,
+      "fileCategory": "config"
+    },
+    {
+      "path": "02_레이더_원본코드/radar_collect.py",
+      "language": "python",
+      "sizeLines": 502,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/radar_guard.cfg",
+      "language": "config",
+      "sizeLines": 50,
+      "fileCategory": "config"
+    },
+    {
+      "path": "02_레이더_원본코드/radar_live_full.py",
+      "language": "python",
+      "sizeLines": 2283,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/radar_parser.py",
+      "language": "python",
+      "sizeLines": 215,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/radar_viz.py",
+      "language": "python",
+      "sizeLines": 198,
+      "fileCategory": "code"
+    },
+    {
+      "path": "02_레이더_원본코드/train_fall_classifier.py",
+      "language": "python",
+      "sizeLines": 154,
+      "fileCategory": "code"
+    },
+    {
+      "path": "03_데이터/이벤트_학습용/events_fall_5people_20260813_1.jsonl",
+      "language": "jsonl",
+      "sizeLines": 137,
+      "fileCategory": "code"
+    },
+    {
+      "path": "04_문서/AI_BRIDGE/INBOX.md",
+      "language": "markdown",
+      "sizeLines": 42,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/AI_BRIDGE/OUTBOX.md",
+      "language": "markdown",
+      "sizeLines": 53,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/AI_BRIDGE/README.md",
+      "language": "markdown",
+      "sizeLines": 70,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/AI_BRIDGE/REVIEW.md",
+      "language": "markdown",
+      "sizeLines": 874,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/BACKLOG.md",
+      "language": "markdown",
+      "sizeLines": 45,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/Claude_Code_도입_가이드.md",
+      "language": "markdown",
+      "sizeLines": 389,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/MSDS_수집_적재_절차_0810.md",
+      "language": "markdown",
+      "sizeLines": 111,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/UI_v2_리디자인_0801.md",
+      "language": "markdown",
+      "sizeLines": 554,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/라이트모드_팔레트_확정_0803.md",
+      "language": "markdown",
+      "sizeLines": 168,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/설계/DEBUG_README.md",
+      "language": "markdown",
+      "sizeLines": 317,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/설계/UI_LLM_개편_계획_0726.md",
+      "language": "markdown",
+      "sizeLines": 296,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/설계/데이터_인터페이스_명세_v1.md",
+      "language": "markdown",
+      "sizeLines": 319,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/설계/젯슨_부하분산_설계.md",
+      "language": "markdown",
+      "sizeLines": 459,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/설정/CLAUDE_md_사용자전역.md",
+      "language": "markdown",
+      "sizeLines": 52,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/설정/Claude지침_설정일반용.md",
+      "language": "markdown",
+      "sizeLines": 46,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/젯슨_통합시험_런북_0805.md",
+      "language": "markdown",
+      "sizeLines": 150,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/진행보고/Radar-Guard_WBS.xlsx",
+      "language": "xlsx",
+      "sizeLines": 93,
+      "fileCategory": "code"
+    },
+    {
+      "path": "04_문서/진행보고/Radar-Guard_진행보고_0702.md",
+      "language": "markdown",
+      "sizeLines": 68,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/진행보고/WBS_updated.md",
+      "language": "markdown",
+      "sizeLines": 253,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/진행보고/내일_시연_시나리오.md",
+      "language": "markdown",
+      "sizeLines": 128,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/진행보고/수집_런북_0707.md",
+      "language": "markdown",
+      "sizeLines": 76,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "04_문서/화면_정보구조_확정_0803.md",
+      "language": "markdown",
+      "sizeLines": 161,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "06_부스_하우징/_구버전/v5_오픈프레임/gen_housing.py",
+      "language": "python",
+      "sizeLines": 186,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/_구버전/기각_목재안/gen_frame_wood_dwg.py",
+      "language": "python",
+      "sizeLines": 281,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/_구버전/기각_목재안/gen_wood_booth.py",
+      "language": "python",
+      "sizeLines": 512,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/_구버전/기각_목재안/목재부스_이미지생성_프롬프트.md",
+      "language": "markdown",
+      "sizeLines": 44,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "06_부스_하우징/_구버전/프레임_1.2m구안/gen_frame_dwg.py",
+      "language": "python",
+      "sizeLines": 257,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/현행_v8_4/README.md",
+      "language": "markdown",
+      "sizeLines": 405,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "06_부스_하우징/현행_v8_4/gen_alu_sheet.py",
+      "language": "python",
+      "sizeLines": 166,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/현행_v8_4/gen_clampscrew.py",
+      "language": "python",
+      "sizeLines": 34,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/현행_v8_4/gen_housing.py",
+      "language": "python",
+      "sizeLines": 391,
+      "fileCategory": "code"
+    },
+    {
+      "path": "06_부스_하우징/현행_v8_4/레이더보드_실측규격.md",
+      "language": "markdown",
+      "sizeLines": 215,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "08_주차별_진행도/1주차/1주차_로컬환경구축.md",
+      "language": "markdown",
+      "sizeLines": 60,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "08_주차별_진행도/1주차/1주차_이론정리_LangChain_RAG_VectorDB.md",
+      "language": "markdown",
+      "sizeLines": 337,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "08_주차별_진행도/2주차/2주차_LangChain기초.md",
+      "language": "markdown",
+      "sizeLines": 64,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "08_주차별_진행도/2주차/week2.py",
+      "language": "python",
+      "sizeLines": 22,
+      "fileCategory": "code"
+    },
+    {
+      "path": "08_주차별_진행도/3주차/3주차_청킹_임베딩_적재.md",
+      "language": "markdown",
+      "sizeLines": 79,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "08_주차별_진행도/3주차/week3.py",
+      "language": "python",
+      "sizeLines": 66,
+      "fileCategory": "code"
+    },
+    {
+      "path": "08_주차별_진행도/4주차/4주차_Streamlit_RAG_대시보드.md",
+      "language": "markdown",
+      "sizeLines": 105,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "08_주차별_진행도/4주차/week4_개선판.py",
+      "language": "python",
+      "sizeLines": 155,
+      "fileCategory": "code"
+    },
+    {
+      "path": "08_주차별_진행도/5주차/week5-2.py",
+      "language": "python",
+      "sizeLines": 635,
+      "fileCategory": "code"
+    },
+    {
+      "path": "08_주차별_진행도/5주차/week5-3.py",
+      "language": "python",
+      "sizeLines": 1009,
+      "fileCategory": "code"
+    },
+    {
+      "path": "08_주차별_진행도/5주차/week5.py",
+      "language": "python",
+      "sizeLines": 567,
+      "fileCategory": "code"
+    },
+    {
+      "path": "09_참고자료/SOP_수집전략_가이드.md",
+      "language": "markdown",
+      "sizeLines": 219,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "09_프로젝트_정보/2026-05_1차_멘토링.pptx",
+      "language": "pptx",
+      "sizeLines": 5989,
+      "fileCategory": "code"
+    },
+    {
+      "path": "09_프로젝트_정보/2026년 한이음 멘토링  안전관리에이전트_260817  공유본.pptx",
+      "language": "pptx",
+      "sizeLines": 16776,
+      "fileCategory": "code"
+    },
+    {
+      "path": "09_프로젝트_정보/2026년 한이음 멘토링 - 안전관리에이전트 (2).pdf.pptx",
+      "language": "pptx",
+      "sizeLines": 5568,
+      "fileCategory": "code"
+    },
+    {
+      "path": "10_팀협업/import sys -smart breaker.py",
+      "language": "python",
+      "sizeLines": 221,
+      "fileCategory": "code"
+    },
+    {
+      "path": "10_팀협업/radar_guard_live.py",
+      "language": "python",
+      "sizeLines": 523,
+      "fileCategory": "code"
+    },
+    {
+      "path": "10_팀협업/radar_guard_pipeline.py",
+      "language": "python",
+      "sizeLines": 1038,
+      "fileCategory": "code"
+    },
+    {
+      "path": "10_팀협업/radar_live_full_option.py",
+      "language": "python",
+      "sizeLines": 1162,
+      "fileCategory": "code"
+    },
+    {
+      "path": "10_팀협업/감전_판별_유지_근거.md",
+      "language": "markdown",
+      "sizeLines": 151,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "10_팀협업/데이터_인터페이스_명세서_v1.md",
+      "language": "markdown",
+      "sizeLines": 332,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "10_팀협업/파이프라인발표용.PY",
+      "language": "python",
+      "sizeLines": 962,
+      "fileCategory": "code"
+    },
+    {
+      "path": "AGENTS.md",
+      "language": "markdown",
+      "sizeLines": 221,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "CLAUDE.md",
+      "language": "markdown",
+      "sizeLines": 217,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "HANDOFF.md",
+      "language": "markdown",
+      "sizeLines": 33,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "README.md",
+      "language": "markdown",
+      "sizeLines": 3665,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "_구버전보관/_구버전_laptop_viewer.py",
+      "language": "python",
+      "sizeLines": 1107,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/sync_agent_docs.py",
+      "language": "python",
+      "sizeLines": 120,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/validate_ai_bridge.py",
+      "language": "python",
+      "sizeLines": 129,
+      "fileCategory": "code"
+    },
+    {
+      "path": "scripts/validate_handoff.py",
+      "language": "python",
+      "sizeLines": 134,
+      "fileCategory": "code"
+    },
+    {
+      "path": "폴더안내.md",
+      "language": "markdown",
+      "sizeLines": 87,
+      "fileCategory": "docs"
+    },
+    {
+      "path": "화면설계서 고도화 참고사항.md",
+      "language": "markdown",
+      "sizeLines": 38,
+      "fileCategory": "docs"
+    }
+  ],
+  "totalFiles": 115,
+  "filteredByIgnore": 2,
+  "estimatedComplexity": "moderate",
+  "importMap": {
+    ".agents/skills/jetson-deploy/SKILL.md": [],
+    ".agents/skills/next-task/SKILL.md": [],
+    ".agents/skills/radar-guard-hmi/SKILL.md": [],
+    ".agents/skills/radar-guard-hmi/references/ui-design-system.md": [],
+    ".agents/skills/readme-log/SKILL.md": [],
+    ".agents/skills/replay-regression/SKILL.md": [],
+    ".agents/skills/session-end/SKILL.md": [],
+    ".agents/skills/ui-verify/SKILL.md": [],
+    ".claude/.headroom_wrap_marker.json": [],
+    ".claude/settings.local.json": [],
+    ".claude/skills/jetson-deploy/SKILL.md": [],
+    ".claude/skills/next-task/SKILL.md": [],
+    ".claude/skills/radar-guard-hmi/SKILL.md": [],
+    ".claude/skills/radar-guard-hmi/references/ui-design-system.md": [],
+    ".claude/skills/readme-log/SKILL.md": [],
+    ".claude/skills/replay-regression/SKILL.md": [],
+    ".claude/skills/session-end/SKILL.md": [],
+    ".claude/skills/ui-verify/SKILL.md": [],
+    ".gitattributes": [],
+    ".githooks/pre-commit": [],
+    ".ua/.understandignore": [],
+    "01_현행코드/console_ui.py": [
+      "01_현행코드/facility.py",
+      "01_현행코드/radar_common.py",
+      "01_현행코드/radar_core.py"
+    ],
+    "01_현행코드/facility.py": [],
+    "01_현행코드/jetson_sender.py": [],
+    "01_현행코드/mannequin_cc0.obj": [],
+    "01_현행코드/radar_collect_roi.py": [],
+    "01_현행코드/radar_common.py": [],
+    "01_현행코드/radar_core.py": [
+      "01_현행코드/facility.py",
+      "01_현행코드/radar_common.py"
+    ],
+    "01_현행코드/replay_jsonl.py": [
+      "01_현행코드/radar_common.py"
+    ],
+    "01_현행코드/show_fall_analysis.py": [
+      "01_현행코드/train_fall_safety.py"
+    ],
+    "01_현행코드/show_live_fall_features.py": [],
+    "01_현행코드/sim_jetson.py": [
+      "01_현행코드/radar_common.py"
+    ],
+    "01_현행코드/sop_doctor.py": [],
+    "01_현행코드/train_fall_safety.py": [],
+    "01_현행코드/verify_jetson_safe.py": [],
+    "01_현행코드/verify_port.py": [],
+    "01_현행코드/작업결과_0731.md": [],
+    "01_현행코드/테스트_v1결함_재발검사.py": [
+      "01_현행코드/console_ui.py",
+      "01_현행코드/facility.py",
+      "01_현행코드/radar_core.py"
+    ],
+    "01_현행코드/테스트_레이아웃_검증.py": [
+      "01_현행코드/console_ui.py"
+    ],
+    "01_현행코드/테스트_실데이터_재생.py": [
+      "01_현행코드/console_ui.py",
+      "01_현행코드/radar_common.py",
+      "01_현행코드/radar_core.py",
+      "01_현행코드/replay_jsonl.py"
+    ],
+    "01_현행코드/테스트_평면도_경보흐름.py": [
+      "01_현행코드/console_ui.py",
+      "01_현행코드/radar_common.py",
+      "01_현행코드/replay_jsonl.py"
+    ],
+    "02_레이더_원본코드/breaker_facility_sim.py": [],
+    "02_레이더_원본코드/embed_jetson.py": [],
+    "02_레이더_원본코드/profile_3d.cfg": [],
+    "02_레이더_원본코드/radar_collect.py": [],
+    "02_레이더_원본코드/radar_guard.cfg": [],
+    "02_레이더_원본코드/radar_live_full.py": [],
+    "02_레이더_원본코드/radar_parser.py": [],
+    "02_레이더_원본코드/radar_viz.py": [],
+    "02_레이더_원본코드/train_fall_classifier.py": [],
+    "03_데이터/이벤트_학습용/events_fall_5people_20260813_1.jsonl": [],
+    "04_문서/AI_BRIDGE/INBOX.md": [],
+    "04_문서/AI_BRIDGE/OUTBOX.md": [],
+    "04_문서/AI_BRIDGE/README.md": [],
+    "04_문서/AI_BRIDGE/REVIEW.md": [],
+    "04_문서/BACKLOG.md": [],
+    "04_문서/Claude_Code_도입_가이드.md": [],
+    "04_문서/MSDS_수집_적재_절차_0810.md": [],
+    "04_문서/UI_v2_리디자인_0801.md": [],
+    "04_문서/라이트모드_팔레트_확정_0803.md": [],
+    "04_문서/설계/DEBUG_README.md": [],
+    "04_문서/설계/UI_LLM_개편_계획_0726.md": [],
+    "04_문서/설계/데이터_인터페이스_명세_v1.md": [],
+    "04_문서/설계/젯슨_부하분산_설계.md": [],
+    "04_문서/설정/CLAUDE_md_사용자전역.md": [],
+    "04_문서/설정/Claude지침_설정일반용.md": [],
+    "04_문서/젯슨_통합시험_런북_0805.md": [],
+    "04_문서/진행보고/Radar-Guard_WBS.xlsx": [],
+    "04_문서/진행보고/Radar-Guard_진행보고_0702.md": [],
+    "04_문서/진행보고/WBS_updated.md": [],
+    "04_문서/진행보고/내일_시연_시나리오.md": [],
+    "04_문서/진행보고/수집_런북_0707.md": [],
+    "04_문서/화면_정보구조_확정_0803.md": [],
+    "06_부스_하우징/_구버전/v5_오픈프레임/gen_housing.py": [],
+    "06_부스_하우징/_구버전/기각_목재안/gen_frame_wood_dwg.py": [],
+    "06_부스_하우징/_구버전/기각_목재안/gen_wood_booth.py": [],
+    "06_부스_하우징/_구버전/기각_목재안/목재부스_이미지생성_프롬프트.md": [],
+    "06_부스_하우징/_구버전/프레임_1.2m구안/gen_frame_dwg.py": [],
+    "06_부스_하우징/현행_v8_4/README.md": [],
+    "06_부스_하우징/현행_v8_4/gen_alu_sheet.py": [],
+    "06_부스_하우징/현행_v8_4/gen_clampscrew.py": [],
+    "06_부스_하우징/현행_v8_4/gen_housing.py": [],
+    "06_부스_하우징/현행_v8_4/레이더보드_실측규격.md": [],
+    "08_주차별_진행도/1주차/1주차_로컬환경구축.md": [],
+    "08_주차별_진행도/1주차/1주차_이론정리_LangChain_RAG_VectorDB.md": [],
+    "08_주차별_진행도/2주차/2주차_LangChain기초.md": [],
+    "08_주차별_진행도/2주차/week2.py": [],
+    "08_주차별_진행도/3주차/3주차_청킹_임베딩_적재.md": [],
+    "08_주차별_진행도/3주차/week3.py": [],
+    "08_주차별_진행도/4주차/4주차_Streamlit_RAG_대시보드.md": [],
+    "08_주차별_진행도/4주차/week4_개선판.py": [],
+    "08_주차별_진행도/5주차/week5-2.py": [],
+    "08_주차별_진행도/5주차/week5-3.py": [],
+    "08_주차별_진행도/5주차/week5.py": [],
+    "09_참고자료/SOP_수집전략_가이드.md": [],
+    "09_프로젝트_정보/2026-05_1차_멘토링.pptx": [],
+    "09_프로젝트_정보/2026년 한이음 멘토링  안전관리에이전트_260817  공유본.pptx": [],
+    "09_프로젝트_정보/2026년 한이음 멘토링 - 안전관리에이전트 (2).pdf.pptx": [],
+    "10_팀협업/import sys -smart breaker.py": [],
+    "10_팀협업/radar_guard_live.py": [],
+    "10_팀협업/radar_guard_pipeline.py": [],
+    "10_팀협업/radar_live_full_option.py": [],
+    "10_팀협업/감전_판별_유지_근거.md": [],
+    "10_팀협업/데이터_인터페이스_명세서_v1.md": [],
+    "10_팀협업/파이프라인발표용.PY": [],
+    "AGENTS.md": [],
+    "CLAUDE.md": [],
+    "HANDOFF.md": [],
+    "README.md": [],
+    "_구버전보관/_구버전_laptop_viewer.py": [],
+    "scripts/sync_agent_docs.py": [],
+    "scripts/validate_ai_bridge.py": [],
+    "scripts/validate_handoff.py": [],
+    "폴더안내.md": [],
+    "화면설계서 고도화 참고사항.md": []
+  }
+}

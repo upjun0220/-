@@ -41,6 +41,8 @@ _구버전보관/
 # ── 도구 생성 산출물 (버전 관리 대상 아님) ──
 .serena/
 graphify-out/
+.ua/.trash-*/
+.ua/tmp/
 
 # ── Python ──
 __pycache__/
