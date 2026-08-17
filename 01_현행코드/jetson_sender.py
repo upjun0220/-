@@ -350,7 +350,7 @@ def build_clutter_map(scan_frames):
 
 
 class StationaryGate:
-    """수동 재실 중 마지막 확인 움직임부터 경과시간을 재는 최소 상태기."""
+    """수동 재실 중 무동작 시간과 마지막 신뢰 위치를 함께 보존한다."""
 
     def __init__(self, reset_ds=STAT_RESET_DS, reset_frames=STAT_RESET_FRAMES):
         self.reset_ds = reset_ds
@@ -361,11 +361,21 @@ class StationaryGate:
         self.since = None
         self.motion_hits = 0
         self.alerted = False
+        self.positions = deque(maxlen=5)
 
-    def update(self, now, active, dop_std=None):
+    def anchor(self):
+        if not self.positions:
+            return None
+        pos = np.median(np.asarray(self.positions, dtype=float), axis=0)
+        return round(float(pos[0]), 3), round(float(pos[1]), 3)
+
+    def update(self, now, active, dop_std=None, pos=None):
         if not active:
             self.reset()
-            return {'dwell': 0.0, 'pre': False, 'critical': False, 'motion_reset': False}
+            return {'dwell': 0.0, 'pre': False, 'critical': False,
+                    'motion_reset': False, 'anchor': None}
+        if pos is not None:
+            self.positions.append((float(pos[0]), float(pos[1])))
         if self.since is None:
             self.since = now
 
@@ -384,7 +394,8 @@ class StationaryGate:
         dwell = max(0.0, now - self.since)
         critical = dwell >= STAT_CRIT_SEC and not self.alerted
         return {'dwell': dwell, 'pre': dwell >= STAT_PRE_SEC and not self.alerted,
-                'critical': critical, 'motion_reset': motion_reset}
+                'critical': critical, 'motion_reset': motion_reset,
+                'anchor': self.anchor()}
 
 
 def _rule_fall_positive(clf):
@@ -1278,14 +1289,17 @@ def pipeline_loop():
         add_log(f'Scan done: {len(learned)} clutter spot(s) learned [{spots_txt}]')
         add_log(f'>> STEP IN NOW -- OFF-NADIR (to the SIDE). Collection starts in {int(STEP_IN_SEC)}s.')
 
-    def _stationary_tick(dop_std=None):
-        """포인트가 없어도 호출해 수동 재실 타이머를 단조 증가시킨다."""
+    def _stationary_tick(dop_std=None, pos=None):
+        """포인트 소실 뒤에도 타이머와 마지막 신뢰 위치를 유지한다."""
         now = time.monotonic()
         with _lock:
             active = state['phase'] == PH_LIVE and state['occupied'] and not MAINT_MODE
-        result = stationary_gate.update(now, active, dop_std)
+        result = stationary_gate.update(now, active, dop_std, pos)
         dwell = result['dwell']
+        anchor = result['anchor']
         with _lock:
+            state['track_anchor'] = ({'cx': anchor[0], 'cz': anchor[1]}
+                                     if anchor is not None else None)
             if result['pre']:
                 remain = max(0, int(STAT_CRIT_SEC - dwell))
                 state['pre_alert'] = (f'PRE-ALERT  Zone {RADAR_ZONE}: no-motion {int(dwell)}s'
@@ -1300,8 +1314,12 @@ def pipeline_loop():
                     'confidence': 0.95,
                     'evidence': {'dwell': round(dwell, 1),
                                  'reset_ds': STAT_RESET_DS,
-                                 'reset_frames': STAT_RESET_FRAMES},
-                    'gates': {'occupied': {'pass': True}, 'dwell': {'pass': True}},
+                                 'reset_frames': STAT_RESET_FRAMES,
+                                 'anchor_cx': anchor[0] if anchor else None,
+                                 'anchor_cz': anchor[1] if anchor else None},
+                    'gates': {'occupied': {'pass': True},
+                              'dwell': {'pass': True},
+                              'position': {'pass': anchor is not None}},
                     'rejected': [],
                 }
                 _latch_event('stationary_anomaly', clf, RADAR_ZONE, ts, 1.0)
@@ -1975,8 +1993,9 @@ def pipeline_loop():
                 with _lock:
                     state['pre_alert'] = ''
 
-            # [8/17] 수동 occupied 기반 정지형. 위 코드는 회귀 비교용 비활성 경로다.
-            _stationary_tick(_ds)
+            # 위치는 점군이 충분할 때만 갱신하고, 소실 뒤에는 마지막 중앙값을 유지한다.
+            _stationary_pos = ((_cx, _czf) if _n >= TRACK_N_MIN else None)
+            _stationary_tick(_ds, _stationary_pos)
 
             score = 0.0
             if len(feat_buf) == SEQ_LEN:
