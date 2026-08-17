@@ -871,39 +871,67 @@ class SopEngine(QtCore.QObject):
 # 4. 3D 포인트 클라우드 — 화면의 메인
 # ══════════════════════════════════════════════════════════════════════
 def _facility_scene_geometry():
-    """데모 변전실 설비를 사각 점군·와이어프레임으로 만든다.
+    """데모 변전실과 회전체 설비를 점군·와이어프레임으로 만든다.
 
     실측 점군이 아니라 facility.py와 같은 '시설 배치 시각화'다.
     판정·자세 추정에는 절대 사용하지 않는다.
     """
-    boxes = (
-        (-1.92, -1.22, -0.45, 0.30, 0.0, 2.00),  # 좌측 배전반
-        (-1.10, -0.42, 1.18, 1.78, 0.0, 1.85),   # 후면 캐비닛 1
-        (-0.30, 0.38, 1.22, 1.78, 0.0, 1.55),    # 후면 캐비닛 2
-        (0.98, 1.82, 0.92, 1.68, 0.0, 1.48),     # 우측 변압기
-        (0.95, 1.82, -0.30, 0.38, 0.0, 0.86),    # 작업대
-        (-1.85, -1.68, -1.55, -0.58, 0.0, 1.10), # 안전 펜스
-    )
     edge_index = ((0, 1), (0, 2), (1, 3), (2, 3),
                   (4, 5), (4, 6), (5, 7), (6, 7),
                   (0, 4), (1, 5), (2, 6), (3, 7))
-    lines, dots = [], []
-    for x1, x2, y1, y2, z1, z2 in boxes:
+
+    def add_box(box, lines, dots, step=0.10):
+        x1, x2, y1, y2, z1, z2 = box
         corners = np.array(((x1, y1, z1), (x2, y1, z1),
                             (x1, y2, z1), (x2, y2, z1),
                             (x1, y1, z2), (x2, y1, z2),
                             (x1, y2, z2), (x2, y2, z2)), dtype=np.float32)
         lines.extend(corners[list(pair)] for pair in edge_index)
-        xs = np.linspace(x1, x2, max(2, int((x2 - x1) / 0.13) + 1))
-        ys = np.linspace(y1, y2, max(2, int((y2 - y1) / 0.13) + 1))
-        zs = np.linspace(z1, z2, max(2, int((z2 - z1) / 0.13) + 1))
+        xs = np.linspace(x1, x2, max(2, int((x2 - x1) / step) + 1))
+        ys = np.linspace(y1, y2, max(2, int((y2 - y1) / step) + 1))
+        zs = np.linspace(z1, z2, max(2, int((z2 - z1) / step) + 1))
         for x in (x1, x2):
             dots.extend((x, y, z) for y in ys for z in zs)
         for y in (y1, y2):
             dots.extend((x, y, z) for x in xs for z in zs)
         for z in (z1, z2):
             dots.extend((x, y, z) for x in xs for y in ys)
-    return np.vstack(lines), np.asarray(dots, dtype=np.float32)
+
+    fixed_lines, fixed_dots = [], []
+    # ROI 반폭 0.72m 바깥쪽을 조밀하게 둘러싼 변전실 배치.
+    # 후면 고압 배전반 4면
+    for x1 in (-1.34, -0.68, -0.02, 0.64):
+        add_box((x1, x1 + 0.62, 0.98, 1.34, 0.0, 1.85),
+                fixed_lines, fixed_dots)
+        # 문·계기부·환기구가 상자 하나로만 보이지 않게 앞면을 나눈다.
+        add_box((x1 + 0.12, x1 + 0.50, 0.965, 0.98, 0.35, 0.48),
+                fixed_lines, fixed_dots, 0.07)
+        add_box((x1 + 0.20, x1 + 0.42, 0.96, 0.98, 1.18, 1.32),
+                fixed_lines, fixed_dots, 0.07)
+    # 좌측 저압 분전반과 보호·제어반
+    add_box((-1.28, -0.88, 0.06, 0.70, 0.0, 1.55), fixed_lines, fixed_dots)
+    add_box((-1.28, -0.88, -0.70, -0.12, 0.0, 1.35), fixed_lines, fixed_dots)
+    # 배전반 전면 절연매트·케이블 트렌치, 우측 비상정지함
+    add_box((-1.34, 1.26, 0.84, 0.94, 0.01, 0.035), fixed_lines, fixed_dots, 0.08)
+    for x1 in np.linspace(-1.30, 1.10, 7):
+        add_box((x1, x1 + 0.28, 0.74, 0.82, 0.01, 0.055),
+                fixed_lines, fixed_dots, 0.08)
+    add_box((0.86, 1.06, 0.28, 0.48, 0.72, 1.12), fixed_lines, fixed_dots, 0.07)
+
+    machine_lines, machine_dots = [], []
+    # ROI 우측 위: 산업용 모터+송풍기 대신 시연 시 선풍기를 놓는 자리.
+    add_box((0.28, 0.62, 0.30, 0.58, 0.06, 0.14), machine_lines, machine_dots, 0.06)
+    theta = np.linspace(0.0, 2.0 * np.pi, 36, endpoint=False)
+    for x, radius in ((0.34, 0.13), (0.50, 0.13), (0.58, 0.19)):
+        ring = np.column_stack((np.full_like(theta, x),
+                                0.43 + radius * np.cos(theta),
+                                0.34 + radius * np.sin(theta)))
+        machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                             for i in range(len(ring)))
+        machine_dots.extend(ring)
+    machine_lines.append(np.array(((0.34, 0.43, 0.34), (0.58, 0.43, 0.34))))
+    return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
+            np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32))
 
 
 class Track3D(QtWidgets.QWidget):
@@ -953,8 +981,8 @@ class Track3D(QtWidgets.QWidget):
     def _build_gl(self, v):
         self.gl = gl.GLViewWidget()
         self.gl.setBackgroundColor(pg.mkColor(PANEL))
-        self.gl.setCameraPosition(distance=6.4, elevation=16, azimuth=48)
-        self._cam0 = dict(distance=6.4, elevation=16, azimuth=48)
+        self.gl.setCameraPosition(distance=5.4, elevation=16, azimuth=48)
+        self._cam0 = dict(distance=5.4, elevation=16, azimuth=48)
         g = gl.GLGridItem()
         g.setSize(4, 4)
         g.setSpacing(0.5, 0.5)
@@ -979,14 +1007,21 @@ class Track3D(QtWidgets.QWidget):
                                               width=1.0, antialias=True))
         # ⚠ 실측이 아닌 데모 설비 배치. 남색으로 낮춰 원시 점군(청록)과
         #   경보 색(빨강·주황)을 가리지 않고, 카메라 복원처럼 보이지 않게 한다.
-        env_lines, env_dots = _facility_scene_geometry()
+        env_lines, env_dots, machine_lines, machine_dots = _facility_scene_geometry()
         self.env_lines = gl.GLLinePlotItem(
             pos=env_lines, color=(0.10, 0.24, 0.38, 0.62), width=1.0,
             antialias=True, mode='lines')
         self.env_dots = gl.GLScatterPlotItem(
             pos=env_dots, color=(0.12, 0.30, 0.46, 0.46), size=2.0)
+        self.machine_lines = gl.GLLinePlotItem(
+            pos=machine_lines, color=(0.34, 0.28, 0.66, 0.76), width=1.1,
+            antialias=True, mode='lines')
+        self.machine_dots = gl.GLScatterPlotItem(
+            pos=machine_dots, color=(0.38, 0.32, 0.72, 0.62), size=2.4)
         self.gl.addItem(self.env_lines)
         self.gl.addItem(self.env_dots)
+        self.gl.addItem(self.machine_lines)
+        self.gl.addItem(self.machine_dots)
         # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
         body_unit, body_faces = _mannequin_mesh()
         body_unit = body_unit.copy()
