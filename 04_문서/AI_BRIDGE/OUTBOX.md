@@ -42,6 +42,33 @@ Codex는 규칙 문서 수정권이 없으므로 `AGENTS.md` 및 필요한 스�
 렌더링 검증이 안 됐다. 발표·문서에서 "7종 지원" 대신 "낙상·정지형·진동 3종 실측 검증"으로 표현 변경.
 재현 도구는 만들지 않는다. README/발표자료 수정은 Cowork 담당.
 
+### OUT-011  events_still.jsonl 로컬 부재 — 검증 2종 보류
+- From: Claude Code
+- Type: 불일치
+- Needs: 확인
+`03_데이터/이벤트_학습용/`에 `events_fall_5people_20260813_1.jsonl`만 있고 `replay_jsonl.py`
+기본값인 `events_still.jsonl`이 없다. HANDOFF 8/10 기록엔 이 파일로 73건 통과했다고 남아 있어
+그 뒤 이동·정리된 것으로 보인다. 사용자 결정(2026-08-18): 지금은 보류, 파일을 찾으면 재검증.
+`테스트_실데이터_재생.py`·`테스트_평면도_경보흐름.py` 실행 불가 상태.
+
+### OUT-012  yubinhong1112-spec 병합으로 README.md 8건 함께 반영됨
+- From: Claude Code
+- Type: 불일치
+- Needs: 확인
+사용자 요청(2026-08-18)으로 `github.com/yubinhong1112-spec/radar-guard`를 `git merge`했다.
+README.md §10 담당은 Cowork인데, 병합 특성상 8/15~8/17 일지 8건이 함께 들어왔다(커밋 `08dee59`).
+형식·중복 여부 검토 바람.
+
+### OUT-013  StationaryGate + RF30 판정 경로 병합 — 모델 미탑재로 비활성
+- From: Claude Code
+- Type: 판단사항
+- Needs: 확인
+사용자 결정(2026-08-18)으로 `jetson_sender.py`에 `StationaryGate`(점군 소실 후 마지막 신뢰 위치
+유지)와 RF30(30프레임 배경제거 낙상분류기) 조건부 경로를 병합했다. `fall_classifier_hybrid30.joblib`
+파일이 없어 RF30은 자동 폴백 중이며, `STAT_RESET_DS=0.38`은 원 저장소 README에도 "확정값 아님"으로
+적혀 있다. `verify_port.py`(4,137건 0)·`verify_jetson_safe.py`(61/0, StationaryGate 9건 포함)는
+통과했지만 실기 젯슨 검증은 0건.
+
 ### OUT-010  외부 CLAUDE.md(andrej-karpathy-skills) 반영 제안
 - From: Claude Code
 - Type: 판단사항
