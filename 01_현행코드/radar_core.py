@@ -57,7 +57,6 @@ import numpy as np
 from PyQt5 import QtCore, QtGui, QtWidgets
 import pyqtgraph as pg
 
-import facility as fac
 from radar_common import (
     DATA_PORT, CTRL_PORT, HELLO_SEC, LINK_TIMEOUT, SCHEMA_VERSION,
     CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET,
@@ -617,32 +616,6 @@ def stick_segments(center, axis, length, right, spread=1.0):
 
 
 @lru_cache(maxsize=1)
-def _facility_reference_lines():
-    """facility.py 의 벽·설비 윤곽을 레이더 로컬 좌표(cx, cz)로 옮긴다.
-
-    측정값이 아니라 도면상 '알려진 고정 사실'이므로 점군과 다른 옅은 색으로
-    그린다 — 센서가 감지한 게 아니라는 걸 형태로 구분한다.
-    RADAR_ZONE 에 설치된 레이더가 없으면 빈 배열을 돌려준다.
-    """
-    r = fac.RADARS.get(RADAR_ZONE)
-    if not r:
-        return np.zeros((0, 3), dtype=np.float32)
-    rx, ry = r['pos']
-    segs = []
-    for x1, y1, x2, y2 in fac.WALLS:
-        segs.append((x1 - rx, y1 - ry, 0.006))
-        segs.append((x2 - rx, y2 - ry, 0.006))
-    for x, y, w, h in fac.EQUIPMENT:
-        corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-        for i in range(4):
-            x1, y1 = corners[i]
-            x2, y2 = corners[(i + 1) % 4]
-            segs.append((x1 - rx, y1 - ry, 0.006))
-            segs.append((x2 - rx, y2 - ry, 0.006))
-    return np.asarray(segs, dtype=np.float32)
-
-
-@lru_cache(maxsize=1)
 def _mannequin_mesh():
     """리깅으로 정자세를 만든 일체형 CC0 인체 OBJ를 정규화한다."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -679,6 +652,34 @@ def _mannequin_mesh():
     mesh[:, 1] -= np.median(mesh[:, 1])
 
     return mesh.astype(np.float32), faces.astype(np.uint32)
+
+
+@lru_cache(maxsize=4)
+def _incident_mannequin_mesh(kind):
+    """동일 OBJ를 몸 중심선에 따라 굽혀 시연용 사고 자세를 만든다."""
+    unit, faces = _mannequin_mesh()
+    t = unit[:, 2]
+    paths = {
+        'fall': ((-0.48, -0.28, -0.02, 0.27, 0.48),
+                 (0.08, -0.04, 0.00, 0.06, -0.03),
+                 (-0.03, 0.08, 0.00, 0.05, -0.02)),
+        'electric': ((0.00, 0.02, 0.00, -0.12, -0.22),
+                     (0.00, 0.00, 0.00, -0.05, -0.10),
+                     (-0.50, -0.27, 0.00, 0.29, 0.47)),
+        'pinching': ((-0.04, -0.02, 0.00, 0.16, 0.27),
+                     (0.00, 0.00, 0.00, 0.08, 0.14),
+                     (-0.50, -0.28, 0.00, 0.27, 0.44)),
+        'stationary': ((0.00, 0.00, 0.00, 0.00, 0.00),
+                       (0.00, 0.00, 0.00, 0.00, 0.00),
+                       (-0.50, -0.25, 0.00, 0.25, 0.50)),
+    }
+    px, py, pz = paths.get(kind, paths['stationary'])
+    knots = np.linspace(0.0, 1.0, 5)
+    posed = unit.copy()
+    posed[:, 0] += np.interp(t, knots, px)
+    posed[:, 1] += np.interp(t, knots, py)
+    posed[:, 2] = np.interp(t, knots, pz)
+    return posed.astype(np.float32), faces
 
 
 def body_mesh(center, axis, length, right):
@@ -897,6 +898,191 @@ class SopEngine(QtCore.QObject):
 # ══════════════════════════════════════════════════════════════════════
 # 4. 3D 포인트 클라우드 — 화면의 메인
 # ══════════════════════════════════════════════════════════════════════
+def _facility_scene_geometry():
+    """데모 변전실과 건식 변압기를 점군·와이어프레임으로 만든다.
+
+    실측 점군이 아니라 facility.py와 같은 '시설 배치 시각화'다.
+    판정·자세 추정에는 절대 사용하지 않는다.
+    """
+    edge_index = ((0, 1), (0, 2), (1, 3), (2, 3),
+                  (4, 5), (4, 6), (5, 7), (6, 7),
+                  (0, 4), (1, 5), (2, 6), (3, 7))
+
+    def add_box(box, lines, dots, step=0.10):
+        x1, x2, y1, y2, z1, z2 = box
+        corners = np.array(((x1, y1, z1), (x2, y1, z1),
+                            (x1, y2, z1), (x2, y2, z1),
+                            (x1, y1, z2), (x2, y1, z2),
+                            (x1, y2, z2), (x2, y2, z2)), dtype=np.float32)
+        lines.extend(corners[list(pair)] for pair in edge_index)
+        xs = np.linspace(x1, x2, max(2, int((x2 - x1) / step) + 1))
+        ys = np.linspace(y1, y2, max(2, int((y2 - y1) / step) + 1))
+        zs = np.linspace(z1, z2, max(2, int((z2 - z1) / step) + 1))
+        for x in (x1, x2):
+            dots.extend((x, y, z) for y in ys for z in zs)
+        for y in (y1, y2):
+            dots.extend((x, y, z) for x in xs for z in zs)
+        for z in (z1, z2):
+            dots.extend((x, y, z) for x in xs for y in ys)
+
+    def add_front_details(x1, x2, y, height, lines, dots):
+        """배전반 전면을 도어·계기·환기구 점군으로 나눈다."""
+        width = x2 - x1
+        for z in (0.12, 0.62, height - 0.22):
+            lines.append(np.array(((x1 + 0.05, y, z),
+                                   (x2 - 0.05, y, z)), dtype=np.float32))
+        for x in (x1 + 0.05, x2 - 0.05):
+            lines.append(np.array(((x, y, 0.10),
+                                   (x, y, height - 0.08)), dtype=np.float32))
+        # 계기창과 하부 환기구는 면 전체를 채우지 않고 스캔 반환점처럼 끊는다.
+        add_box((x1 + width * 0.25, x1 + width * 0.75,
+                 y - 0.012, y, height * 0.63, height * 0.75),
+                lines, dots, 0.055)
+        for x in np.linspace(x1 + 0.12, x2 - 0.12, 4):
+            lines.append(np.array(((x, y - 0.014, 0.25),
+                                   (x, y - 0.014, 0.43)), dtype=np.float32))
+
+    def add_trench_segment(x1, x2, y1, y2, lines, dots):
+        add_box((x1, x2, y1, y2, 0.008, 0.035), lines, dots, 0.065)
+        if x2 - x1 >= y2 - y1:
+            for x in np.arange(x1 + 0.06, x2, 0.12):
+                lines.append(np.array(((x, y1, 0.038), (x, y2, 0.038))))
+        else:
+            for y in np.arange(y1 + 0.06, y2, 0.12):
+                lines.append(np.array(((x1, y, 0.038), (x2, y, 0.038))))
+
+    fixed_lines, fixed_dots = [], []
+    # ROI는 ±0.72m 그대로 두고 시설 시각화만 약 9×7m로 넓힌다.
+    # 후면 서비스 벽 외에는 낮은 경계만 두어 점검·피난 통로를 열어 둔다.
+    add_box((-4.45, 4.45, 3.30, 3.40, 0.0, 2.25),
+            fixed_lines, fixed_dots, 0.14)
+    for x1, x2 in ((-4.45, -0.72), (0.72, 4.45)):
+        add_box((x1, x2, -3.40, -3.30, 0.0, 0.16),
+                fixed_lines, fixed_dots, 0.12)
+    for x1, x2 in ((-4.45, -4.35), (4.35, 4.45)):
+        add_box((x1, x2, -3.30, 3.30, 0.0, 0.18),
+                fixed_lines, fixed_dots, 0.12)
+
+    # 북측 개방면을 변압기에 내주고 고압·저압 배전반 5면은 동측 벽으로 옮긴다.
+    for y1 in (-2.55, -1.69, -0.83, 0.03, 0.89):
+        add_box((3.35, 4.15, y1, y1 + 0.80, 0.0, 1.95),
+                fixed_lines, fixed_dots, 0.085)
+        for z in (0.12, 0.62, 1.73):
+            fixed_lines.append(np.array(((3.345, y1 + 0.05, z),
+                                         (3.345, y1 + 0.75, z))))
+        for y in (y1 + 0.05, y1 + 0.75):
+            fixed_lines.append(np.array(((3.345, y, 0.10),
+                                         (3.345, y, 1.87))))
+    # 서측 보호·제어반 2면. ROI와 출입 동선 사이를 비운다.
+    for y1, y2, height in ((0.55, 1.55, 1.60), (-1.55, -0.55, 1.45)):
+        add_box((-4.05, -3.35, y1, y2, 0.0, height),
+                fixed_lines, fixed_dots, 0.08)
+        for y in np.linspace(y1 + 0.16, y2 - 0.16, 3):
+            fixed_lines.append(np.array(((-3.345, y, 0.12),
+                                         (-3.345, y, height - 0.10))))
+
+    # 동측 배전반 전면 트렌치와 변압기 단자함으로 향하는 한 갈래.
+    add_trench_segment(3.02, 3.16, -2.70, 2.18, fixed_lines, fixed_dots)
+    add_trench_segment(-1.10, 3.16, 2.04, 2.18, fixed_lines, fixed_dots)
+    add_trench_segment(-1.10, -0.96, 0.72, 2.04, fixed_lines, fixed_dots)
+
+    # 배전반 상부 케이블 래더·버스덕트: 두 레일과 촘촘한 가로대.
+    for y in (3.02, 3.20):
+        fixed_lines.append(np.array(((-3.65, y, 2.18),
+                                     (3.55, y, 2.18))))
+    for x in np.arange(-3.65, 3.56, 0.22):
+        fixed_lines.append(np.array(((x, 3.02, 2.18), (x, 3.20, 2.18))))
+    for x in (3.72, 3.90):
+        fixed_lines.append(np.array(((x, -2.75, 2.18), (x, 3.20, 2.18))))
+    for y in np.arange(-2.75, 3.21, 0.22):
+        fixed_lines.append(np.array(((3.72, y, 2.18), (3.90, y, 2.18))))
+
+    # 후면 양끝 급·배기 루버와 남측 배수 그레이팅.
+    for x1, x2 in ((-3.85, -2.95), (2.45, 3.35)):
+        add_box((x1, x2, 3.18, 3.29, 0.35, 1.45),
+                fixed_lines, fixed_dots, 0.07)
+        for z in np.arange(0.45, 1.40, 0.11):
+            fixed_lines.append(np.array(((x1 + 0.08, 3.175, z),
+                                         (x2 - 0.08, 3.175, z))))
+    add_box((1.30, 2.10, -3.12, -2.72, 0.006, 0.028),
+            fixed_lines, fixed_dots, 0.055)
+    for x in np.arange(1.36, 2.08, 0.10):
+        fixed_lines.append(np.array(((x, -3.10, 0.032),
+                                     (x, -2.74, 0.032))))
+
+    machine_lines, machine_dots = [], []
+    # 대형 2.6×1.6m 건식 변압기. 북측 개방면에서 ROI 상단과 일부만 겹친다.
+    add_box((-1.30, 1.30, 0.42, 2.02, 0.05, 0.16),
+            machine_lines, machine_dots, 0.07)
+    theta = np.linspace(0.0, 2.0 * np.pi, 48, endpoint=False)
+    # 3상 몰드 코일: 수직 반복 링과 모선이 회전축이 아닌 변압기임을 드러낸다.
+    coil_centers = (-0.70, 0.0, 0.70)
+    for cx in coil_centers:
+        for z in np.linspace(0.48, 1.62, 12):
+            ring = np.column_stack((cx + 0.27 * np.cos(theta),
+                                    1.28 + 0.27 * np.sin(theta),
+                                    np.full_like(theta, z)))
+            machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                                 for i in range(len(ring)))
+            machine_dots.extend(ring[::2])
+        for angle in theta[::8]:
+            machine_lines.append(np.array(((cx + 0.27 * np.cos(angle),
+                                             1.28 + 0.27 * np.sin(angle), 0.48),
+                                            (cx + 0.27 * np.cos(angle),
+                                             1.28 + 0.27 * np.sin(angle), 1.62))))
+    # 상·하부 철심 프레임, 절연 지지대와 상부 단자.
+    for z1, z2 in ((0.27, 0.42), (1.66, 1.82)):
+        add_box((-1.04, 1.04, 0.94, 1.62, z1, z2),
+                machine_lines, machine_dots, 0.065)
+    for cx in coil_centers:
+        add_box((cx - 0.08, cx + 0.08, 1.16, 1.40, 0.16, 0.47),
+                machine_lines, machine_dots, 0.05)
+        add_box((cx - 0.07, cx + 0.07, 1.19, 1.37, 1.82, 2.02),
+                machine_lines, machine_dots, 0.045)
+    machine_lines.extend(np.array(((coil_centers[i], 1.28, 1.96),
+                                   (coil_centers[i + 1], 1.28, 1.96)))
+                         for i in range(2))
+    # 우측 전면 강제냉각 팬. 실제 선풍기 위치가 이 설비 부분과 겹치도록 보인다.
+    for cx in (0.20, 0.65, 1.10):
+        center = np.array((cx, 0.49, 0.42))
+        for radius in (0.10, 0.23):
+            ring = np.column_stack((cx + radius * np.cos(theta),
+                                    np.full_like(theta, 0.49),
+                                    0.42 + radius * np.sin(theta)))
+            machine_lines.extend(np.array((ring[i], ring[(i + 1) % len(ring)]))
+                                 for i in range(len(ring)))
+            machine_dots.extend(ring[::2])
+        for angle in theta[::8]:
+            rim = np.array((cx + 0.22 * np.cos(angle), 0.49,
+                            0.42 + 0.22 * np.sin(angle)))
+            machine_lines.append(np.array((center, rim)))
+    # 좌측 단자함과 우측 팬을 분리해 정지형 이상의 위치 문맥을 읽게 한다.
+    add_box((-1.28, -0.45, 0.72, 1.84, 0.22, 1.42),
+            machine_lines, machine_dots, 0.06)
+    add_front_details(-1.28, -0.45, 0.715, 1.42,
+                      machine_lines, machine_dots)
+
+    # 표시 전용 관심영역. 판정 경로로 되먹이지 않으며 사이에 중립 완충부를 둔다.
+    electrical_zone = np.array(((-0.72, 0.12, 0.045), (-0.12, 0.12, 0.045),
+                                (-0.12, 0.72, 0.045), (-0.72, 0.72, 0.045),
+                                (-0.72, 0.12, 0.045)), dtype=np.float32)
+    fan_zone = np.array(((0.12, 0.12, 0.045), (0.72, 0.12, 0.045),
+                         (0.72, 0.72, 0.045), (0.12, 0.72, 0.045),
+                         (0.12, 0.12, 0.045)), dtype=np.float32)
+
+    # 접지 동바는 등급색이 아닌 시설 식별용 저채도 황동색으로 별도 렌더링한다.
+    ground_lines = [np.array(((-4.18, -3.08, 0.20),
+                              (-4.18, 3.12, 0.20))),
+                    np.array(((-4.18, 3.12, 0.20),
+                              (3.95, 3.12, 0.20)))]
+    for target in ((-3.35, 1.05, 0.12), (-3.35, -1.05, 0.12),
+                   (3.35, -1.25, 0.12), (-1.30, 1.18, 0.12)):
+        ground_lines.append(np.array(((-4.18, target[1], 0.20), target)))
+    return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
+            np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32),
+            np.vstack(ground_lines), electrical_zone, fan_zone)
+
+
 class Track3D(QtWidgets.QWidget):
     """점 8개를 10프레임(1초) 누적해 약 80점으로 만들고 자세 캡슐을 씌운다."""
 
@@ -944,10 +1130,10 @@ class Track3D(QtWidgets.QWidget):
     def _build_gl(self, v):
         self.gl = gl.GLViewWidget()
         self.gl.setBackgroundColor(pg.mkColor(PANEL))
-        self.gl.setCameraPosition(distance=5.2, elevation=16, azimuth=48)
-        self._cam0 = dict(distance=5.2, elevation=16, azimuth=48)
+        self.gl.setCameraPosition(distance=19.0, elevation=30, azimuth=48)
+        self._cam0 = dict(distance=19.0, elevation=30, azimuth=48)
         g = gl.GLGridItem()
-        g.setSize(4, 4)
+        g.setSize(10, 8)
         g.setSpacing(0.5, 0.5)
         g.setColor(pg.mkColor(GRID))
         self.gl.addItem(g)
@@ -968,14 +1154,36 @@ class Track3D(QtWidgets.QWidget):
                                     np.full(48, h)])
             self.gl.addItem(gl.GLLinePlotItem(pos=ring, color=(0.13, 0.2, 0.3, 0.55),
                                               width=1.0, antialias=True))
-        # 시설 참조 지오메트리(벽·설비 윤곽) — 측정이 아니라 도면상 고정 사실이므로
-        # 점군·인체 도식과 겹치지 않는 옅은 회색, 라벨 없음으로 구분한다.
-        # facility.py 는 데모 좌표라 부스 실물 프레임(1.44m) 안에는 거의 안 잡힌다 —
-        # 실제 현장 도면으로 교체되면 그 배치가 그대로 여기 반영된다.
-        ref = _facility_reference_lines()
-        if len(ref):
-            self.gl.addItem(gl.GLLinePlotItem(pos=ref, color=(0.39, 0.45, 0.54, 0.4),
-                                              width=1.0, antialias=True, mode='lines'))
+        # ⚠ 실측이 아닌 데모 설비 배치. 남색으로 낮춰 원시 점군(청록)과
+        #   경보 색(빨강·주황)을 가리지 않고, 카메라 복원처럼 보이지 않게 한다.
+        (env_lines, env_dots, machine_lines, machine_dots,
+         ground_lines, electrical_zone, fan_zone) = _facility_scene_geometry()
+        self.env_lines = gl.GLLinePlotItem(
+            pos=env_lines, color=(0.10, 0.24, 0.38, 0.62), width=1.0,
+            antialias=True, mode='lines')
+        self.env_dots = gl.GLScatterPlotItem(
+            pos=env_dots, color=(0.12, 0.30, 0.46, 0.46), size=2.0)
+        self.machine_lines = gl.GLLinePlotItem(
+            pos=machine_lines, color=(0.34, 0.28, 0.66, 0.76), width=1.1,
+            antialias=True, mode='lines')
+        self.machine_dots = gl.GLScatterPlotItem(
+            pos=machine_dots, color=(0.38, 0.32, 0.72, 0.62), size=2.4)
+        self.ground_lines = gl.GLLinePlotItem(
+            pos=ground_lines, color=(0.55, 0.38, 0.10, 0.72), width=1.2,
+            antialias=True, mode='lines')
+        self.electrical_zone = gl.GLLinePlotItem(
+            pos=electrical_zone, color=(0.96, 0.62, 0.04, 0.92), width=2.3,
+            antialias=True)
+        self.fan_zone = gl.GLLinePlotItem(
+            pos=fan_zone, color=(0.66, 0.52, 0.98, 0.92), width=2.3,
+            antialias=True)
+        self.gl.addItem(self.env_lines)
+        self.gl.addItem(self.env_dots)
+        self.gl.addItem(self.machine_lines)
+        self.gl.addItem(self.machine_dots)
+        self.gl.addItem(self.ground_lines)
+        self.gl.addItem(self.electrical_zone)
+        self.gl.addItem(self.fan_zone)
         # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
         body_unit, body_faces = _mannequin_mesh()
         body_unit = body_unit.copy()
@@ -993,6 +1201,9 @@ class Track3D(QtWidgets.QWidget):
         self.body_rim.hide()
         self.gl.addItem(self.body_rim)
         self._body_sev = None
+        self._incident_kind = None
+        self._body_unit = body_unit
+        self._body_faces = body_faces
         self.sc = gl.GLScatterPlotItem(size=6.0, color=pg.glColor(CYAN))
         self.gl.addItem(self.sc)
         # 인체 도식 — mode='lines' 로 끊긴 선분들을 한 아이템에 그린다
@@ -1046,7 +1257,8 @@ class Track3D(QtWidgets.QWidget):
             return c, c, c
         return CYAN, GREEN, AMBER
 
-    def push(self, st, sev='normal', hide_shape=False):
+    def push(self, st, sev='normal', hide_shape=False, incident=None):
+        incident = incident if incident is not None else getattr(self, '_incident', None)
         track_state = st.get('track_state', 'tracking')
         self.pose.push(st.get('points') or [], st.get('centroid'),
                        tracked=(track_state == 'tracking'))
@@ -1069,25 +1281,56 @@ class Track3D(QtWidgets.QWidget):
             self.anchor.setData(pos=np.zeros((0, 3), dtype=np.float32))
         else:
             self.anchor.setData([], [])
-        return self.redraw(sev, hide_shape)
+        return self.redraw(sev, hide_shape, incident)
 
-    def redraw(self, sev='normal', hide_shape=False):
+    def redraw(self, sev='normal', hide_shape=False, incident=None):
         """새 프레임을 먹지 않고 이미 누적된 값으로만 다시 그린다.
 
         ⚠ [8/02] push() 를 다시 부르면 pose.push() 가 같은 프레임을 누적
           버퍼에 중복 적재한다. 모드 전환처럼 새 패킷 없이 화면만 맞춰야
           할 때(ConsoleV2._refresh_scene) 는 이 쪽을 쓴다.
         """
+        incident = incident if incident is not None else getattr(self, '_incident', None)
         pts = self.pose.cloud()
         p = self.pose.estimate()
         pt_c, fig_c, hd_c = self.sev_colors(sev)
         if self.gl is not None:
+            incident_kind = incident and incident.get('kind')
+            if incident_kind != self._incident_kind:
+                if incident_kind:
+                    # 전체 시설 시점에서는 사고 인체가 설비 점군에 묻힌다.
+                    # 시연 사고 동안만 ROI 남측에서 가까이 보고 해제 시 복귀한다.
+                    self.gl.setCameraPosition(distance=10.5, elevation=26, azimuth=-48)
+                    posed, faces = _incident_mannequin_mesh(incident_kind)
+                    self.body.setMeshData(vertexes=posed, faces=faces)
+                    self.body_rim.setMeshData(vertexes=posed, faces=faces)
+                elif self._incident_kind:
+                    self.gl.setCameraPosition(**self._cam0)
+                    self.body.setMeshData(vertexes=self._body_unit,
+                                          faces=self._body_faces)
+                    self.body_rim.setMeshData(vertexes=self._body_unit,
+                                              faces=self._body_faces)
+                self._incident_kind = incident_kind
             if len(pts):
                 arr = np.column_stack([pts[:, 0], pts[:, 2], CEILING_H - pts[:, 1]])
                 self.sc.setData(pos=arr, color=pg.glColor(pt_c), size=6.0)
             if len(self.trail) > 2:
                 self.tr.setData(pos=np.array(self.trail))
-            if p and p['shape_ok'] and not hide_shape:
+            if incident:
+                # 사고 포즈는 센서 자세 복원이 아니라 사건 종류를 빠르게 읽게 하는
+                # 시각화다. 운영 패킷에는 없고 명시적 시연 패킷에서만 활성화한다.
+                self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32))
+                self.hd.setData(pos=np.zeros((0, 3), dtype=np.float32))
+                transform = self._incident_transform(incident)
+                self.body.setTransform(transform)
+                self.body_rim.setTransform(transform)
+                color = pg.glColor(fig_c)
+                self.body.setColor((*color[:3], 0.42))
+                self.body_rim.setColor((*color[:3], 0.20))
+                self._body_sev = sev
+                self.body.show()
+                self.body_rim.show()
+            elif p and p['shape_ok'] and not hide_shape:
                 self.hd.setData(pos=np.array([self.to_disp(p['head'])]),
                                 color=pg.glColor(hd_c))
                 if p['posture'] == 'standing':
@@ -1133,6 +1376,26 @@ class Track3D(QtWidgets.QWidget):
                 self.cap.setData([], [])
                 self.hd.setData([], [])
         return p
+
+    @staticmethod
+    def _incident_transform(incident):
+        """시연 전용 OBJ 포즈. 위치·자세가 실측이라는 의미는 없다."""
+        kind = incident.get('kind', 'stationary')
+        x, y = incident.get('pos', (0.0, 0.0))
+        phase = np.sin(time.monotonic() * 5.0)
+        length = 1.62
+        if kind == 'fall':
+            center = np.array((x, y, 0.20))
+        elif kind == 'electric':
+            center = np.array((x, y - 0.03 * phase, 0.78))
+        elif kind == 'pinching':
+            center = np.array((x + 0.03 * phase, y, 0.76))
+        else:
+            center = np.array((x, y, 0.81))
+        matrix = np.eye(4, dtype=float)
+        matrix[:3, :3] *= length
+        matrix[:3, 3] = center
+        return pg.Transform3D(matrix)
 
     # ── 좌표 변환 ─────────────────────────────────────────────────────
     #  레이더 원좌표 (x, y=센서로부터의 거리, z) → 화면 (x, z, 바닥기준 높이)

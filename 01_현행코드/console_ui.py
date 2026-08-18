@@ -598,13 +598,13 @@ class SceneView(QtWidgets.QWidget):
         else:
             self.veil.hide()
 
-    def push(self, st, sev='normal', hide_shape=False):
-        pose = self.track.push(st, sev, hide_shape)  # 3D 갱신 + 자세 추정
+    def push(self, st, sev='normal', hide_shape=False, incident=None):
+        pose = self.track.push(st, sev, hide_shape, incident)  # 3D 갱신 + 자세 추정
         if self._mode == self.MODE_2D:
             self.side.render(self.track.pose.cloud(), pose, sev, hide_shape)
         return pose
 
-    def redraw(self, sev='normal', hide_shape=False):
+    def redraw(self, sev='normal', hide_shape=False, incident=None):
         """새 패킷 없이 이미 누적된 값으로 두 위젯을 다시 그린다.
 
         ⚠ [8/02] set_mode() 는 모드만 바꾸고 렌더는 안 했다 — 3D(track)는
@@ -613,7 +613,7 @@ class SceneView(QtWidgets.QWidget):
           죽은 색(생성 시 기본값)이 그대로 보였다. ConsoleV2._refresh_scene
           가 모드 전환 직후 이걸 불러 즉시 맞춘다.
         """
-        pose = self.track.redraw(sev, hide_shape)
+        pose = self.track.redraw(sev, hide_shape, incident)
         if self._mode == self.MODE_2D:
             self.side.render(self.track.pose.cloud(), pose, sev, hide_shape)
         return pose
@@ -1070,11 +1070,11 @@ class SopView(QtWidgets.QWidget):
         v.addWidget(self.src, 2)
         self._et = 'fall_detected'
 
-    def show_for(self, et='fall_detected', done=None):
+    def show_for(self, et='fall_detected', done=None, title=None, sev=None):
         self._et = et
-        self.head.setText(EVENT_KO.get(et, str(et)))
+        self.head.setText(title or EVENT_KO.get(et, str(et)))
         self.head.setStyleSheet(
-            f'color:{sev_color(event_sev(et))};border:none;background:transparent;')
+            f'color:{sev_color(sev or event_sev(et))};border:none;background:transparent;')
         self.done.setText(done or '해당 구역 전원 차단 완료 · 젯슨 자동 실행')
         html = []
         for cat, lines in INSTANT_ACTION.get(et, INSTANT_ACTION['fall_detected']):
@@ -1667,7 +1667,10 @@ class MonitorPage(QtWidgets.QWidget):
         lg = hbox(self.legend, s=SP2)
         for mark, color, text in (('●', CYAN, '원시 점(누적)'),
                                   ('●', AMBER, '머리 추정점'),
-                                  ('─', GREEN, '인체 도식 · 관절 미측정')):
+                                  ('─', GREEN, '인체 도식 · 관절 미측정'),
+                                  ('▦', '#1E4C75', '시설 배치 시각화'),
+                                  ('□', '#F59E0B', '단자함 관심영역'),
+                                  ('□', '#A78BFA', '냉각팬 관심영역')):
             lg.addWidget(lb(mark, F_CAP, color))
             lg.addWidget(lb(text, F_CAP, FAINT))
         self._legend_w = self.legend.sizeHint().width()
@@ -2403,6 +2406,30 @@ ZONE_HAZARD = {
     'C': '컨베이어·조립 설비가 있는 조립 구역',
 }
 
+# 변압기 앞 표시용 세부 관심영역. 젯슨의 정지형 이상 판정을 바꾸지 않고,
+# 마지막 신뢰 위치가 어느 위험원 앞인지에 따라 경보 명칭과 SOP만 좁힌다.
+STATIONARY_INTEREST = (
+    ('electric', (-0.72, -0.12, 0.12, 0.72), '감전 의심',
+     'electric_shock_risk'),
+    ('pinching', (0.12, 0.72, 0.12, 0.72), '협착 의심', 'pinching'),
+)
+
+
+def stationary_display_context(ev):
+    """정지형 경보의 표시 문맥. 경계 밖·좌표 없음은 일반 정지형으로 둔다."""
+    if ev.get('type') != 'stationary_anomaly':
+        return None
+    evidence = ev.get('evidence') or {}
+    x, z = evidence.get('anchor_cx'), evidence.get('anchor_cz')
+    if x is not None and z is not None:
+        for kind, (x1, x2, z1, z2), name, sop_type in STATIONARY_INTEREST:
+            if x1 <= float(x) <= x2 and z1 <= float(z) <= z2:
+                return {'kind': kind, 'name': name, 'sop_type': sop_type,
+                        'pos': (float(x), float(z))}
+    pos = (float(x), float(z)) if x is not None and z is not None else (0.0, 0.0)
+    return {'kind': 'stationary', 'name': '정지형 이상',
+            'sop_type': 'stationary_anomaly', 'pos': pos}
+
 
 class SopEngineV2(core.SopEngine):
     """공식 대응 문서를 검색하고 젯슨 실측값을 결정적으로 표시한다.
@@ -2847,6 +2874,19 @@ class ConsoleV2(QtWidgets.QMainWindow):
             return ev.get('sev') or event_sev(ev.get('type'))
         return 'normal'
 
+    def _incident_visual(self):
+        """명시적 시연 패킷에서만 고정 OBJ 사고 포즈를 허용한다."""
+        if not self.alert or not self.alert.get('demo_pose'):
+            return None
+        et = self.alert.get('type')
+        evidence = self.alert.get('evidence') or {}
+        pos = (float(evidence.get('anchor_cx', 0.0)),
+               float(evidence.get('anchor_cz', 0.0)))
+        if et == 'fall_detected':
+            return {'kind': 'fall', 'pos': pos}
+        context = self.alert.get('_display_context')
+        return context and {'kind': context['kind'], 'pos': context['pos']}
+
     def _refresh_scene(self):
         """3D↔2D 전환 직후, 새 패킷을 기다리지 않고 즉시 다시 그린다.
 
@@ -2863,6 +2903,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         lost = (self.alarm != ST_NORMAL
                 and (self.alert or {}).get('type') in ('fall_detected', 'fall_suspected',
                                                        'stationary_anomaly'))
+        self.scene.track._incident = self._incident_visual()
         self.scene.redraw(sev, hide_shape=lost)
 
     def _lock_nav(self):
@@ -2986,12 +3027,16 @@ class ConsoleV2(QtWidgets.QMainWindow):
         lost = (on_alert
                 and (self.alert or {}).get('type') in ('fall_detected', 'fall_suspected',
                                                        'stationary_anomaly'))
+        incident = self._incident_visual()
+        self.scene.track._incident = incident
         pose = self.scene.push(pkt, sev, hide_shape=lost)
         if pose:
             # ⚠ v1 은 zone 이 없을 때 'C' 로 떨어졌다 — 레이더가 없는 구역이다.
             #   레이더 유래 정보는 레이더가 설치된 구역으로 보고한다.
             z = ev.get('zone') or RADAR_ZONE
-            if lost:
+            if incident:
+                shape = '사고 유형 시각화 · 실측 자세 아님'
+            elif lost:
                 shape = ('추적 소실 — 정지한 대상은 반사가 줄어 놓칩니다')
             elif not pose['shape_ok']:
                 shape = f"형상 표시 안 함 ({pose['shape_why']})"
@@ -3079,13 +3124,17 @@ class ConsoleV2(QtWidgets.QMainWindow):
     def on_event(self, ev):
         self.assistant.close_drawer()
         self.alert = dict(ev)
+        context = stationary_display_context(ev)
+        if context:
+            self.alert['_display_context'] = context
         self.alert_t0 = time.time()          # ★ 노트북 시각. 젯슨 시계 안 씀.
         self.alarm = ST_UNACK
         self.today += 1
         z = ev.get('zone') or RADAR_ZONE
         et = ev.get('type')
         sev = ev.get('sev', 'critical')
-        name = EVENT_KO.get(et, '이상')
+        name = context['name'] if context else EVENT_KO.get(et, '이상')
+        sop_type = context['sop_type'] if context else et
         col = sev_color(sev)
 
         self.monitor.b_left.setText(
@@ -3121,7 +3170,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         #   _set_auto_action() 은 반드시 그 다음에 불러야 한다.
         #   (뒤바뀌어 있어서 본 패널은 주황 '모의값', 드로어는 초록 '차단 완료'로
         #    같은 사건을 두 가지로 말하고 있었다)
-        self.drawer.sop.show_for(et)
+        self.drawer.sop.show_for(sop_type, title=name, sev=sev)
         self._set_auto_action(z)
         self.drawer.ack.show()
         if self.cfg.autopop.isChecked():
@@ -3129,7 +3178,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         # 프롬프트에 넣을 사실은 전부 젯슨이 계산해 보낸 값이다 (evidence/gates).
         #   노트북이 만든 추정치(PoseEstimator)는 넣지 않는다 — LLM 이 표시용
         #   추정을 실측처럼 말하게 되면 판단 근거가 오염된다.
-        self.engine.request(et, SopEngineV2.build_facts(ev, self.pkt, 0))
+        self.engine.request(sop_type, SopEngineV2.build_facts(ev, self.pkt, 0))
         self._lock_nav()
 
     def _set_auto_action(self, z):
@@ -3367,6 +3416,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
             if sev == 'critical' or self._beep_n % 4 == 0:
                 QtWidgets.QApplication.beep()
         et = (self.alert or {}).get('type')
+        context = (self.alert or {}).get('_display_context')
         z = (self.alert or {}).get('zone') or RADAR_ZONE
         if et == 'fall_detected':
             self.monitor.msg.setText(
@@ -3376,6 +3426,10 @@ class ConsoleV2(QtWidgets.QMainWindow):
             self.monitor.msg.setText(
                 f'낙상 규칙과 RF 판정이 불일치했습니다. 즉시 현장을 확인하십시오.\n'
                 f'{z} {ZONE_KO.get(z, "")} 구역 · {el}초 경과.')
+        elif context:
+            self.monitor.msg.setText(
+                f'{context["name"]} · {z} {ZONE_KO.get(z, "")} 구역에서 '
+                f'{el}초째 지속되고 있습니다.\n현장 확인 전까지 의심 경보입니다.')
         else:
             self.monitor.msg.setText(
                 f'{EVENT_KO.get(et, "이상")} · {z} {ZONE_KO.get(z, "")} '

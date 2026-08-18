@@ -68,6 +68,7 @@ S = {
     'ev_active': False, 'ev_type': None, 'ev_sev': 'normal', 'ev_conf': 0.0,
     'ev_zone': SIM_ZONE, 'ev_id': 0, 'ev_ts': 0.0,
     'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
+    'ev_demo_pose': False,
     'breaker': {z: 'ON' for z in ZONE_IDS},
     'cz_h': deque([1.7] * HISTORY_LEN, maxlen=HISTORY_LEN),
     'ds_h': deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
@@ -230,6 +231,52 @@ def scenario(fast=False):
                 break        # reset 요청 -> READY 로
 
 
+def showcase():
+    """정상 10초 → 낙상 10초 → 감전 의심 10초 → 협착 의심 10초."""
+    with _lock:
+        S['phase'] = PH_LIVE
+    log('SHOWCASE — 정상 상태 10초 뒤 사고 시나리오를 시작합니다')
+    while True:
+        time.sleep(10)
+        evidence, gates, rejected = _fall_event()
+        evidence.update({'anchor_cx': 0.0, 'anchor_cz': -0.10})
+        _set_showcase_event('fall_detected', 'critical', evidence, gates, rejected)
+        time.sleep(10)
+        _clear_showcase_event()
+        _set_showcase_event(
+            'stationary_anomaly', 'warning',
+            {'anchor_cx': -0.42, 'anchor_cz': 0.38, 'dwell_sec': 30}, None, [])
+        time.sleep(10)
+        _clear_showcase_event()
+        _set_showcase_event(
+            'stationary_anomaly', 'warning',
+            {'anchor_cx': 0.42, 'anchor_cz': 0.38, 'dwell_sec': 30}, None, [])
+        time.sleep(10)
+        _clear_showcase_event()
+        log('SHOWCASE — 한 순서 완료, 10초 뒤 반복합니다')
+
+
+def _set_showcase_event(ev_type, sev, evidence, gates, rejected):
+    with _lock:
+        S.update({'ev_active': True, 'ev_type': ev_type, 'ev_sev': sev,
+                  'ev_conf': 0.87 if ev_type == 'fall_detected' else 0.80,
+                  'ev_id': S['ev_id'] + 1, 'ev_ts': time.time(),
+                  'ev_evidence': evidence, 'ev_gates': gates,
+                  'ev_rejected': rejected, 'ev_demo_pose': True})
+        if ev_type == 'fall_detected':
+            S['breaker'][SIM_ZONE] = 'TRIPPED'
+    log(f'SHOWCASE ALERT: {ev_type}')
+
+
+def _clear_showcase_event():
+    with _lock:
+        S.update({'ev_active': False, 'ev_type': None, 'ev_sev': 'normal',
+                  'ev_conf': 0.0, 'ev_evidence': None, 'ev_gates': None,
+                  'ev_rejected': [], 'ev_demo_pose': False})
+        S['breaker'][SIM_ZONE] = 'ON'
+    time.sleep(0.6)  # UI가 해소 패킷을 최소 한 번 수신하도록 보장한다.
+
+
 def _live_cycle(k):
     """보행 → 낙상 → 상황종료 대기 → 다시 보행. reset 요청이면 False."""
     # 보행
@@ -318,18 +365,21 @@ def sender_loop():
         full = (seq % max(1, int(SEND_HZ)) == 0)   # 히스토리는 1초에 한 번만
         with _lock:
             ph = S['phase']
-            fallen = S['ev_active']
+            alert_active = S['ev_active']
             present = ph in (PH_WAIT_TRAIN, PH_TRAINING, PH_LIVE)
             cz = S['cz_h'][-1] if S['cz_h'] else 1.15
             ds = S['ds_h'][-1] if S['ds_h'] else 0.0
             cy = CEILING_H - cz
             a = seq * 0.05
-            cx, czz = 0.45 * math.sin(a), 0.30 * math.cos(a * 0.7)
-            spread = (0.42, 0.08, 0.24) if fallen else (0.10, 0.30, 0.10)
+            evidence = S['ev_evidence'] or {}
+            cx = float(evidence.get('anchor_cx', 0.45 * math.sin(a)))
+            czz = float(evidence.get('anchor_cz', 0.30 * math.cos(a * 0.7)))
+            spread = ((0.42, 0.08, 0.24)
+                      if S['ev_type'] == 'fall_detected' else (0.10, 0.30, 0.10))
             pts = _points(cx, cy, czz, 8 if present else 1, spread) if present else []
             tripped = [z for z, v in S['breaker'].items() if v != 'ON']
             zs = {z: 'NORMAL' for z in ZONE_IDS}
-            if fallen:
+            if alert_active:
                 zs[S['ev_zone']] = 'ALERT'
             for z in tripped:
                 zs[z] = 'ALERT' if zs.get(z) == 'ALERT' else 'TRIPPED'
@@ -342,7 +392,8 @@ def sender_loop():
                        'sev': S['ev_sev'], 'conf': S['ev_conf'], 'zone': S['ev_zone'],
                        'id': S['ev_id'], 'ts': S['ev_ts'],
                        'evidence': S['ev_evidence'], 'gates': S['ev_gates'],
-                       'rejected': S['ev_rejected']},
+                       'rejected': S['ev_rejected'],
+                       'demo_pose': S['ev_demo_pose']},
                 'power': {'curr': round(random.gauss(0.6 if tripped else 1.0, 0.04), 3),
                           'volt': round(random.gauss(220.0, 0.4), 1), 'src': 'sim'},
                 'breaker': {'state': dict(S['breaker']),
@@ -378,6 +429,8 @@ def sender_loop():
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--fast', action='store_true', help='각 구간 1/3 길이로 빠르게')
+    ap.add_argument('--showcase', action='store_true',
+                    help='10초 간격 낙상→감전 의심→협착 의심 자동 시연')
     a = ap.parse_args()
     print('=' * 62)
     print('  Radar-Guard | 모의 젯슨 (레이더·torch 불필요)')
@@ -389,6 +442,6 @@ if __name__ == '__main__':
     threading.Thread(target=control_listener, daemon=True).start()
     threading.Thread(target=sender_loop, daemon=True).start()
     try:
-        scenario(a.fast)
+        showcase() if a.showcase else scenario(a.fast)
     except KeyboardInterrupt:
         print('\n[SIM] 종료')
