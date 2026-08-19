@@ -2053,6 +2053,13 @@ def pipeline_loop():
                     if state['ev_active']:
                         et = state['ev_type']; zn = state['ev_zone']
                         lbl = EVENT_LABELS.get(et, et)
+                        # [8/18] stationary_anomaly는 alerted=True가 latch되면 지속 움직임
+                        #   감지나 입퇴실 토글 전까지 재래치되지 않는다. 수동 해제만 하고
+                        #   이걸 안 지우면, 오판으로 해제했는데 작업자가 실제로는 계속
+                        #   무동작이어도 재경보가 없다 -- 낙상 경로(anom_streak 재축적)와
+                        #   비대칭. 해제 시점에 같이 지워 무동작이 이어지면 재래치되게 한다.
+                        if et == 'stationary_anomaly':
+                            stationary_gate.alerted = False
                         state.update({
                             'ev_active': False, 'ev_type': None,
                             'ev_sev': 'normal', 'ev_conf': 0.0,
