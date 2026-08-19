@@ -303,21 +303,23 @@ print('\n[8] 실물 차단기 실패가 성공 상태로 기록되지 않는가'
 
 
 class FakeRelay:
+    """[8/19] Zone B/C 확장으로 RELAY.read/write가 채널 인자를 받게 돼 채널별 상태를 흉내낸다."""
     connected = True
     error = None
 
     def __init__(self, initial=False):
-        self.value = initial
+        self.value = {}
+        self._initial = initial
         self.fail = False
 
-    def read(self):
-        return self.value
+    def read(self, ch=0):
+        return self.value.get(ch, self._initial)
 
-    def write(self, value):
+    def write(self, value, ch=0):
         if self.fail:
             self.error = '시험용 통신 실패'
             return False
-        self.value = value
+        self.value[ch] = value
         return True
 
 
@@ -334,7 +336,7 @@ try:
         return body + m.RelayRTU._crc16(body)
 
     physical._exchange = fake_exchange
-    physical._read_unlocked = lambda: coil[0]
+    physical._read_unlocked = lambda ch: coil[0]
     ck(physical.read() is True, 'NO 코일 OFF readback을 차단으로 해석')
     ck(physical.write(False) and sent[-1][4] == 0xFF,
        'NO 정상 투입은 코일 ON 명령')
@@ -351,6 +353,26 @@ try:
     fake.fail = True
     ck(not breaker.trip(m.RADAR_ZONE, 'fall_detected'), 'Modbus 실패를 차단 성공으로 처리하지 않음')
     ck(breaker.snapshot()['state'][m.RADAR_ZONE] == 'ON', '통신 실패 시 ON 상태 유지')
+    fake.fail = False
+
+    # [8/19] Zone B/C 확장 — 존별 독립 트립(소프트웨어 단, 실물 LED 확인은 별도)
+    ck(breaker.trip('B', 'test') and breaker.snapshot()['state']['B'] == 'TRIPPED',
+       'Zone B 독립 트립')
+    ck(breaker.snapshot()['state']['A'] == 'ON' and breaker.snapshot()['state']['C'] == 'ON',
+       'Zone B 트립이 A·C에 영향 없음')
+    ck(fake.value.get(0) is None or fake.value.get(0) is False,
+       'Zone B 트립이 채널0(A)을 건드리지 않음')
+    ck(breaker.restore(['B']) == ['B'] and breaker.snapshot()['state']['B'] == 'ON',
+       'Zone B 독립 복구')
+
+    # 매핑 드리프트 방어 — ZONE_IDS엔 있는데 ZONE_RELAY_MAP엔 없는 zone (조용한 실패 금지)
+    orig_c = m.ZONE_RELAY_MAP.pop('C')
+    log_before = len(m.state['logs'])
+    ck(not breaker.trip('C', 'test'), '매핑 없는 zone은 트립 실패')
+    ck(len(m.state['logs']) > log_before
+       and 'no configured relay channel' in m.state['logs'][-1],
+       '매핑 없는 zone 트립 실패가 로그에 남음(조용한 실패 아님)')
+    m.ZONE_RELAY_MAP['C'] = orig_c
 finally:
     m.RELAY = real_relay
 

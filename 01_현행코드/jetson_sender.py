@@ -603,14 +603,19 @@ VIB_ZONE  = RADAR_ZONE      # 진동은 이 레이더의 도플러로 잰다 = �
 RELAY_PORT = '/dev/ttyUSB2'
 RELAY_BAUD = 9600
 RELAY_ADDR = 1
-RELAY_CH   = 0              # Modbus CH1. NO 배선: 코일 ON=정상 투입, OFF=차단
+RELAY_CH   = 0              # 기본 채널(Modbus CH1). NO 배선: 코일 ON=정상 투입, OFF=차단
 INA_BUS    = '/dev/i2c-7'
 INA_ADDR   = 0x41
 INA_SHUNT_OHM = 0.005       # M5Stack INA226 10A Isolated 공식 사양: 5 mΩ
 
 
 class RelayRTU:
-    """NO 접점 CH1을 쓰는 최소 Modbus RTU 릴레이 드라이버."""
+    """NO 접점 Waveshare Modbus RTU Relay 8CH 드라이버.
+
+    [8/19] CH1 전용이었던 것을 채널 인자를 받도록 확장 — Zone B/C 물리 차단에
+    CH2/CH3를 쓰기 위함. 채널 번호는 0-indexed Modbus register offset이다
+    (ZONE_RELAY_MAP의 'channel'은 사람이 읽는 CH번호라 -1 해서 넘겨야 한다).
+    """
 
     def __init__(self):
         self.connected = False
@@ -638,32 +643,32 @@ class RelayRTU:
             raise OSError(f'Modbus 응답 오류: {reply.hex() or "없음"}')
         return reply
 
-    def _read_unlocked(self):
-        reply = self._exchange(bytes((RELAY_ADDR, 0x01, 0, RELAY_CH, 0, 1)), 6)
+    def _read_unlocked(self, ch):
+        reply = self._exchange(bytes((RELAY_ADDR, 0x01, 0, ch, 0, 1)), 6)
         if reply[:3] != bytes((RELAY_ADDR, 0x01, 0x01)):
             raise OSError(f'Modbus 상태 응답 불일치: {reply.hex()}')
         return bool(reply[3] & 0x01)
 
-    def read(self):
+    def read(self, ch=RELAY_CH):
         with self._lk:
             try:
                 # NO 접점은 코일이 꺼지면 열린다. 무여자 상태를 차단으로 해석한다.
-                tripped = not self._read_unlocked()
+                tripped = not self._read_unlocked(ch)
                 self.connected, self.error = True, None
                 return tripped
             except Exception as exc:
                 self.connected, self.error = False, str(exc)
                 return None
 
-    def write(self, tripped):
+    def write(self, tripped, ch=RELAY_CH):
         """NO 접점: True면 코일 OFF로 차단, False면 코일 ON으로 투입."""
         with self._lk:
             try:
                 coil_on = not tripped
                 value = 0xFF if coil_on else 0x00
-                body = bytes((RELAY_ADDR, 0x05, 0, RELAY_CH, value, 0))
+                body = bytes((RELAY_ADDR, 0x05, 0, ch, value, 0))
                 reply = self._exchange(body, 8)
-                if reply[:-2] != body or self._read_unlocked() != coil_on:
+                if reply[:-2] != body or self._read_unlocked(ch) != coil_on:
                     raise OSError(f'Modbus 쓰기 검증 실패: {reply.hex()}')
                 self.connected, self.error = True, None
                 return True
@@ -674,6 +679,16 @@ class RelayRTU:
 
 
 RELAY = RelayRTU()
+
+# [8/19] Zone -> 릴레이 채널 매핑. A만 배선돼 있던 것을 B/C(CH2/CH3)로 확장.
+#   'action'은 지금은 전부 'trip_immediate'만 쓰지만, 등급을 나누기로 하면
+#   이 값만 바꾸면 되도록 자리를 남겨둔다(아직 분기 로직은 만들지 않는다 —
+#   쓰지도 않는 등급을 미리 구현하지 않는다).
+ZONE_RELAY_MAP = {
+    'A': {'channel': 1, 'action': 'trip_immediate'},
+    'B': {'channel': 2, 'action': 'trip_immediate'},
+    'C': {'channel': 3, 'action': 'trip_immediate'},
+}
 
 
 def classify_equipment(curr, volt, dop_std):
@@ -706,16 +721,27 @@ class BreakerLogic:
         self.state = {z: 'ON' for z in ZONE_IDS}
         self.reason = {z: None for z in ZONE_IDS}
         self._lk = threading.Lock()
-        actual = RELAY.read()
-        if actual is True:
-            self.state[RADAR_ZONE] = 'TRIPPED'
-            self.reason[RADAR_ZONE] = 'startup_readback'
+        for zone, cfg in ZONE_RELAY_MAP.items():
+            actual = RELAY.read(cfg['channel'] - 1)
+            if actual is True:
+                self.state[zone] = 'TRIPPED'
+                self.reason[zone] = 'startup_readback'
+
+    def _no_relay(self, zone):
+        """매핑에 없는 zone. 조용히 넘어가지 않고 로그를 남긴다."""
+        msg = f'zone {zone} has no configured relay channel'
+        print(f'[BREAKER ERROR] {msg}', flush=True)
+        state['logs'].append(f'[BREAKER ERROR] {msg}')
 
     def trip(self, zone, reason=''):
         """단일 Zone 차단. 새로 차단됐으면 True."""
         with self._lk:
             if self.state.get(zone) == 'ON':
-                if zone != RADAR_ZONE or not RELAY.write(True):
+                cfg = ZONE_RELAY_MAP.get(zone)
+                if cfg is None:
+                    self._no_relay(zone)
+                    return False
+                if not RELAY.write(True, cfg['channel'] - 1):
                     return False
                 self.state[zone] = 'TRIPPED'
                 self.reason[zone] = reason
@@ -733,7 +759,11 @@ class BreakerLogic:
             tgt = zones or [z for z, s in self.state.items() if s == 'TRIPPED']
             done = [z for z in tgt if self.state.get(z) == 'TRIPPED']
             for z in done:
-                if z != RADAR_ZONE or not RELAY.write(False):
+                cfg = ZONE_RELAY_MAP.get(z)
+                if cfg is None:
+                    self._no_relay(z)
+                    continue
+                if not RELAY.write(False, cfg['channel'] - 1):
                     continue
                 self.state[z] = 'ON'
                 self.reason[z] = None

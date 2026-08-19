@@ -78,3 +78,31 @@ README.md §10 담당은 Cowork인데, 병합 특성상 8/15~8/17 일지 8건이
 지침으로, 이 프로젝트 `CLAUDE.md` §9(필요한 최소만, 추측 기반 추상화 금지) 및 설치된 `ponytail`
 플러그인과 상당 부분 겹친다. §10에 따라 Claude Code는 `CLAUDE.md`를 직접 고치지 않는다.
 Cowork가 §9와 중복 없이 반영할지, 폐기할지 결정 바람.
+
+### OUT-014  handoff 지시서 전제 소실 + StationaryGate 신규 결함 후보
+- From: Claude Code
+- Type: 불일치 + 판단사항
+- Needs: 결정
+Cowork가 8/13 스냅샷(`cf9b373`) 기준으로 작성한 정지형 결함 3건 지시서는 `PersonTrack`
+클래스와 `.state=='lost_in_zone'`, `ENTRY_BAND` 자동 출입 추론 경로를 전제하는데, 8/18
+`StationaryGate` 병합(OUT-013 참조)으로 그 경로 자체가 코드에서 사라져 지시서의 결함 3건은
+현재 HEAD(`ccf4500`)에 대응하는 코드가 없음(grep 0건). 확인 과정에서 별도 결함 후보 발견:
+`StationaryGate.alerted`는 지속 움직임 감지·`occupancy_reset_requested`·`arm_reset_requested`
+세 경로에서만 리셋되고 `resolve_requested`(노트북 Event Resolved 버튼) 처리 블록에서는
+리셋되지 않음. 정지형 경보를 수동 해제해도 작업자가 실제로 계속 무동작이면 이후 재감지 없이
+조용한 상태가 유지됨. 사람이 육안 확인 후 해제하는 절차를 전제한 의도된 동작인지, 아니면
+`resolve_requested` 처리 시 `stationary_gate.alerted`도 함께 리셋해야 하는 결함인지 판단 필요.
+
+#### 8/19 후속 — Zone B/C 물리 차단 확장 착수 전 확인에서 재확인
+Cowork 지시서(Zone B/C 확장)의 착수 전 확인 항목은 우선순위1 3건(MAINT_MODE 크래시·
+lost_in_zone 만료·RF veto)이 이미 병합·검증됐는지였다. 재확인 결과 `MAINT_MODE`·
+`_rf_veto()`는 지금도 코드에 있지만, `lost_in_zone` 만료 건의 근거였던 `PersonTrack`/
+`ENTRY_BAND`는 위에서 이미 적었듯 grep 0건이라 판정 대상 자체가 없다.
+사용자 결정(2026-08-19): 이 불일치로 막지 않고 Zone B/C 작업 바로 착수. 우선순위1
+지시서 자체의 정합성은 이 OUT-014 결정 대기로 남긴다.
+
+별도 확인 — `radar_common.ZONE_EQUIPPED = {'A': True, 'B': False, 'C': False}`
+(7/31 과대표현 방지 결정) 때문에 레이더 유래 이벤트(`EVENT_ZONE`)는 지금도 전부
+`RADAR_ZONE`('A')로만 보고된다. Zone B/C 릴레이 채널(CH2/CH3)은 자동 감지로는 트립되지
+않고 노트북이 `CMD_RESTORE`처럼 zone을 지정해 수동으로 조작할 때만 동작한다는 뜻이다.
+B/C 자동 감지 차단으로 표현하면 과대표현이 되니 발표·문서 표현 시 확인 바람(Cowork).
