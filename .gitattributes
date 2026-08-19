@@ -1,1 +1,2 @@
 01_현행코드/mannequin_cc0.obj filter=lfs diff=lfs merge=lfs -text
+11_젯슨_데이터백업/**/*.json filter=lfs diff=lfs merge=lfs -text
