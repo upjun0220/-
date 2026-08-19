@@ -136,6 +136,7 @@ STAT_PRE_SEC  = 10.0   # [7/12] 15->10: 데모 시 15s 완전정지 유지가 �
 STAT_CRIT_SEC = 30.0   # 2차: 계속 무동작 -> stationary 경보(critical, latch)
 STAT_RESET_DS = 0.38   # [8/17 시험 후보] 현재 프레임 실측 전까지 확정값 아님
 STAT_RESET_FRAMES = 3  # 순간 케이블·고스트 스파이크 한 번으로 타이머를 지우지 않는다
+STATIONARY_ENABLED = False  # [8/18 실측] 위치 튀어오름 수정 전까지 낙상 시연에서 제외
 MAINT_MODE    = False  # True = 계획 정비 중(LOTO/작업허가) -> 정지형 경보 억제
 STAT_MISS_TOL = 3      # [7/12] 10->3: 이탈 프레임 10개 용인이 '이동 중 타이머 생존 ->
                        #   오발화'의 주원인. 3프레임(~0.3s)만 용인.
@@ -1293,7 +1294,8 @@ def pipeline_loop():
         """포인트 소실 뒤에도 타이머와 마지막 신뢰 위치를 유지한다."""
         now = time.monotonic()
         with _lock:
-            active = state['phase'] == PH_LIVE and state['occupied'] and not MAINT_MODE
+            active = (STATIONARY_ENABLED and state['phase'] == PH_LIVE
+                      and state['occupied'] and not MAINT_MODE)
         result = stationary_gate.update(now, active, dop_std, pos)
         dwell = result['dwell']
         anchor = result['anchor']
