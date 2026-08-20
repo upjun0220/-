@@ -693,7 +693,7 @@ class ZoneStrip(QtWidgets.QWidget):
                 continue
             p.setPen(QtGui.QColor(RED if s['off'] else GREEN))
             p.drawText(base, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
-                       '전원 차단됨' if s['off'] else '전원 투입')
+                       '설비 회로 차단됨' if s['off'] else '설비 회로 정상')
         p.end()
 
 
@@ -1075,7 +1075,7 @@ class SopView(QtWidgets.QWidget):
         self.head.setText(title or EVENT_KO.get(et, str(et)))
         self.head.setStyleSheet(
             f'color:{sev_color(sev or event_sev(et))};border:none;background:transparent;')
-        self.done.setText(done or '해당 구역 전원 차단 완료 · 젯슨 자동 실행')
+        self.done.setText(done or '작업 대상 설비 회로 차단 완료 · 젯슨 자동 실행')
         html = []
         for cat, lines in INSTANT_ACTION.get(et, INSTANT_ACTION['fall_detected']):
             html.append(f'<p style="color:{CYAN};margin:2px 0 4px">'
@@ -2222,9 +2222,9 @@ class AssistantDrawer(QtWidgets.QDialog):
                     '위험 판정, 차단, 경보 해제, 전원 복구를 실행하지 않습니다.')
         if '차단' in question:
             zones = c.pwr.tripped()
-            return (f'현재 차단된 구역: {", ".join(zones)}. 재투입은 전기 설비 '
+            return (f'현재 차단된 설비 회로: {", ".join(zones)}. 재투입은 전기 설비 '
                     f'확인 절차에서만 가능합니다.' if zones
-                    else '현재 차단된 구역이 없습니다.')
+                    else '현재 차단된 설비 회로가 없습니다.')
         if '몇' in question or '건' in question:
             return f'오늘 기록된 경보는 {len(c.incidents)}건입니다.'
         if '마지막' in question or '언제' in question:
@@ -2236,7 +2236,7 @@ class AssistantDrawer(QtWidgets.QDialog):
         if '현재 상태' in question:
             age = c.link.age() if c.link else None
             link = f'마지막 수신 {age:.1f}초 전' if age is not None else '젯슨 미수신'
-            return f'{link} · 경보 {len(c.incidents)}건 · 차단 구역 {len(c.pwr.tripped())}곳'
+            return f'{link} · 경보 {len(c.incidents)}건 · 차단 설비 {len(c.pwr.tripped())}개'
         return None
 
     def _work(self, question):
@@ -2541,7 +2541,7 @@ class SopEngineV2(core.SopEngine):
         if facts.get('conf') is not None:
             add(f"판정 점수: {facts['conf']:.2f}")
         if facts.get('breaker'):
-            add(f"해당 구역 전원: {facts['breaker']}")
+            add(f"해당 설비 회로: {facts['breaker']}")
         return '\n'.join(L)
 
     @staticmethod
@@ -3190,12 +3190,12 @@ class ConsoleV2(QtWidgets.QMainWindow):
                 txt, c, bg = (f'{z} 구역 기존 차단 상태 · {why} '
                               f'(차단기 모의값)'), AMBER, BG_WARN
         elif off and src == 'modbus':
-            txt, c, bg = f'{z} 구역 전원 차단 완료 · 젯슨 자동 실행', GREEN, BG_OK
+            txt, c, bg = f'{z} 구역 작업 대상 설비 회로 차단 완료 · 젯슨 자동 실행', GREEN, BG_OK
         elif off:
             txt, c, bg = (f'{z} 구역 차단 신호 발신 (차단기 모의값 — '
                           f'현장 차단 여부를 직접 확인하십시오)'), AMBER, BG_WARN
         else:
-            txt, c, bg = (f'{z} 구역 전원 차단이 확인되지 않았습니다 — '
+            txt, c, bg = (f'{z} 구역 설비 회로 차단이 확인되지 않았습니다 — '
                           f'[전기 설비]에서 확인하십시오'), RED, BG_ALERT
         self.monitor.auto_lb.setText(txt)
         self.monitor.auto_lb.setStyleSheet(

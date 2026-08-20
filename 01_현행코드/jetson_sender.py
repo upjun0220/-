@@ -65,7 +65,7 @@ try:
         CEILING_H, FRAME_INNER_HALF, HISTORY_LEN,
         PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
         EVENT_LABELS, EVENT_ZONE, ZONE_IDS, RADAR_ZONE, EVENT_SEV,
-        CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH,
+        CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH, BREAKER_SCOPE,
     )
 except ImportError:
     sys.stderr.write(
@@ -928,10 +928,11 @@ def _latch_event(et, clf, zn, ts, score_x):
     if clf['severity'] == 'critical':
         tripped = BREAKER.trip(zn, reason=et)
         if tripped:
-            state['logs'].append(f'[{ts}] BREAKER TRIP Zone {zn} <- {lbl}')
+            state['logs'].append(f'[{ts}] BREAKER TRIP [{BREAKER_SCOPE}] Zone {zn} <- {lbl}')
         else:
             state['logs'].append(
-                f'[{ts}] BREAKER TRIP FAILED Zone {zn}: {RELAY.error or "미지원 구역"}')
+                f'[{ts}] BREAKER TRIP FAILED [{BREAKER_SCOPE}] Zone {zn}: '
+                f'{RELAY.error or "미지원 구역"}')
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1347,7 +1348,8 @@ def power_monitor_loop():
         with _lock:
             for _z in _trip:
                 state['logs'].append(
-                    f"[{datetime.now().strftime('%H:%M:%S')}] BREAKER TRIP Zone {_z} (전기)")
+                    f"[{datetime.now().strftime('%H:%M:%S')}] "
+                    f"BREAKER TRIP [{BREAKER_SCOPE}] Zone {_z} (전기)")
             _zs = {z: 'NORMAL' for z in ZONE_IDS}
             if state['ev_active'] and state['ev_zone']:
                 _zs[state['ev_zone']] = 'ALERT'
@@ -2287,7 +2289,8 @@ def pipeline_loop():
                         #   재투입은 노트북에서 확인 3개를 받은 뒤 CMD_RESTORE 로만.
                         if BREAKER.any_tripped():
                             state['logs'].append(
-                                f'[{ts}] 차단 유지 {BREAKER.tripped_zones()} — 재투입은 수동')
+                                f'[{ts}] [{BREAKER_SCOPE}] 차단 유지 '
+                                f'{BREAKER.tripped_zones()} — 재투입은 수동')
 
                 rf_candidate = rf_score is not None and rf_score >= rf_threshold
                 # [8/14 실측] RF는 AE와 기존 규칙이 놓친 약한 낙상을 직접 후보로 올린다.
