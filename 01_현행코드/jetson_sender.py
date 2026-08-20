@@ -831,17 +831,40 @@ def add_log(msg):
 _SEV_RANK = {'normal': 0, 'warning': 1, 'critical': 2}
 
 
-def _can_latch(new_sev):
-    """상위 등급만 하위 등급 latch 를 선점한다. caller 가 _lock 보유 가정.
+def _can_latch(new_et, new_sev):
+    """critical 이 떠 있으면 새 사건을 막는다. 누설 확정 감전만 예외.
+    caller 가 _lock 보유 가정 (RLock 이라 재진입 안전).
 
-    ⚠ [8/20] 기존에는 등급과 무관하게 '먼저 뜬 것'이 이겼다.
-      정지형(warning)이 낙상(critical)을 막아 BREAKER.trip() 까지 못 가는
-      등급 역전이 있었다. 같은 등급끼리는 먼저 뜬 것을 유지한다
-      (같은 사건의 연속으로 보고 화면이 튀지 않게 한다).
+    ⚠ [8/20] 예전에는 critical 이 사실상 낙상 하나뿐이라 이 문제가 없었다.
+      감전·협착이 critical 로 올라올 수 있게 되면서 배타 규칙이 필요해졌다
+      (04_문서/설계/감전_협착_판정구조_0820.md). 한 방·한 사람 스코프라
+      critical 이 떠 있으면 운영자가 이미 그 구역으로 간다는 전제다.
     """
     if not state['ev_active']:
         return True
-    return _SEV_RANK.get(new_sev, 0) > _SEV_RANK.get(state['ev_sev'], 0)
+    if state['ev_sev'] != 'critical':
+        return _SEV_RANK.get(new_sev, 0) > _SEV_RANK.get(state['ev_sev'], 0)
+    # critical 이 떠 있다 — 원칙적으로 막는다.
+    # 예외: 누설 확정 감전. 낙상 SOP(즉시 접근)를 보고 구조자가 활선에
+    # 접근하면 2차 감전이다. 감전 SOP 는 "전원 차단 확인 후 접근" 이다.
+    return (new_et == 'electric_shock_risk_confirmed'
+            and state['ev_type'] != new_et)
+
+
+def _upgrade_severity(new_sev):
+    """[PHASE 2 예비] 같은 사건의 등급만 올린다. 새 ev_id 를 발급하지 않는다.
+
+    caller 가 _lock 보유 가정. 정지형 warning 이 차단기 TRIPPED 로 critical
+    승격되는 경우처럼 '같은 사건의 연속'은 _can_latch/_latch_event 를 거치지
+    않는다 — 새 ev_id 를 발급하면 화면이 새 사건으로 읽는다.
+    지금(PHASE 1)은 호출부가 없다. PHASE 2 의 등급 승격 경로에서 쓴다.
+    """
+    if not state['ev_active']:
+        return False
+    if _SEV_RANK.get(new_sev, 0) <= _SEV_RANK.get(state['ev_sev'], 0):
+        return False
+    state['ev_sev'] = new_sev
+    return True
 
 
 def _log_dropped(et, ts, reason):
@@ -1491,7 +1514,7 @@ def pipeline_loop():
             if result['critical']:
                 ts = datetime.now().strftime('%H:%M:%S')
                 _sev = EVENT_SEV.get('stationary_anomaly', 'warning')
-                if _can_latch(_sev):
+                if _can_latch('stationary_anomaly', _sev):
                     clf = {
                         'severity': _sev,
                         'confidence': 0.95,
@@ -1507,7 +1530,7 @@ def pipeline_loop():
                     }
                     _latch_event('stationary_anomaly', clf, RADAR_ZONE, ts, 1.0)
                 else:
-                    _log_dropped('stationary_anomaly', ts, '등급 미달')
+                    _log_dropped('stationary_anomaly', ts, '배타 latch')
                 stationary_gate.alerted = True
 
         if result['motion_reset']:
@@ -2084,11 +2107,11 @@ def pipeline_loop():
                         state['logs'].append(f'[{_pts}] Fall 취소: 일어나 이동 감지 (postfall gate)')
                 elif time.time() >= fall_pending['deadline']:
                     with _lock:
-                        if _can_latch('critical'):
+                        if _can_latch('fall_detected', 'critical'):
                             _latch_event('fall_detected', fall_pending['clf'],
                                          fall_pending['zn'], _pts, fall_pending['score_x'])
                         else:
-                            _log_dropped('fall_detected', _pts, '등급 미달')
+                            _log_dropped('fall_detected', _pts, '배타 latch')
                     fall_pending = None; recover_streak = 0
 
             # ── 정지형 Zone+지속시간 게이트 (매 프레임, AE와 독립) ──
@@ -2372,10 +2395,10 @@ def pipeline_loop():
                                 f'[{ts}] Fall 후보 -- 지속확인 중 ({POSTFALL_HOLD:.1f}s, 일어나 걸으면 취소)')
                     else:
                         zn = EVENT_ZONE.get(et, RADAR_ZONE)
-                        if _can_latch(clf['severity']):
+                        if _can_latch(et, clf['severity']):
                             _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
                         else:
-                            _log_dropped(et, ts, '등급 미달')
+                            _log_dropped(et, ts, '배타 latch')
 
                 # ── 정지형 2차 경보: critical latch ──
                 if False:  # 수동 재실 전환 후 무동작 판정은 별도 실측 전까지 비활성

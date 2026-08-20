@@ -6,31 +6,32 @@
 
 - Updated: 2026-08-20 · Claude Code
 - Branch: main
-- Commit: `3150738` — `origin/main`보다 앞섬(미푸시). 이 세션 변경분은 아직 커밋 전
-- Working tree: `jetson_sender.py`(낙상 선점 1차: `_can_latch`/`_log_dropped`)·`테스트_낙상선점_상태기계.py`(신규)·설계문서 2건(신규, Cowork) 수정
+- Commit: `d6828c5` — `origin/main`보다 앞섬(미푸시). 이 세션 변경분은 아직 커밋 전
+- Working tree: `jetson_sender.py`(`_can_latch(et,sev)` 신규 스펙 교체·`_upgrade_severity` 추가)·`테스트_낙상선점_상태기계.py`(시나리오 4·5 추가) 수정
 
 ## Current objective
 
-통합 지시서(2026-08-20, ADR `04_문서/설계/감전_협착_판정구조_0820.md` 근거)의 PHASE 1 진행 중: 경보 latch를 등급 배타 구조로 재설계(`_can_latch(new_et, new_sev)` — critical 떠 있으면 원칙 차단, 예외는 `electric_shock_risk_confirmed`뿐). 이전 세션에 만든 1차 `_can_latch(new_sev)`는 이 스펙보다 단순해 교체 필요. PHASE 2(감전·협착 이벤트·hazard 필드·화면 정리)는 PHASE 1 배포·검증 전까지 착수 금지(지시서 명시).
+통합 지시서(ADR `04_문서/설계/감전_협착_판정구조_0820.md`)의 PHASE 1 코드 반영: `_can_latch(et,sev)`를 critical 배타(감전확정만 예외) 구조로 교체, `_upgrade_severity()`(PHASE 2 예비, 호출부 없음) 추가. PHASE 2(감전·협착 이벤트·hazard 필드·화면 정리)는 PHASE 1 젯슨 배포·실측 4개 기준 통과 전까지 착수 금지(지시서 명시, 아직 미착수).
 
 ## Verified baseline
 
-- PHASE 1 1차 구현(구 `_can_latch`) 상태기계 전용 테스트(`테스트_낙상선점_상태기계.py`) 14건 통과, 6종 회귀 스크립트 전부 0건.
-- **젯슨 배포 전 네트워크 끊김** — 이 PC IP가 `172.20.10.12`(젯슨 핫스팟)에서 `10.28.29.204`(다른 망)로 바뀌어 젯슨(`172.20.10.10`) 접속 불가. PHASE 1 합격 기준(60초 대기 후 낙상 2초 이내, dt 중앙값 0.063~0.08, fnum diff 20초간 미증가, `[TIMING]`)은 **전부 미검증**.
-- 팀 공유 문서(`04_문서/진행보고/팀공유_0820_...md`)에 팀원(승원)이 별도로 `n_jobs=1`·RF를 `_lock` 밖으로 옮겨 젯슨에서 실측(rf 118.1ms→67.9ms)했다는 기록 있음 — **이 저장소의 `jetson_sender.py`에 반영됐는지 미확인, 젯슨 재접속 후 대조 필요**.
+- 로컬 회귀 전부 0건: pyflakes(무관 사전경고 1건 제외)·verify_port 9,580건·verify_jetson_safe 61건·v1결함36·평면도경보흐름16.
+- 상태기계 전용 테스트 17건 통과 — 정지형→낙상 선점, critical 상호배타(낙상↔낙상·낙상↔정지형), 감전확정 예외(critical 떠 있어도 선점), 감전확정 자기 자신은 배타.
+- sim_jetson.py/replay_jsonl.py는 UDP 패킷을 흉내낼 뿐 jetson_sender.py의 `_can_latch`를 실제로 호출하지 않아 이 로직 검증에 못 쓴다 — 직접 함수 호출 테스트로 대체(위).
+- **여전히 미검증**: 젯슨 배포·PHASE 1 합격 기준 4개(60초 대기 낙상 2초 이내 / dt 중앙값 0.063~0.08 / fnum diff 20초간 미증가 / `[TIMING]` 비용 미증가) — 네트워크 끊김으로 배포 자체를 못 함.
 
 ## Next actions
 
-1. `_can_latch`를 신규 스펙(critical 배타, 감전확정 예외, 등급승격은 별도 경로로 ev_id 유지)으로 교체하고 로컬 6종 회귀 통과.
-2. 네트워크 복구 후 젯슨 현재 `jetson_sender.py` 상태를 먼저 diff로 확인(팀원 승원의 별도 수정과 충돌 여부) 후 배포.
-3. PHASE 1 합격 기준 4개 실측 후에만 PHASE 2(감전·협착) 착수.
+1. 네트워크(핫스팟) 복구 후 젯슨 현재 `jetson_sender.py`를 diff로 먼저 확인(팀원 승원이 n_jobs·RF-lock-분리를 별도로 실측했다는 기록이 있어 충돌 가능) 후 이 버전을 배포.
+2. PHASE 1 합격 기준 4개 실측(위 목록) — 전부 통과해야 다음 단계.
+3. 통과 후에만 PHASE 2(감전·협착: radar_common 스키마·hazard CLI·화면 정리) 착수.
 
 ## Blockers
 
-1. 젯슨 네트워크 접속 불가(핫스팟 재연결 필요) — PHASE 1 배포·실측 전부 막힘.
-2. 젯슨의 실제 `jetson_sender.py`가 이 저장소 버전과 일치하는지 미확인(팀원 병행 수정 가능성).
-3. INA226 #2(누설전류) 미도착 — PHASE 2 감전 확정 경로는 자리만 만들고 실동작 불가.
+1. 젯슨 네트워크 접속 불가 — PHASE 1 배포·실측 전부 막힘.
+2. 젯슨의 실제 `jetson_sender.py`가 이 저장소 버전과 일치하는지 미확인(팀원 병행 수정 가능성, 승원 8/20 작업).
+3. INA226 #2(누설전류) 미도착 — PHASE 2 감전 확정 경로는 자리만 가능.
 
 ## Acceptance
 
-PHASE 1: `_can_latch` 신규 스펙 반영, 6종 회귀 0건, sim_jetson.py 시나리오(경고 중 낙상 선점/critical 중 critical 차단/상황종료 후 정상 latch) 통과, 젯슨 배포 후 4개 실측 기준 충족. 이후에만 PHASE 2 시작.
+PHASE 1: 젯슨 배포 후 4개 실측 기준 충족. 이후에만 PHASE 2 시작 — `STATIONARY_ENABLED=True` 전환도 이때까지 금지.

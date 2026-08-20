@@ -119,12 +119,12 @@ print('=' * 70)
 
 print('\n[시나리오 1] 정지형 warning 떠 있는 중 낙상 critical 발생 -> 선점해야 한다')
 reset_state()
-ck(m._can_latch('warning'), '1-a idle 상태 첫 latch 허용')
+ck(m._can_latch('stationary_anomaly', 'warning'), '1-a idle 상태 첫 latch 허용')
 m._latch_event('stationary_anomaly', make_clf('warning'), 'A', '10:00:00', 1.0)
 ck(m.state['ev_type'] == 'stationary_anomaly' and m.state['ev_id'] == 1,
    '1-b 정지형 latch 확인', f"ev_type={m.state['ev_type']} ev_id={m.state['ev_id']}")
 
-can2 = m._can_latch('critical')
+can2 = m._can_latch('fall_detected', 'critical')
 ck(can2, '1-c warning 떠 있을 때 critical _can_latch -> True')
 if can2:
     m._latch_event('fall_detected', make_clf('critical'), 'A', '10:00:05', 0.9)
@@ -138,10 +138,10 @@ print('\n[시나리오 2] 낙상 critical 떠 있는 중 정지형 warning 발�
 reset_state()
 m._latch_event('fall_detected', make_clf('critical'), 'A', '10:01:00', 0.9)
 n_logs = len(m.state['logs'])
-can3 = m._can_latch('warning')
-ck(not can3, '2-a critical 떠 있을 때 warning _can_latch -> False')
+can3 = m._can_latch('stationary_anomaly', 'warning')
+ck(not can3, '2-a critical 떠 있을 때 warning _can_latch -> False(배타)')
 if not can3:
-    m._log_dropped('stationary_anomaly', '10:01:05', '등급 미달')
+    m._log_dropped('stationary_anomaly', '10:01:05', '배타 latch')
 ck(m.state['ev_type'] == 'fall_detected' and m.state['ev_id'] == 1,
    '2-b 화면은 낙상 그대로', f"ev_type={m.state['ev_type']} ev_id={m.state['ev_id']}")
 ck(len(m.state['logs']) == n_logs + 1, '2-c 로그에만 한 줄 추가')
@@ -151,13 +151,27 @@ print('\n[시나리오 3] 낙상 critical 떠 있는 중 낙상이 또 발생 ->
 reset_state()
 m._latch_event('fall_detected', make_clf('critical'), 'A', '10:02:00', 0.9)
 n_logs = len(m.state['logs'])
-can4 = m._can_latch('critical')
-ck(not can4, '3-a 같은 critical 재발생 _can_latch -> False(동급 유지)')
+can4 = m._can_latch('fall_detected', 'critical')
+ck(not can4, '3-a 같은 critical 재발생 _can_latch -> False(배타)')
 if not can4:
-    m._log_dropped('fall_detected', '10:02:05', '등급 미달')
+    m._log_dropped('fall_detected', '10:02:05', '배타 latch')
 ck(m.state['ev_id'] == 1, '3-b ev_id 그대로(화면 유지)')
 ck(len(m.state['logs']) == n_logs + 1, '3-c 로그에만 한 줄 추가')
 ck(len(m.BREAKER.trip_calls) == 1, '3-d BREAKER.trip() 추가 호출 없음')
+
+print('\n[시나리오 4] 낙상 critical 떠 있는 중 감전 확정 -> 예외로 선점(2차 감전 방지)')
+reset_state()
+m._latch_event('fall_detected', make_clf('critical'), 'A', '10:03:00', 0.9)
+can5 = m._can_latch('electric_shock_risk_confirmed', 'critical')
+ck(can5, '4-a critical(낙상) 떠 있어도 감전확정은 _can_latch -> True(예외)')
+if can5:
+    m._latch_event('electric_shock_risk_confirmed', make_clf('critical'), 'A', '10:03:02', 0.99)
+ck(m.state['ev_type'] == 'electric_shock_risk_confirmed' and m.state['ev_id'] == 2,
+   '4-b 화면이 감전확정으로 전환', f"ev_type={m.state['ev_type']} ev_id={m.state['ev_id']}")
+
+print('\n[시나리오 5] 감전 확정 떠 있는 중 감전 확정이 또 발생 -> 자기 자신은 예외 아님(배타)')
+can6 = m._can_latch('electric_shock_risk_confirmed', 'critical')
+ck(not can6, '5-a 같은 감전확정 재발생은 예외 조건(ev_type != new_et) 불충족 -> False')
 
 ok_n = sum(1 for r in results if r)
 ng_n = sum(1 for r in results if not r)
