@@ -165,7 +165,16 @@ FALL_WIN_SEC   = 1.0
 POSTFALL_GATE  = True
 POSTFALL_HOLD  = 1.2
 RECOVER_NP75   = 15
-RECOVER_DSLO   = 0.30
+# ⚠ [8/19 임시조치] 원래 0.30. 이 레이더의 실측 도플러 잡음 바닥이 0.319~0.327
+#   (8/19 빈방 602프레임 중앙값 0.3236)이라 0.30은 잡음 바닥보다 낮았다.
+#   그 결과 낙상 후 가만히 누워 있어도 dop_std가 항상 이 구간 안에 들어
+#   POSTFALL_GATE 취소 조건(도플러+n_pts)이 90.9%(8/19 시연 758프레임 중 689)
+#   충족돼 낙상이 자동 취소됐다(8/19 낙상 미검출 결함 2).
+#   0.45는 잡음 바닥 위로 올린 것일 뿐 회복 자체를 재는 실측값이 아니다.
+#   올바른 방향은 도플러가 아니라 '낙상 직전 높이 대비 회복'으로 취소 조건을
+#   재정의하는 것 (classify()의 evidence['height_start'] 활용 가능) —
+#   회복 판정 마진의 실측 근거가 아직 없어 이번 패스에서는 하지 않는다.
+RECOVER_DSLO   = 0.45
 RECOVER_DSHI   = 0.90
 RECOVER_FRAMES = 4
 FALL_ZACC_MIN  = 0
@@ -212,6 +221,13 @@ try:
     import joblib
     _rf_ck    = joblib.load(RF_MODEL_PATH)
     RF_MODEL  = _rf_ck['model']
+    # ⚠ [8/19] 학습(train_fall_safety.py:161)의 n_jobs=-1 이 모델에 절여져 추론까지
+    #   따라온다. 샘플 1개에 트리 300개를 joblib 태스크로 흩뿌리고 공유배열에 락으로
+    #   누적하므로 디스패치 비용이 연산을 압도한다.
+    #   실측 젯슨 127.45→56.00ms / PC 2코어 70.3→22.6ms.
+    #   ⚠ 계산 방식만 바뀐다 — 같은 입력에 같은 출력이 나온다(최대차 0.00e+00 확인).
+    try:    RF_MODEL.n_jobs = 1
+    except Exception: pass
     RF_FEATURES = _rf_ck['features']
     RF_THRESHOLD = float(_rf_ck.get('threshold', 0.5))
     RF_OK     = True
@@ -230,6 +246,10 @@ try:
     if _rf30_ck.get('feature_mode') != 'raw_motion_height_bg10_low30':
         raise ValueError(f"지원하지 않는 feature_mode: {_rf30_ck.get('feature_mode')}")
     RF30_MODEL = _rf30_ck['model']
+    # ⚠ [8/19] 같은 이유. 이 모델은 매 프레임 호출돼 밀림의 주원인이었다
+    #   (실측 rf 118.1ms/frame, 전체 129.6ms 중 91%).
+    try:    RF30_MODEL.n_jobs = 1
+    except Exception: pass
     RF30_THRESHOLD = float(_rf30_ck['threshold'])
     RF30_WINDOW = int(_rf30_ck['window_frames'])
     RF30_BG = {tuple(v) for v in _rf30_ck['height_background']}
@@ -617,6 +637,11 @@ class RelayRTU:
         self.connected = False
         self.error = None
         self._lk = threading.Lock()
+        # ⚠ [8/19] 연속 실패 백오프. Modbus 가 무응답이면 매 호출(최대 1Hz,
+        #   power_monitor_loop 참조)마다 timeout=0.5 만큼 재시도했다.
+        #   실패가 쌓이면 지수적으로 물러나 재시도 간격을 늘린다(최대 30초).
+        self._fail_count = 0
+        self._next_ok_t  = 0.0
 
     @staticmethod
     def _crc16(data):
@@ -629,14 +654,23 @@ class RelayRTU:
 
     def _exchange(self, body, size):
         import serial
-        frame = body + self._crc16(body)
-        with serial.Serial(RELAY_PORT, RELAY_BAUD, timeout=0.5) as port:
-            port.reset_input_buffer()
-            port.write(frame)
-            port.flush()
-            reply = port.read(size)
-        if len(reply) != size or reply[-2:] != self._crc16(reply[:-2]):
-            raise OSError(f'Modbus 응답 오류: {reply.hex() or "없음"}')
+        if time.time() < self._next_ok_t:
+            raise OSError('Modbus backoff 중 (연속 실패로 재시도 유예)')
+        try:
+            frame = body + self._crc16(body)
+            with serial.Serial(RELAY_PORT, RELAY_BAUD, timeout=0.5) as port:
+                port.reset_input_buffer()
+                port.write(frame)
+                port.flush()
+                reply = port.read(size)
+            if len(reply) != size or reply[-2:] != self._crc16(reply[:-2]):
+                raise OSError(f'Modbus 응답 오류: {reply.hex() or "없음"}')
+        except Exception:
+            self._fail_count += 1
+            self._next_ok_t = time.time() + min(30.0, 2.0 ** self._fail_count)
+            raise
+        self._fail_count = 0
+        self._next_ok_t  = 0.0
         return reply
 
     def _read_unlocked(self):
@@ -1209,6 +1243,100 @@ def sender_loop():
 
 
 # ═══════════════════════════════════════════════════════════
+# 5-B. POWER MONITOR THREAD  [8/19 분리]
+# ═══════════════════════════════════════════════════════════
+def power_monitor_loop():
+    """전기 설비 읽기 + 차단 판정. 프레임 루프에서 분리해 최대 1Hz로 돈다.
+
+    ⚠ [8/19] 원래 pipeline_loop() 의 프레임 루프 안에서 매 프레임 돌았다.
+      Modbus(RelayRTU) 무응답 시 read/write 가 시리얼 timeout=0.5 만큼씩
+      블로킹하는데, 이걸 _lock 을 잡은 채 프레임마다 반복하면서 처리율이
+      9.96fps → 1.55fps 로 무너져 낙상 프레임이 최대 42.3초 밀렸다
+      (8/19 낙상 미검출 결함 1). 판정 로직은 그대로, 실행 위치와 주기만 바꾼다.
+
+    ⚠ [8/19 2차 수정] 1차 수정에서도 BREAKER.on_anomalies() 를 with _lock: 안에
+      남겨뒀다. RELAY.write() → serial.read(timeout=0.5) 가 여전히 _lock 을 쥔
+      채 블로킹해, 프레임 루프가 프레임당 _lock 을 여러 번 잡는 구조상 처리율이
+      다시 절반 가까이(5fps대)로 깎였다. Modbus 호출은 반드시 _lock 밖에서 하고,
+      state 읽기/쓰기만 짧게 lock 안에서 한다.
+    """
+    while True:
+        _t0 = time.time()
+        _pw = _read_power()
+        with _lock:
+            state['power'] = _pw
+            _live = state['phase'] == PH_LIVE and state['occupied']
+        # ⚠ Modbus(BREAKER.on_anomalies -> RELAY.write)는 _lock 밖에서 부른다.
+        #   (1) LIVE 에서만 판정한다. 웜업·학습 중 차단은 말이 안 된다.
+        #   (2) dop_std 를 설비진동 게이트에 먹이지 않는다 — 설비 진동은
+        #       classify() 의 vibration_anomaly 가 담당한다(지속성 요구).
+        #       여기서는 전기 이상(과전류·전압강하)만 본다.
+        _trip = []
+        if _live and _pw['curr'] is not None and _pw['volt'] is not None:
+            _trip = BREAKER.on_anomalies(
+                classify_equipment(_pw['curr'], _pw['volt'], dop_std=0.0))
+        _tz = BREAKER.tripped_zones()
+        with _lock:
+            for _z in _trip:
+                state['logs'].append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] BREAKER TRIP Zone {_z} (전기)")
+            _zs = {z: 'NORMAL' for z in ZONE_IDS}
+            if state['ev_active'] and state['ev_zone']:
+                _zs[state['ev_zone']] = 'ALERT'
+            for _z in _tz:
+                _zs[_z] = 'ALERT' if _zs.get(_z) == 'ALERT' else 'TRIPPED'
+            state['zone_state'] = _zs
+        time.sleep(max(0.0, 1.0 - (time.time() - _t0)))
+
+
+def _write_clf_log(fw, verdict, pend_et, pend_cnt, rf_score, rf_threshold, rf_kind,
+                    score, thr, fnum_first, fnum_last, dt):
+    """CLF_LOG_PATH 에 판정/처리율 진단 한 줄을 남긴다.
+
+    [8/19] 원래 anom_streak 확정 시점에만(즉 이상이 CONFIRM_FRAMES 연속일 때만)
+    기록됐다. 그러면 이상 문턱을 아예 못 넘은 구간(=미검출)엔 로그가 안 남아
+    사후 분석이 불가능하다(8/19 낙상 미검출 사례). pipeline_loop() 에서
+    이 함수를 (1) 기존 확정 시점, (2) 최소 1초 1회 두 곳에서 부른다.
+    verdict='tick' 이면 (2)의 주기 기록이다. classify() 는 호출하지 않는다
+    — 판정 로직에는 관여하지 않고 현재 창의 원시 통계만 남긴다.
+    """
+    try:
+        _w = fw[fw[:, 6] > 0]
+        if len(_w) < 2:
+            return
+        _dsl = _w[:, 4]; _nl = _w[:, 6]; _h = max(1, len(_dsl) // 2)
+        _pk2 = int(_dsl.argmax())
+        _hh  = CEILING_H - _w[:, 1]
+        _hd  = (round(float(_hh[:_pk2].mean() - _hh[_pk2+1:].mean()), 2)
+                if (_pk2 >= 2 and len(_hh) - _pk2 - 1 >= 3) else None)
+        _pm  = (round(float(np.median(_nl[_pk2+1:])), 1)
+                if len(_nl) - _pk2 - 1 >= 3 else None)
+        with open(CLF_LOG_PATH, 'a') as _lf:
+            _lf.write(json.dumps({
+                't': round(time.time(), 2),
+                'verdict': verdict, 'pend': f'{pend_et}:{pend_cnt}',
+                'rf_score': (round(rf_score, 6) if rf_score is not None else None),
+                'rf_thr': (round(rf_threshold, 6) if rf_score is not None else None),
+                'rf_model': rf_kind,
+                'ds_max': round(float(_dsl.max()), 3),
+                'ds_first': round(float(_dsl[:_h].mean()), 3),
+                'ds_last': round(float(_dsl[_h:].mean()), 3),
+                'n_mean': round(float(_nl.mean()), 1),
+                'n_p75': round(float(np.percentile(_nl, 75)), 1),
+                'h_drop': round(float(_w[:, 1].max() - _w[:, 1].min()), 3),
+                'score_x': round(score / thr if thr > 0 else 0, 2),
+                'broad': int((_dsl >= 0.8).sum()),
+                'h_desc': _hd, 'post_med': _pm,
+                'horiz': round(float(np.hypot(_w[:, 0].max() - _w[:, 0].min(),
+                                              _w[:, 2].max() - _w[:, 2].min())), 3),
+                'zacc': round(float(np.abs(_w[:, 8]).max()), 3),
+                'fnum_first': fnum_first, 'fnum_last': fnum_last, 'dt': dt,
+            }) + '\n')
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════════════════
 # 6. PIPELINE THREAD
 # ═══════════════════════════════════════════════════════════
 def pipeline_loop():
@@ -1216,6 +1344,7 @@ def pipeline_loop():
     feat_buf    = []
     clf_buf     = []
     rf30_buf    = []
+    fnum_buf    = []
     warmup_feat = []
     prev_c      = None
     prev_zvel   = 0.0
@@ -1231,6 +1360,11 @@ def pipeline_loop():
     anom_streak = 0
     pend_et     = None
     pend_cnt    = 0
+    last_tick_log_t = 0.0   # [8/19 계측] 최소 1초 1회 판정 로그
+    # [8/19 계측] dt 개선(1.55→~8fps) 후에도 파서(9.96fps) 대비 밀림이 남아 있어
+    #   구간별 소요시간을 1초마다 [TIMING] 으로 출력한다. 판정 로직 무관, 순수 계측.
+    _tm_parse = _tm_feat = _tm_ae = _tm_rf = _tm_lock = _tm_log = 0.0
+    _tm_n = 0
     fall_hits   = []
     fall_pending   = None
     recover_streak = 0
@@ -1378,7 +1512,7 @@ def pipeline_loop():
             state['occupancy_reset_requested'] = False
         if occupancy_reset:
             stationary_gate.reset()
-            feat_buf.clear(); clf_buf.clear(); rf30_buf.clear()
+            feat_buf.clear(); clf_buf.clear(); rf30_buf.clear(); fnum_buf.clear()
             prev_c = None; prev_zvel = 0.0; ema_zacc = 0.0
             prev_c_full = None; prev_zvel_full = 0.0; ema_zacc_full = 0.0
             prev_c_rf30 = None; prev_zvel_rf30 = 0.0; ema_zacc_rf30 = 0.0
@@ -1438,6 +1572,7 @@ def pipeline_loop():
             feat_buf    = []
             clf_buf     = []
             rf30_buf    = []
+            fnum_buf    = []
             warmup_feat = []
             prev_c      = None
             prev_zvel   = 0.0
@@ -1498,6 +1633,7 @@ def pipeline_loop():
         if fsize < read_offset:
             read_offset = 0
 
+        _t0_parse = time.time()   # [8/19 계측]
         try:
             with open(JSON_PATH, 'rb') as f:
                 f.seek(read_offset)
@@ -1521,12 +1657,42 @@ def pipeline_loop():
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            new_frames.append(rec.get('points', []))
+            new_frames.append((rec.get('frame_num'), rec.get('points', [])))
+        _tm_parse += time.time() - _t0_parse   # [8/19 계측]
 
         if not new_frames:
             continue
 
-        for frame_pts in new_frames:
+        # ⚠ [8/19] 이미 쌓인 밀림은 재시작해야만 0이 된다 — 배치가 밀린 채로 그대로
+        #   크면 다음 배치는 더 커진다(발산). new_frames 가 30(=3초분, 레이더 10Hz
+        #   기준)을 넘으면 오래된 프레임을 버리고 최신 RF30_WINDOW 개만 남긴 뒤
+        #   버퍼를 비우고 read_offset 을 파일 끝으로 보내 따라잡는다. 조용히
+        #   버리면 안전 시스템에서 무음 유실이므로 버린 프레임 수와 건너뛴 초를
+        #   add_log 와 clf_decisions 양쪽에 남긴다.
+        if len(new_frames) > 30:
+            _dropped = len(new_frames) - RF30_WINDOW
+            _skipped_sec = _dropped / 10.0   # 레이더 10Hz 기준
+            new_frames = new_frames[-RF30_WINDOW:]
+            # fnum_buf 는 clf_buf 와 1:1 대응(2018행) — 같이 안 비우면 길이가
+            # 어긋나 다음 tick 로그의 fnum_first/last 가 옛 값을 가리킨다.
+            feat_buf.clear(); clf_buf.clear(); rf30_buf.clear(); fnum_buf.clear()
+            try:
+                read_offset = os.path.getsize(JSON_PATH)
+            except OSError:
+                pass
+            add_log(f'프레임 백로그 {_dropped}개 버림 ({_skipped_sec:.1f}초 건너뜀) '
+                    f'-- 최신 {RF30_WINDOW}개만 유지')
+            try:
+                with open(CLF_LOG_PATH, 'a') as _lf:
+                    _lf.write(json.dumps({
+                        't': round(time.time(), 2), 'verdict': 'backlog_drop',
+                        'dropped': _dropped, 'skipped_sec': round(_skipped_sec, 1),
+                        'kept': RF30_WINDOW,
+                    }) + '\n')
+            except OSError:
+                pass
+
+        for _fnum, frame_pts in new_frames:
             # 근거리 아티팩트 게이트
             if NEAR_FIELD_MIN_RANGE and frame_pts:
                 frame_pts = [p for p in frame_pts if p['y'] >= NEAR_FIELD_MIN_RANGE]
@@ -1618,6 +1784,7 @@ def pipeline_loop():
             cz  = CEILING_H - (float(np.mean(ys)) if ys else CEILING_H)
             _now_t = time.time()
             _dt    = (_now_t - prev_ts) if prev_ts is not None else None
+            _t0_feat = time.time()   # [8/19 계측]
             feat = extract_features(frame_pts, prev_c, prev_zvel, _dt, ema_zacc)
             # [8/11] classify 전용 피처. 클러터 제거 전 포인트로 계산한다.
             #   prev_* 를 별도로 추적하는 이유: z_vel/z_accel 은 이전 프레임 centroid
@@ -1633,6 +1800,7 @@ def pipeline_loop():
             prev_c_rf30    = feat_rf30[:3].copy()
             prev_zvel_rf30 = float(feat_rf30[7])
             ema_zacc_rf30  = float(feat_rf30[8])
+            _tm_feat += time.time() - _t0_feat   # [8/19 계측]
             _track_log(len(frame_pts), feat[:3], _now_t)
             ref     = float(np.random.normal(0, 0.004))
             feat[3] = lms.filter(feat[3], ref)
@@ -1656,31 +1824,11 @@ def pipeline_loop():
                 state['dop_std']  = round(float(feat[4]), 3)
                 state['track_state'] = 'tracking' if state['occupied'] else 'absent'
                 state['track_anchor'] = None
-                # ── [7/31] 전기 설비 읽기 + 차단 판정 (젯슨이 실행) ──
-                _pw = _read_power()
-                state['power'] = _pw
-                # ⚠ [7/31 버그수정] 두 가지를 고쳤다. 시뮬레이션에서 웜업 중에 차단기가
-                #   내려가는 것을 보고 잡았다.
-                #   (1) LIVE 에서만 판정한다. 웜업·학습 중 차단은 말이 안 된다.
-                #   (2) dop_std 를 설비진동 게이트에 먹이지 않는다.
-                #       VIB_DS_THRESH=0.20 은 '정지된 장면 속 기계 진동' 기준인데,
-                #       걷는 사람의 dop_std 가 0.2~0.5 라서 사람이 걸을 때마다 차단됐다.
-                #       설비 진동은 classify() 의 vibration_anomaly 가 담당한다
-                #       (ds_first>=0.40 AND ds_last>=0.40 AND h_drop<0.5 — 지속성 요구).
-                #       여기서는 전기 이상(과전류·전압강하)만 본다.
-                if (state['phase'] == PH_LIVE and state['occupied']
-                        and _pw['curr'] is not None and _pw['volt'] is not None):
-                    _trip = BREAKER.on_anomalies(
-                        classify_equipment(_pw['curr'], _pw['volt'], dop_std=0.0))
-                    for _z in _trip:
-                        state['logs'].append(
-                            f"[{datetime.now().strftime('%H:%M:%S')}] BREAKER TRIP Zone {_z} (전기)")
-                _zs = {z: 'NORMAL' for z in ZONE_IDS}
-                if state['ev_active'] and state['ev_zone']:
-                    _zs[state['ev_zone']] = 'ALERT'
-                for _z in BREAKER.tripped_zones():
-                    _zs[_z] = 'ALERT' if _zs.get(_z) == 'ALERT' else 'TRIPPED'
-                state['zone_state'] = _zs
+                # ⚠ [8/19] 전기 설비 읽기 + 차단 판정은 여기(프레임 루프)에서 뺐다.
+                #   Modbus 무응답 시 RelayRTU._exchange() 의 serial timeout=0.5 가
+                #   프레임마다 최대 0.5~1초씩 _lock 을 잡은 채 블로킹해 처리율이
+                #   9.96fps → 1.55fps 로 무너졌다(8/19 낙상 미검출의 결함 1).
+                #   → power_monitor_loop() 로 분리해 최대 1Hz로만 돈다.
 
             # ── READY phase: wait for Start button ─────────
             with _lock:
@@ -1867,6 +2015,11 @@ def pipeline_loop():
             rf30_buf.append(feat_rf30.tolist())
             if len(rf30_buf) > RF30_WINDOW:
                 rf30_buf.pop(0)
+            # [8/19 계측] clf_buf 와 나란히 유지 — 판정 로그에 frame_num 범위를
+            #   남겨 처리율(fnum 간격 vs 실제 경과시간)을 사후 확인할 수 있게 한다.
+            fnum_buf.append(_fnum)
+            if len(fnum_buf) > CLF_WIN:
+                fnum_buf.pop(0)
 
             # ── 낙상 지속확인 게이트 (매 프레임) ──
             if POSTFALL_GATE and fall_pending is not None:
@@ -2000,6 +2153,7 @@ def pipeline_loop():
             _stationary_tick(_ds, _stationary_pos)
 
             score = 0.0
+            _t0_ae = time.time()   # [8/19 계측]
             if len(feat_buf) == SEQ_LEN:
                 try:
                     arr    = np.array(feat_buf, dtype=np.float32)
@@ -2014,7 +2168,25 @@ def pipeline_loop():
                     if not ae_error_logged:
                         ae_error_logged = True
                         add_log(f'AE score 계산 실패 -- 판정 중지: {type(e).__name__}: {e}')
+            _tm_ae += time.time() - _t0_ae   # [8/19 계측]
 
+            fw = np.array(clf_buf, dtype=np.float32)
+            rf30w = np.array(rf30_buf, dtype=np.float32)
+            _t0_rf = time.time()   # [8/19 계측]
+            if RF30_OK and len(rf30w) == RF30_WINDOW:
+                rf_score = _rf30_fall_score(rf30w)
+                rf_threshold = RF30_THRESHOLD
+                rf_kind = 'hybrid30'
+            else:
+                rf_score = _rf_fall_score(fw) if len(fw) == CLF_WIN else None
+                rf_threshold = RF_THRESHOLD
+                rf_kind = 'legacy20'
+            _tm_rf += time.time() - _t0_rf   # [8/19 계측]
+            # ⚠ [8/19] RF 는 state 를 읽지도 쓰지도 않고 지역 버퍼(clf_buf/rf30_buf)만 본다.
+            #   락 안에 두면 프레임당 ~120ms 동안 10Hz sender_loop 이 패킷을 만들지 못해
+            #   UDP 송신까지 함께 끊긴다. 판정값은 바뀌지 않는다.
+
+            _t0_lock = time.time()   # [8/19 계측]
             with _lock:
                 state['sc_h'].append(score)
                 ts = datetime.now().strftime('%H:%M:%S')
@@ -2043,19 +2215,29 @@ def pipeline_loop():
                             state['logs'].append(
                                 f'[{ts}] 차단 유지 {BREAKER.tripped_zones()} — 재투입은 수동')
 
-                fw = np.array(clf_buf, dtype=np.float32)
-                rf30w = np.array(rf30_buf, dtype=np.float32)
-                if RF30_OK and len(rf30w) == RF30_WINDOW:
-                    rf_score = _rf30_fall_score(rf30w)
-                    rf_threshold = RF30_THRESHOLD
-                    rf_kind = 'hybrid30'
-                else:
-                    rf_score = _rf_fall_score(fw) if len(fw) == CLF_WIN else None
-                    rf_threshold = RF_THRESHOLD
-                    rf_kind = 'legacy20'
                 rf_candidate = rf_score is not None and rf_score >= rf_threshold
                 # [8/14 실측] RF는 AE와 기존 규칙이 놓친 약한 낙상을 직접 후보로 올린다.
                 is_anomaly = score > thr or rf_candidate
+
+                # [8/19 계측] 이상 문턱을 못 넘는 구간도 최소 1초 1회는 기록한다.
+                #   판정 로직에는 관여하지 않는다 — classify() 를 부르지 않는다.
+                _now_tick = time.time()
+                if _now_tick - last_tick_log_t >= 1.0:
+                    last_tick_log_t = _now_tick
+                    _t0_log = time.time()   # [8/19 계측]
+                    _write_clf_log(fw, 'tick', pend_et, pend_cnt, rf_score, rf_threshold,
+                                    rf_kind, score, thr,
+                                    fnum_buf[0] if fnum_buf else None,
+                                    fnum_buf[-1] if fnum_buf else None,
+                                    round(_dt, 3) if _dt is not None else None)
+                    _tm_log += time.time() - _t0_log   # [8/19 계측]
+                    # [8/19 계측] 구간별 소요시간 1초 요약 (판정 로직과 무관, 순수 계측)
+                    print(f'[TIMING] n={_tm_n} parse={_tm_parse*1000:.1f}ms '
+                          f'feat={_tm_feat*1000:.1f}ms ae={_tm_ae*1000:.1f}ms '
+                          f'rf={_tm_rf*1000:.1f}ms lock={_tm_lock*1000:.1f}ms '
+                          f'log={_tm_log*1000:.1f}ms', flush=True)
+                    _tm_parse = _tm_feat = _tm_ae = _tm_rf = _tm_lock = _tm_log = 0.0
+                    _tm_n = 0
 
                 if rf_candidate and not state['ev_active']:
                     anom_streak = CONFIRM_FRAMES
@@ -2090,39 +2272,13 @@ def pipeline_loop():
                         _save_fall_suspect(fw, clf)
 
                     # [판정 로그] 미검출/오탐 원인 확정용
-                    try:
-                        _w  = fw[fw[:, 6] > 0]
-                        if len(_w) >= 2:
-                            _dsl = _w[:, 4]; _nl = _w[:, 6]; _h = max(1, len(_dsl)//2)
-                            _pk2 = int(_dsl.argmax())
-                            _hh  = CEILING_H - _w[:, 1]
-                            _hd  = (round(float(_hh[:_pk2].mean() - _hh[_pk2+1:].mean()), 2)
-                                    if (_pk2 >= 2 and len(_hh) - _pk2 - 1 >= 3) else None)
-                            _pm  = (round(float(np.median(_nl[_pk2+1:])), 1)
-                                    if len(_nl) - _pk2 - 1 >= 3 else None)
-                            with open(CLF_LOG_PATH, 'a') as _lf:
-                                _lf.write(json.dumps({
-                                    't': round(time.time(), 2),
-                                    'verdict': raw_et, 'pend': f'{pend_et}:{pend_cnt}',
-                                    'rf_score': (round(rf_score, 6) if rf_score is not None else None),
-                                    'rf_thr': (round(rf_threshold, 6)
-                                               if rf_score is not None else None),
-                                    'rf_model': rf_kind,
-                                    'ds_max': round(float(_dsl.max()), 3),
-                                    'ds_first': round(float(_dsl[:_h].mean()), 3),
-                                    'ds_last': round(float(_dsl[_h:].mean()), 3),
-                                    'n_mean': round(float(_nl.mean()), 1),
-                                    'n_p75': round(float(np.percentile(_nl, 75)), 1),
-                                    'h_drop': round(float(_w[:, 1].max() - _w[:, 1].min()), 3),
-                                    'score_x': round(score / thr if thr > 0 else 0, 2),
-                                    'broad': int((_dsl >= 0.8).sum()),
-                                    'h_desc': _hd, 'post_med': _pm,
-                                    'horiz': round(float(np.hypot(_w[:, 0].max() - _w[:, 0].min(),
-                                                                  _w[:, 2].max() - _w[:, 2].min())), 3),
-                                    'zacc': round(float(np.abs(_w[:, 8]).max()), 3),
-                                }) + '\n')
-                    except Exception:
-                        pass
+                    _t0_log2 = time.time()   # [8/19 계측]
+                    _write_clf_log(fw, raw_et, pend_et, pend_cnt, rf_score, rf_threshold,
+                                    rf_kind, score, thr,
+                                    fnum_buf[0] if fnum_buf else None,
+                                    fnum_buf[-1] if fnum_buf else None,
+                                    round(_dt, 3) if _dt is not None else None)
+                    _tm_log += time.time() - _t0_log2   # [8/19 계측]
 
                     if et == 'normal':
                         pend_et, pend_cnt = None, 0
@@ -2191,6 +2347,8 @@ def pipeline_loop():
                     state['incidents'].append({
                         'type': et2, 'zone': zn2, 'detected': ts, 'resolved': None})
                 # else: 경보 latch 유지 (자동 해제 없음)
+            _tm_lock += time.time() - _t0_lock   # [8/19 계측] with _lock 진입~해제 총합
+            _tm_n += 1
 
 
 def sim_radar_writer():
@@ -2289,6 +2447,7 @@ if __name__ == '__main__':
 
     threading.Thread(target=control_listener, daemon=True).start()
     threading.Thread(target=sender_loop, daemon=True).start()
+    threading.Thread(target=power_monitor_loop, daemon=True).start()
 
     add_log('Jetson sender started -- waiting for radar data')
     try:

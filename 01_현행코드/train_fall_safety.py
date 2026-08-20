@@ -216,6 +216,10 @@ def main():
     hashes = {}
     for path in args.data:
         hashes[os.path.basename(path)] = _sha256(path)
+    # ⚠ [8/19] 배치 학습은 n_jobs=-1 이 빠르지만, 이 값이 그대로 저장되면
+    #   런타임(jetson_sender.py)의 샘플 1개 추론에서 디스패치 비용이 연산을 압도한다.
+    #   저장 직전에만 1로 정규화한다 — 학습 자체는 계속 -1 로 돈다.
+    model.n_jobs = 1
     joblib.dump({'model': model, 'features': FEATURES, 'threshold': threshold,
                  'threshold_policy': 'LOSO max recall with wave FP=0',
                  'excluded_labels': ['fast_sit'], 'metrics': metrics,

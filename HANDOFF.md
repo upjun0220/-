@@ -4,32 +4,32 @@
 
 ## State
 
-- Updated: 2026-08-10 · Cowork
+- Updated: 2026-08-20 · Claude Code
 - Branch: main
-- Commit: `a841f65` (8/05) — 이후 9파일 1,067줄이 미커밋
-- Working tree: 코드 4 · 문서 5 수정, `mannequin_cc0.obj`(3.13 MB) untracked
+- Commit: `09f7c10` — `origin/main`과 같음. 이 세션 변경분은 아직 커밋 전이다
+- Working tree: `jetson_sender.py`(Modbus lock 분리·RECOVER_DSLO·계측)·`radar_parser.py`(t 필드, 젯슨에서 반입, 신규)·`train_fall_safety.py`(n_jobs)·`04_문서/AI_BRIDGE/INBOX.md` 수정
 
 ## Current objective
 
-8/05 이후 쌓인 변경을 작업 단위로 나눠 커밋해 되돌림 지점과 `git log` 정본을 복구한다. **코드 내용은 바꾸지 않는다.**
+8/19 낙상 미검출 원인 2건 수정: ① Modbus(BREAKER.on_anomalies)가 프레임 루프 `_lock` 안에서 블로킹 → `power_monitor_loop()`로 분리(1차: 루프 밖 이동, 2차: lock도 밖으로). ② `POSTFALL_GATE`의 `RECOVER_DSLO=0.30`이 실측 잡음 바닥(0.319~0.327)보다 낮아 낙상 후 정지 상태가 늘 취소조건 충족 → 0.45로 임시조치(주석에 실측 아님 명시). 처리율 계측용 `fnum_first/fnum_last/dt`, 1초 주기 tick 로그, `[TIMING]` 구간별 소요시간을 jetson_sender.py에 추가.
 
 ## Verified baseline
 
-- 8/10 세션 기준: pyflakes 0 · v1결함 47·0 · 실데이터재생 73·0 · 평면도흐름 16·0 · 4해상도 0건
-- 마네킹 렌더 10 Hz 30초: CPU 28.4 → 4.83초(83.0% 감소) · 메모리 384~390 MB · 응답불량 0회
-- ⚠ `verify_port.py` · `verify_jetson_safe.py` 는 `jetson_sender.py` · `radar_common.py` 수정 이후 미실행
+- 6종 검증 스크립트(pyflakes·v1결함36·레이아웃·verify_port 9,580건·verify_jetson_safe 61건·실데이터재생73·평면도경보흐름16) 반복 통과, 전부 0건. pyflakes 사전경고 1건(`classify()`의 `post_walk` 미사용)은 무관·미수정.
+- 젯슨 재배포·재기동 확인, `[RF]`/`[RF30]` 로드 OK.
+- 2차 수정 후 실측: dt 중앙값 0.1315초(~7.3fps). 20초 직접측정(parser fnum vs sender fnum_last)에서 diff 1437→1484로 계속 증가 — **파서 9.96fps 대비 부족 상태 잔존, 원인 미확정**.
 
 ## Next actions
 
-1. 미커밋 변경을 작업 단위로 나눠 커밋한다. **직전 세션 결과물을 그대로 보존하고 리팩터링·이름 변경·정리를 하지 않는다.** 최소 분리 = (a) 정지형·ROI (b) 마네킹 렌더·GPU 변환 (c) 문서. `git diff` 로 경계가 안 갈리면 OUTBOX 에 적고 합쳐서 커밋한다.
-2. 커밋 전 `verify_port.py` · `verify_jetson_safe.py` 를 다시 돌린다. 실패하면 커밋하지 말고 OUTBOX 에 적는다.
-3. `mannequin_cc0.obj` 포함 여부를 판단한다. 재익스포트를 반복할 자산이면 텍스트라 매 버전이 통째로 저장된다.
+1. 낙상-정지형 latch 우선순위 역전 수정(`_can_latch`, `_SEV_RANK`) — 사용자 승인된 방침, 구현 대기.
+2. `[TIMING]` 로그로 잔존 처리율 부족(t_lock 세부: rf_score·classify·file write 중 무엇이 큰지)을 실측 추가.
+3. `STATIONARY_ENABLED=True` 전환은 1번 검증 통과 후에만.
 
-## Blockers / unknowns
+## Blockers
 
-1. 원격 저장소가 없어 커밋해도 사본이 이 PC 뿐이다. OneDrive 가 `.git` 쓰기 중 동기화하면 손상 위험이 있다.
-2. 실물 10 Hz 에서 화면 끊김과 UDP 유실률이 미확인이다. 위 CPU 수치는 재생 부하이지 젯슨 실물이 아니다.
+1. Modbus 릴레이 하드웨어가 계속 무응답 — 백오프로 블로킹은 줄였으나 배선/주소 등 근본 원인 미확인.
+2. 처리율이 파서 대비 완전히 회복되지 않음 — `[TIMING]` 계측 결과 대기 중.
 
 ## Acceptance
 
-작업 단위로 분리된 커밋이 `git log` 에 남고 working tree 가 깨끗하다. pre-commit 훅 3종이 전부 통과한다. **커밋 과정에서 코드 동작 변경 0건** — `git diff a841f65..HEAD` 가 직전 세션 편집분과 일치해야 한다.
+latch 우선순위 수정 후: 정지형 CRITICAL 중 낙상 발생 시 화면이 낙상으로 전환되고 `BREAKER.trip()` 호출됨. 낙상 중 정지형/낙상 재발생은 화면 유지·로그만. 6종 검증 스크립트 전부 0건. `[TIMING]` 프레임당 총비용이 수정 전 대비 유의미하게 늘지 않음.
