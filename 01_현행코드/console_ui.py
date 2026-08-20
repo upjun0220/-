@@ -2408,24 +2408,12 @@ ZONE_HAZARD = {
 
 # 변압기 앞 표시용 세부 관심영역. 젯슨의 정지형 이상 판정을 바꾸지 않고,
 # 마지막 신뢰 위치가 어느 위험원 앞인지에 따라 경보 명칭과 SOP만 좁힌다.
-STATIONARY_INTEREST = (
-    ('electric', (-0.72, -0.12, 0.12, 0.72), '감전 의심',
-     'electric_shock_risk'),
-    ('pinching', (0.12, 0.72, 0.12, 0.72), '협착 의심', 'pinching'),
-)
-
-
 def stationary_display_context(ev):
-    """정지형 경보의 표시 문맥. 경계 밖·좌표 없음은 일반 정지형으로 둔다."""
+    """정지형 경보를 위치 추정으로 세분화하지 않고 그대로 표시한다."""
     if ev.get('type') != 'stationary_anomaly':
         return None
     evidence = ev.get('evidence') or {}
     x, z = evidence.get('anchor_cx'), evidence.get('anchor_cz')
-    if x is not None and z is not None:
-        for kind, (x1, x2, z1, z2), name, sop_type in STATIONARY_INTEREST:
-            if x1 <= float(x) <= x2 and z1 <= float(z) <= z2:
-                return {'kind': kind, 'name': name, 'sop_type': sop_type,
-                        'pos': (float(x), float(z))}
     pos = (float(x), float(z)) if x is not None and z is not None else (0.0, 0.0)
     return {'kind': 'stationary', 'name': '정지형 이상',
             'sop_type': 'stationary_anomaly', 'pos': pos}
