@@ -6,30 +6,31 @@
 
 - Updated: 2026-08-20 · Claude Code
 - Branch: main
-- Commit: `09f7c10` — `origin/main`과 같음. 이 세션 변경분은 아직 커밋 전이다
-- Working tree: `jetson_sender.py`(Modbus lock 분리·RECOVER_DSLO·계측)·`radar_parser.py`(t 필드, 젯슨에서 반입, 신규)·`train_fall_safety.py`(n_jobs)·`04_문서/AI_BRIDGE/INBOX.md` 수정
+- Commit: `3150738` — `origin/main`보다 앞섬(미푸시). 이 세션 변경분은 아직 커밋 전
+- Working tree: `jetson_sender.py`(낙상 선점 1차: `_can_latch`/`_log_dropped`)·`테스트_낙상선점_상태기계.py`(신규)·설계문서 2건(신규, Cowork) 수정
 
 ## Current objective
 
-8/19 낙상 미검출 원인 2건 수정: ① Modbus(BREAKER.on_anomalies)가 프레임 루프 `_lock` 안에서 블로킹 → `power_monitor_loop()`로 분리(1차: 루프 밖 이동, 2차: lock도 밖으로). ② `POSTFALL_GATE`의 `RECOVER_DSLO=0.30`이 실측 잡음 바닥(0.319~0.327)보다 낮아 낙상 후 정지 상태가 늘 취소조건 충족 → 0.45로 임시조치(주석에 실측 아님 명시). 처리율 계측용 `fnum_first/fnum_last/dt`, 1초 주기 tick 로그, `[TIMING]` 구간별 소요시간을 jetson_sender.py에 추가.
+통합 지시서(2026-08-20, ADR `04_문서/설계/감전_협착_판정구조_0820.md` 근거)의 PHASE 1 진행 중: 경보 latch를 등급 배타 구조로 재설계(`_can_latch(new_et, new_sev)` — critical 떠 있으면 원칙 차단, 예외는 `electric_shock_risk_confirmed`뿐). 이전 세션에 만든 1차 `_can_latch(new_sev)`는 이 스펙보다 단순해 교체 필요. PHASE 2(감전·협착 이벤트·hazard 필드·화면 정리)는 PHASE 1 배포·검증 전까지 착수 금지(지시서 명시).
 
 ## Verified baseline
 
-- 6종 검증 스크립트(pyflakes·v1결함36·레이아웃·verify_port 9,580건·verify_jetson_safe 61건·실데이터재생73·평면도경보흐름16) 반복 통과, 전부 0건. pyflakes 사전경고 1건(`classify()`의 `post_walk` 미사용)은 무관·미수정.
-- 젯슨 재배포·재기동 확인, `[RF]`/`[RF30]` 로드 OK.
-- 2차 수정 후 실측: dt 중앙값 0.1315초(~7.3fps). 20초 직접측정(parser fnum vs sender fnum_last)에서 diff 1437→1484로 계속 증가 — **파서 9.96fps 대비 부족 상태 잔존, 원인 미확정**.
+- PHASE 1 1차 구현(구 `_can_latch`) 상태기계 전용 테스트(`테스트_낙상선점_상태기계.py`) 14건 통과, 6종 회귀 스크립트 전부 0건.
+- **젯슨 배포 전 네트워크 끊김** — 이 PC IP가 `172.20.10.12`(젯슨 핫스팟)에서 `10.28.29.204`(다른 망)로 바뀌어 젯슨(`172.20.10.10`) 접속 불가. PHASE 1 합격 기준(60초 대기 후 낙상 2초 이내, dt 중앙값 0.063~0.08, fnum diff 20초간 미증가, `[TIMING]`)은 **전부 미검증**.
+- 팀 공유 문서(`04_문서/진행보고/팀공유_0820_...md`)에 팀원(승원)이 별도로 `n_jobs=1`·RF를 `_lock` 밖으로 옮겨 젯슨에서 실측(rf 118.1ms→67.9ms)했다는 기록 있음 — **이 저장소의 `jetson_sender.py`에 반영됐는지 미확인, 젯슨 재접속 후 대조 필요**.
 
 ## Next actions
 
-1. 낙상-정지형 latch 우선순위 역전 수정(`_can_latch`, `_SEV_RANK`) — 사용자 승인된 방침, 구현 대기.
-2. `[TIMING]` 로그로 잔존 처리율 부족(t_lock 세부: rf_score·classify·file write 중 무엇이 큰지)을 실측 추가.
-3. `STATIONARY_ENABLED=True` 전환은 1번 검증 통과 후에만.
+1. `_can_latch`를 신규 스펙(critical 배타, 감전확정 예외, 등급승격은 별도 경로로 ev_id 유지)으로 교체하고 로컬 6종 회귀 통과.
+2. 네트워크 복구 후 젯슨 현재 `jetson_sender.py` 상태를 먼저 diff로 확인(팀원 승원의 별도 수정과 충돌 여부) 후 배포.
+3. PHASE 1 합격 기준 4개 실측 후에만 PHASE 2(감전·협착) 착수.
 
 ## Blockers
 
-1. Modbus 릴레이 하드웨어가 계속 무응답 — 백오프로 블로킹은 줄였으나 배선/주소 등 근본 원인 미확인.
-2. 처리율이 파서 대비 완전히 회복되지 않음 — `[TIMING]` 계측 결과 대기 중.
+1. 젯슨 네트워크 접속 불가(핫스팟 재연결 필요) — PHASE 1 배포·실측 전부 막힘.
+2. 젯슨의 실제 `jetson_sender.py`가 이 저장소 버전과 일치하는지 미확인(팀원 병행 수정 가능성).
+3. INA226 #2(누설전류) 미도착 — PHASE 2 감전 확정 경로는 자리만 만들고 실동작 불가.
 
 ## Acceptance
 
-latch 우선순위 수정 후: 정지형 CRITICAL 중 낙상 발생 시 화면이 낙상으로 전환되고 `BREAKER.trip()` 호출됨. 낙상 중 정지형/낙상 재발생은 화면 유지·로그만. 6종 검증 스크립트 전부 0건. `[TIMING]` 프레임당 총비용이 수정 전 대비 유의미하게 늘지 않음.
+PHASE 1: `_can_latch` 신규 스펙 반영, 6종 회귀 0건, sim_jetson.py 시나리오(경고 중 낙상 선점/critical 중 critical 차단/상황종료 후 정상 latch) 통과, 젯슨 배포 후 4개 실측 기준 충족. 이후에만 PHASE 2 시작.

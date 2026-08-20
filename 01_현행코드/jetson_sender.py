@@ -828,6 +828,40 @@ def add_log(msg):
     print(f'[LOG {ts}] {msg}')
 
 
+_SEV_RANK = {'normal': 0, 'warning': 1, 'critical': 2}
+
+
+def _can_latch(new_sev):
+    """상위 등급만 하위 등급 latch 를 선점한다. caller 가 _lock 보유 가정.
+
+    ⚠ [8/20] 기존에는 등급과 무관하게 '먼저 뜬 것'이 이겼다.
+      정지형(warning)이 낙상(critical)을 막아 BREAKER.trip() 까지 못 가는
+      등급 역전이 있었다. 같은 등급끼리는 먼저 뜬 것을 유지한다
+      (같은 사건의 연속으로 보고 화면이 튀지 않게 한다).
+    """
+    if not state['ev_active']:
+        return True
+    return _SEV_RANK.get(new_sev, 0) > _SEV_RANK.get(state['ev_sev'], 0)
+
+
+def _log_dropped(et, ts, reason):
+    """[8/20] 등급 미달로 선점 못 하고 버려지는 사건. 조용히 삼키지 않는다.
+
+    caller 가 _lock 보유 가정. fw(피처 창)에 의존하지 않는 최소 기록 —
+    호출 지점이 셋(POSTFALL·일반 latch·정지형)이라 fw 스코프가 제각각이다.
+    """
+    lbl = EVENT_LABELS.get(et, et)
+    state['logs'].append(f'[{ts}] {lbl} 감지 -- 기존 {state["ev_type"]} 경보 유지({reason})')
+    try:
+        with open(CLF_LOG_PATH, 'a') as _lf:
+            _lf.write(json.dumps({
+                't': round(time.time(), 2), 'verdict': 'dropped_preempt',
+                'dropped_et': et, 'kept_et': state['ev_type'], 'reason': reason,
+            }) + '\n')
+    except Exception:
+        pass
+
+
 def _latch_event(et, clf, zn, ts, score_x):
     """경보 latch. caller가 _lock 보유 가정 (RLock이라 재진입 안전).
 
@@ -835,7 +869,18 @@ def _latch_event(et, clf, zn, ts, score_x):
       이 값들이 노트북 L2 '판단 근거' 카드의 재료다. 여기서 안 담으면
       노트북은 또 그래프밖에 못 그린다(README 7/27 A절).
     ⚠ RAG/LLM 은 호출하지 않는다 — 노트북 담당(7/28 아키텍처).
+    ⚠ [8/20] caller 는 이 함수를 부르기 전에 _can_latch() 로 등급을 확인한다.
+      여기 도달했는데 ev_active 가 이미 True 면 그건 상위 등급의 선점이다 —
+      기존 사건을 미해결로 방치하지 않도록 incidents 에 preempted 를 남긴다.
     """
+    if state['ev_active']:
+        for inc in reversed(state['incidents']):
+            if inc['resolved'] is None:
+                inc['resolved'] = f'{ts} (preempted by {et})'
+                break
+        state['logs'].append(
+            f'[{ts}] {EVENT_LABELS.get(et, et)} 이(가) 기존 '
+            f'{EVENT_LABELS.get(state["ev_type"], state["ev_type"])} 경보를 선점')
     state.update({
         'ev_active': True, 'ev_type': et,
         'ev_sev': clf['severity'], 'ev_conf': clf['confidence'], 'ev_zone': zn,
@@ -1443,22 +1488,26 @@ def pipeline_loop():
             else:
                 state['pre_alert'] = ''
 
-            if result['critical'] and not state['ev_active']:
+            if result['critical']:
                 ts = datetime.now().strftime('%H:%M:%S')
-                clf = {
-                    'severity': EVENT_SEV.get('stationary_anomaly', 'warning'),
-                    'confidence': 0.95,
-                    'evidence': {'dwell': round(dwell, 1),
-                                 'reset_ds': STAT_RESET_DS,
-                                 'reset_frames': STAT_RESET_FRAMES,
-                                 'anchor_cx': anchor[0] if anchor else None,
-                                 'anchor_cz': anchor[1] if anchor else None},
-                    'gates': {'occupied': {'pass': True},
-                              'dwell': {'pass': True},
-                              'position': {'pass': anchor is not None}},
-                    'rejected': [],
-                }
-                _latch_event('stationary_anomaly', clf, RADAR_ZONE, ts, 1.0)
+                _sev = EVENT_SEV.get('stationary_anomaly', 'warning')
+                if _can_latch(_sev):
+                    clf = {
+                        'severity': _sev,
+                        'confidence': 0.95,
+                        'evidence': {'dwell': round(dwell, 1),
+                                     'reset_ds': STAT_RESET_DS,
+                                     'reset_frames': STAT_RESET_FRAMES,
+                                     'anchor_cx': anchor[0] if anchor else None,
+                                     'anchor_cz': anchor[1] if anchor else None},
+                        'gates': {'occupied': {'pass': True},
+                                  'dwell': {'pass': True},
+                                  'position': {'pass': anchor is not None}},
+                        'rejected': [],
+                    }
+                    _latch_event('stationary_anomaly', clf, RADAR_ZONE, ts, 1.0)
+                else:
+                    _log_dropped('stationary_anomaly', ts, '등급 미달')
                 stationary_gate.alerted = True
 
         if result['motion_reset']:
@@ -2035,9 +2084,11 @@ def pipeline_loop():
                         state['logs'].append(f'[{_pts}] Fall 취소: 일어나 이동 감지 (postfall gate)')
                 elif time.time() >= fall_pending['deadline']:
                     with _lock:
-                        if not state['ev_active']:
+                        if _can_latch('critical'):
                             _latch_event('fall_detected', fall_pending['clf'],
                                          fall_pending['zn'], _pts, fall_pending['score_x'])
+                        else:
+                            _log_dropped('fall_detected', _pts, '등급 미달')
                     fall_pending = None; recover_streak = 0
 
             # ── 정지형 Zone+지속시간 게이트 (매 프레임, AE와 독립) ──
@@ -2239,9 +2290,12 @@ def pipeline_loop():
                     _tm_parse = _tm_feat = _tm_ae = _tm_rf = _tm_lock = _tm_log = 0.0
                     _tm_n = 0
 
-                if rf_candidate and not state['ev_active']:
+                # [8/20] 경보 중이라고 카운터를 멈추면 그 방에서 무슨 일이 나도
+                #   기록이 안 남는다(낙상 선점 결함). classify() 호출 게이트는
+                #   is_anomaly/CONFIRM_FRAMES 그대로 — latch 여부만 _can_latch() 로 따로 거른다.
+                if rf_candidate:
                     anom_streak = CONFIRM_FRAMES
-                elif is_anomaly and not state['ev_active']:
+                elif is_anomaly:
                     anom_streak += 1
                 else:
                     anom_streak = 0
@@ -2318,7 +2372,10 @@ def pipeline_loop():
                                 f'[{ts}] Fall 후보 -- 지속확인 중 ({POSTFALL_HOLD:.1f}s, 일어나 걸으면 취소)')
                     else:
                         zn = EVENT_ZONE.get(et, RADAR_ZONE)
-                        _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
+                        if _can_latch(clf['severity']):
+                            _latch_event(et, clf, zn, ts, score / thr if thr > 0 else 0.0)
+                        else:
+                            _log_dropped(et, ts, '등급 미달')
 
                 # ── 정지형 2차 경보: critical latch ──
                 if False:  # 수동 재실 전환 후 무동작 판정은 별도 실측 전까지 비활성
