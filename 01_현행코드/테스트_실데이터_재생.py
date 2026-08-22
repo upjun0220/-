@@ -177,11 +177,11 @@ def main():
                   (w.alert or {}).get('zone') == RADAR_ZONE)
             auto = w.monitor.auto_lb.text()
             if label == 'fall':
-                check('fall: 이번 사건 차단으로 표시',
-                      '차단 신호 발신' in auto, auto)
+                check('fall: 낙상 자동 차단 제외로 표시',
+                      '자동 차단 대상 아님' in auto, auto)
             elif label in ('still', 'vib'):
-                check(f'{label}: 기존 낙상 차단으로 표시',
-                      '기존 차단 상태' in auto and '낙상' in auto, auto)
+                check(f'{label}: warning 자동 차단 제외로 표시',
+                      '자동 차단 대상 아님' in auto, auto)
 
             # ⚠ [8/02] 3D(기본 모드, 이미 갱신됨)와 2D(명시 전환 후 다음 패킷으로
             #   갱신됨) 둘 다 검사한다 — 한쪽만 보면 이번 vib 사각지대처럼 다른

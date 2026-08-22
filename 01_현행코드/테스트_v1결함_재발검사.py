@@ -154,6 +154,26 @@ check('16. 자동 해제 없음 (경보 지속)',
 check('17. 경과시간 = 노트북 기준', abs(w.alert_t0 - time.time()) < 30,
       f'alert_t0 diff={time.time()-w.alert_t0:.1f}s')
 
+# 같은 사건 안에 낙상이 추가되면 기존 설비 사고를 지우지 않고 화면을 갱신한다.
+_today, _t0, _eid = w.today, w.alert_t0, w.last_ev_id
+_compound = dict(w.pkt.get('ev') or {})
+_compound.update({'active': True, 'id': _eid, 'rev': w.last_ev_rev + 1,
+                  'type': 'fall_detected',
+                  'types': ['overcurrent', 'fall_detected'],
+                  'items': {'overcurrent': {'sev': 'critical', 'conf': 1.0},
+                            'fall_detected': {'sev': 'critical', 'conf': 0.98}},
+                  'sev': 'critical', 'zone': ui.RADAR_ZONE})
+w._pump_state({'ev': _compound}); app.processEvents()
+check('17a. 설비 이상 + 낙상 복합 critical 동시 표시',
+      '과전류' in w.monitor.a_kind.text() and '낙상' in w.monitor.a_kind.text(),
+      w.monitor.a_kind.text())
+check('17b. 복합 사건 revision은 새 사건 건수·경과시간을 만들지 않음',
+      w.today == _today and w.alert_t0 == _t0,
+      f'today={w.today} t0_same={w.alert_t0 == _t0}')
+check('17c. 복합 사건 하위 등급을 텍스트로 함께 표시',
+      w.monitor.a_kind.text().count('[위험]') == 2,
+      w.monitor.a_kind.text())
+
 # ── 18. 미확인 경보 중 화면 이탈 차단 ──
 w.clear_alarm(); w.last_ev_id = 0; w.alarm = ui.ST_NORMAL
 w.demo_src.t0 = time.time()-7; pump(20)

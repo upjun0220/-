@@ -54,7 +54,7 @@ from radar_common import (
     SCHEMA_VERSION, DATA_PORT, CTRL_PORT, SEND_HZ, MAX_UDP, MIN_PTS, CLIENT_TTL,
     CMD_HELLO, CMD_RESOLVE, CMD_RESTORE, CMD_RESET, CMD_START, CMD_TRAIN,
     CEILING_H, HISTORY_LEN, ZONE_IDS, RADAR_ZONE, ZONE_KO,
-    CURR_LIMIT, VOLT_MIN, EVENT_SEV, PH_LIVE,
+    CURR_LIMIT, VOLT_MIN, EVENT_SEV, AUTO_TRIP_EVENTS, PH_LIVE,
 )
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -95,7 +95,8 @@ _lock = threading.RLock()
 _clients = {}
 S = {
     'phase': PH_LIVE, 'threshold': 0.0250,
-    'ev_active': False, 'ev_type': None, 'ev_sev': 'normal', 'ev_conf': 0.0,
+    'ev_active': False, 'ev_type': None, 'ev_types': [], 'ev_items': {}, 'ev_rev': 0,
+    'ev_sev': 'normal', 'ev_conf': 0.0,
     'ev_zone': RADAR_ZONE, 'ev_id': 0, 'ev_ts': 0.0,
     'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
     'frame': None, 'label': '-', 'src': '-', 'pre_alert': '',
@@ -263,6 +264,8 @@ def sender_loop():
                 'breaker': {'state': dict(S['breaker']),
                             'reason': dict(S['breaker_reason'])},
                 'ev': {'active': S['ev_active'], 'type': S['ev_type'],
+                       'types': list(S.get('ev_types') or []), 'rev': S.get('ev_rev', 0),
+                       'items': dict(S.get('ev_items') or {}),
                        'sev': S['ev_sev'], 'conf': S['ev_conf'],
                        'zone': S['ev_zone'], 'id': S['ev_id'],
                        'ts': S['ev_ts'], 'evidence': S['ev_evidence'],
@@ -339,11 +342,12 @@ def _fire(et, frames, label):
     sev = EVENT_SEV.get(et, 'critical')
     with _lock:
         S.update({'ev_active': True, 'ev_type': et, 'ev_sev': sev,
+                  'ev_types': [et], 'ev_rev': 1,
                   'ev_conf': conf, 'ev_zone': RADAR_ZONE,
                   'ev_id': S['ev_id'] + 1, 'ev_ts': time.time(),
                   'ev_evidence': ev, 'ev_gates': gates, 'ev_rejected': []})
-        # 확정 사고(critical)만 차단한다 — 젯슨 _latch_event 와 같은 규칙
-        if sev == 'critical' and S['breaker'][RADAR_ZONE] == 'ON':
+        # 자동 차단은 전기·협착 critical에만 적용한다.
+        if et in AUTO_TRIP_EVENTS and sev == 'critical' and S['breaker'][RADAR_ZONE] == 'ON':
             S['breaker'][RADAR_ZONE] = 'TRIPPED'
             S['breaker_reason'][RADAR_ZONE] = et
         S['incidents'].append({'type': et, 'zone': RADAR_ZONE,
@@ -351,7 +355,8 @@ def _fire(et, frames, label):
                                'resolved': None})
     log(f'ALERT Zone {RADAR_ZONE}: {et} [{sev}] '
         f'(재생 label={label}, conf={conf:.0%})'
-        + (f' / BREAKER TRIP Zone {RADAR_ZONE}' if sev == 'critical' else ''))
+        + (f' / BREAKER TRIP Zone {RADAR_ZONE}'
+           if et in AUTO_TRIP_EVENTS and sev == 'critical' else ''))
 
 
 def _clear():
@@ -385,7 +390,7 @@ def play_event(e, speed, src):
             S['sc_h'].append(0.0)
         time.sleep(1.0 / (SEND_HZ * speed))
     if et == 'stationary_anomaly':
-        # ⚠ 젯슨은 정지 10초(STAT_PRE_SEC)부터 30초(STAT_CRIT_SEC)까지
+        # ⚠ 젯슨은 과전류 차단 후 정지 3초(STAT_PRE_SEC)부터 5초(STAT_CRIT_SEC)까지
         #   PRE-ALERT 를 흘린 뒤에야 경보를 latch 한다. 재생기가 그 구간을
         #   건너뛰면 화면의 사전경보 표시를 영영 검증할 수 없다.
         #   → 같은 문자열 포맷으로 카운트다운을 재생한다(압축 배속 적용).

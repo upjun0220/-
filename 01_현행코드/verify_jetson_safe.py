@@ -150,7 +150,7 @@ ck(m.SCAN_SEC == 12.0 and m.N_WARMUP == 150 and m.STEP_IN_SEC == 5.0,
    '--fast 상수 오염 없음', f'SCAN_SEC={m.SCAN_SEC} N_WARMUP={m.N_WARMUP}')
 
 print('\n[2] 7/12 실측 튜닝 상수 (회귀 없어야 함)')
-for k, want in (('STAT_MISS_TOL', 3), ('STAT_PRE_SEC', 10.0), ('STAT_CRIT_SEC', 30.0),
+for k, want in (('STAT_MISS_TOL', 3), ('STAT_PRE_SEC', 3.0), ('STAT_CRIT_SEC', 5.0),
                 ('FALL_CONFIRM', 1), ('CLF_WIN', 20), ('FEATURE_DIM', 9),
                 ('CEILING_H', 2.30), ('POSTFALL_HOLD', 1.2)):
     got = getattr(m, k, None)
@@ -159,22 +159,82 @@ for k, want in (('STAT_MISS_TOL', 3), ('STAT_PRE_SEC', 10.0), ('STAT_CRIT_SEC', 
 print('\n[2-A] 수동 재실 정지형 상태기')
 gate = m.StationaryGate(reset_ds=0.38, reset_frames=3)
 ck(not gate.update(0.0, False)['pre'], '퇴실 상태에서는 타이머 비활성')
+ck(gate.update(0.0, True, None)['dwell'] == 0.0 and gate.since == 0.0,
+   '과전류 차단+입실이면 포인트가 없어도 타이머 즉시 시작')
 gate.update(0.0, True, 0.05, (0.40, 0.30))
 gate.update(0.1, True, 0.05, (0.44, 0.34))
 held = gate.update(1.0, True, None, None)['anchor']
 ck(held == (0.42, 0.32), '점군 소실 뒤 마지막 신뢰 cx/cz 중앙값 유지', str(held))
-ck(gate.update(10.0, True, None)['pre'], '점군 소실 중에도 10초 PRE-ALERT 유지')
-ck(not gate.update(29.9, True, None)['critical'], '30초 전에는 본 경보 없음')
-ck(gate.update(30.0, True, None)['critical'], '30초에 정지형 warning 1회 발생')
+ck(gate.update(3.0, True, None)['pre'], '점군 소실 중에도 3초 확인 단계 유지')
+ck(not gate.update(4.9, True, None)['critical'], '5초 전에는 협착 critical 없음')
+ck(gate.update(5.0, True, None)['critical'], '5초에 협착 승격 트리거 1회 발생')
 gate.reset(); gate.update(0.0, True, 0.05)
 gate.update(5.0, True, 0.50); gate.update(5.1, True, 0.05)
 ck(gate.update(10.0, True, None)['pre'], '순간 도플러 스파이크 1회는 타이머 유지')
-gate.update(10.1, True, 0.50); gate.update(10.2, True, 0.50)
-reset = gate.update(10.3, True, 0.50)
+gate.update(10.3, True, 0.50); gate.update(10.4, True, 0.50)
+reset = gate.update(10.5, True, 0.50)
 ck(reset['motion_reset'] and not reset['pre'], '확인 움직임 3프레임이면 타이머 초기화')
 ck(not gate.update(20.0, False, None)['pre'] and gate.since is None,
    '퇴실 명령은 정지형 상태 하드 리셋')
 ck(gate.anchor() is None, '퇴실 명령은 위치 앵커도 하드 리셋')
+ck(not m._stationary_gate_active(m.PH_LIVE, True, 'ON', None),
+   '평상 투입 상태에서 무동작 게이트 OFF')
+ck(not m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'fall_detected'),
+   '낙상으로 차단된 상태에서 무동작 게이트 OFF')
+ck(not m._stationary_gate_active(m.PH_LIVE, False, 'TRIPPED', 'overcurrent'),
+   '과전류 차단이어도 퇴실 상태에서 무동작 게이트 OFF')
+ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'overcurrent'),
+   '과전류 차단+입실 상태에서만 무동작 게이트 ON')
+ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'leakage_current'),
+   '누설전류 차단+입실이면 감전 확인 게이트 ON')
+ck(m._human_event_for_breaker('overcurrent') == 'pinching'
+   and m._human_event_for_breaker('leakage_current') ==
+   'electric_shock_risk_confirmed', '전기 원인별 협착·감전 승격 분리')
+ck(m.CURR_LIMIT == 0.10 and m.VOLT_MIN == 7.50,
+   '8V 과전류 실측 임계 적용', f'{m.CURR_LIMIT}A/{m.VOLT_MIN}V')
+ck(m.LEAK_LIMIT == 0.004 and m.POWER_CONFIRM == 2 and m.LEAK_CONFIRM == 2,
+   '누설 예상 임계와 2회 연속 확인 설정')
+eq = m.classify_equipment(0.1535, 7.815, 0.0, leak_curr=0.008)
+ck({a['event_type'] for a in eq} == {'overcurrent', 'leakage_current'},
+   '8V 예상 과전류·누설 동시 판정', str(eq))
+streaks = {'overcurrent': 0, 'voltage_drop': 0, 'leakage_current': 0}
+ck(not m._confirm_power_anomalies(eq, streaks), '전기 이상 1회에는 차단하지 않음')
+ck({a['event_type'] for a in m._confirm_power_anomalies(eq, streaks)} ==
+   {'overcurrent', 'leakage_current'}, '전기 이상 2회 연속이면 확정')
+ck(not m._event_requires_trip('fall_detected', 'critical'),
+   '낙상 critical은 자동 차단 대상에서 제외')
+ck(m._event_requires_trip('overcurrent', 'critical'),
+   '과전류 critical은 자동 차단 대상 유지')
+with m._lock:
+    m.state.update({'ev_active': False, 'ev_type': None, 'ev_types': [], 'ev_items': {},
+                    'ev_rev': 0, 'ev_sev': 'normal', 'ev_conf': 0.0,
+                    'ev_id': 0, 'incidents': m.deque(maxlen=20)})
+    base = {'severity': 'critical', 'confidence': 1.0,
+            'evidence': {}, 'gates': {}, 'rejected': []}
+    m._latch_event('overcurrent', base, m.RADAR_ZONE, '00:00:00', 1.0,
+                   control_trip=False)
+    eid = m.state['ev_id']
+    ck(not m._can_latch('overcurrent', 'critical'), '동일 과전류 반복 latch 차단')
+    ck(m._can_latch('fall_detected', 'critical'), '설비 이상 뒤 낙상 병렬 허용')
+    m._latch_event('fall_detected', base, m.RADAR_ZONE, '00:00:01', 1.0,
+                   control_trip=False)
+    ck(m.state['ev_id'] == eid and m.state['ev_rev'] == 2,
+       '복합 사건은 ev_id 유지·revision 증가')
+    ck(m.state['ev_types'] == ['overcurrent', 'fall_detected'],
+       '설비 이상과 낙상 동시 보존', str(m.state['ev_types']))
+    ck(m.state['ev_items']['overcurrent']['sev'] == 'critical'
+       and m.state['ev_items']['fall_detected']['sev'] == 'critical',
+       '복합 사건 개별 등급 보존', str(m.state['ev_items']))
+    suspect = {'severity': 'warning', 'confidence': 0.7,
+               'evidence': {}, 'gates': {}, 'rejected': []}
+    m._latch_event('pinching_suspected', suspect, m.RADAR_ZONE,
+                   '00:00:02', 0.7, control_trip=False)
+    m._remove_event_type('pinching_suspected', '00:00:03', 'PINCHING CONFIRMED')
+    m._latch_event('pinching', base, m.RADAR_ZONE, '00:00:03', 1.0,
+                   control_trip=False)
+    ck('pinching_suspected' not in m.state['ev_types']
+       and m.state['ev_types'].count('pinching') == 1,
+       '협착 의심은 critical 승격 시 중복 없이 교체', str(m.state['ev_types']))
 
 print('\n[3] --simulate 로 로드 (노트북 검증 모드)')
 ms, err = load_sender(['jetson_sender.py', '--simulate', '--fast'])
@@ -271,8 +331,8 @@ ck("_is_live = (state['phase'] == PH_LIVE)" in src,
    '판정 경로는 PH_LIVE 에서만 실행')
 ck("if not _is_live or not _occupied:" in src,
    '퇴실 상태에서 레이더 판정 중지')
-ck("state['phase'] == PH_LIVE and state['occupied']" in src,
-   '퇴실 상태에서 전기 이상 신규 판정 중지')
+ck("_live = state['phase'] == PH_LIVE" in src,
+   '퇴실 상태여도 전기 설비 이상은 독립 판정')
 ck("feat_buf.clear(); clf_buf.clear()" in src
    and "fall_pending = None" in src and "stat_since = None" in src,
    '입퇴실 전환 시 판정 창·낙상·무동작 상태 초기화')

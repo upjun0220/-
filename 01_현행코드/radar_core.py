@@ -65,7 +65,7 @@ from radar_common import (
     PHASE_ORDER, PHASE_KO, PHASE_ACTION,
     EVENT_KO, EVENT_CATEGORY, ZONE_IDS, ZONE_KO, RADAR_ZONE, pg_conn_str,
     SEV_KO, GATE_META, REJECT_KO, EVIDENCE_KO, SOP_CATEGORIES,
-    CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH,
+    CURR_LIMIT, VOLT_MIN, LEAK_LIMIT, VIB_DS_THRESH,
     BG, PANEL, PANEL_HI, PANEL_LO, EDGE, TXT, DIM, FAINT,
     CYAN, GREEN, AMBER, RED, GRID, sev_color,
     SP_XS, SP_S, SP_M, SP_L, SP_XL,
@@ -711,6 +711,9 @@ SOP_QUERY = {
     'fall_detected':       '추락 넘어짐 재해 발생 시 응급처치와 재해자 이송 방법',
     'stationary_anomaly':  '작업자 무응답 감전 협착 사고 발견 시 초동 대응',
     'electric_shock_risk': '감전 사고 발생 시 응급조치 및 전원 차단 잠금 표지',
+    'electric_shock_risk_confirmed': '감전 사고 발생 시 응급조치 심폐소생술 119 신고',
+    'leakage_current':     '누설전류 전기 설비 이상 시 차단 및 절연 점검 절차',
+    'pinching_suspected':  '회전기계 협착 의심 시 비상정지 및 작업자 확인 절차',
     'pinching':            '회전기계 끼임 협착 재해 발생 시 구조 및 정지 절차',
     'vibration_anomaly':   '설비 이상 진동 상태감시 진단 및 점검 조치',
     'overcurrent':         '과전류 전기 설비 이상 시 차단 및 점검 절차',
@@ -730,6 +733,12 @@ SOP_RESPONSE_SOURCE = {
     'electric_shock_risk': {
         '01_감전_LOTO': '산업재해 형태별 응급처치 (골절화상뇌진탕 등).pdf',
     },
+    'electric_shock_risk_confirmed': {
+        '01_감전_LOTO': '산업재해 형태별 응급처치 (골절화상뇌진탕 등).pdf',
+    },
+    'pinching_suspected': {
+        '02_협착_끼임': 'B-M-37-2026 회전기계 등의 끼임·절단재해 예방을 위한 기술지원규정.pdf',
+    },
     'pinching': {
         '02_협착_끼임': 'B-M-37-2026 회전기계 등의 끼임·절단재해 예방을 위한 기술지원규정.pdf',
     },
@@ -739,6 +748,8 @@ SOP_RESPONSE_TERMS = {
     'fall_detected': ('척추', '움직이지', '뇌진탕', '골절', '119', '이송'),
     'stationary_anomaly': ('전원', '호흡', '심정지', '비상정지', '구조', '끼임'),
     'electric_shock_risk': ('전원', '호흡', '심정지', '119', '환자'),
+    'electric_shock_risk_confirmed': ('전원', '호흡', '심정지', '119', '환자'),
+    'pinching_suspected': ('비상정지', '확인', '전원', '끼임'),
     'pinching': ('비상정지', '정지', '전원', '구조', '끼임'),
 }
 
@@ -776,7 +787,6 @@ def search_sop_documents(vs, ev_type, situation, category):
 
 INSTANT_ACTION = {
     'fall_detected': [
-        ('전원', ['작업 대상 설비 회로 차단 완료 (젯슨 자동 실행)', '차단 상태 유지 · 재투입 금지']),
         ('인력', ['환자를 움직이지 마십시오 — 척추 손상 위험',
                   '의식과 호흡 확인 후 119 신고', '안전관리자 호출']),
         ('장비', ['환자 주변 장비 정지 및 반경 확보', '이동식 설비는 전원 분리 후 이격']),
@@ -793,6 +803,18 @@ INSTANT_ACTION = {
     'electric_shock_risk': [
         ('전원', ['주 배전반 차단 · LOTO 시행']),
         ('인력', ['맨손 접촉 절대 금지', '절연봉으로 이격 후 119 신고']),
+    ],
+    'electric_shock_risk_confirmed': [
+        ('전원', ['차단 상태 확인 전 접근·접촉 절대 금지', 'LOTO 상태 유지']),
+        ('인력', ['119에 즉시 신고', '의식·호흡 확인 후 필요 시 심폐소생술']),
+    ],
+    'leakage_current': [
+        ('확인', ['누설 분기와 차단 상태를 즉시 확인하세요']),
+        ('전원', ['원인 확인 전 재투입 금지', '절연 상태 점검 요청']),
+    ],
+    'pinching_suspected': [
+        ('확인', ['작업자 상태를 즉시 확인하세요']),
+        ('설비', ['차단 상태 유지 · 역방향 강제 구동 금지']),
     ],
     'pinching': [
         ('설비', ['설비 즉시 정지 — 역방향 강제 구동 금지']),
@@ -2255,9 +2277,12 @@ class PowerPopup(Dialog):
             del self.buf[k][:-self.BUF]
         self.snap = (st.get('breaker') or {}).get('state') or {}
         if p.get('src') == 'ina226':
+            leak = (f"{p['leak_curr']:.4f} A"
+                    if p.get('leak_curr') is not None else '—')
             self.src.setText(
                 f"실측 (INA226) · {p.get('volt', 0):.3f} V · "
-                f"{p.get('curr', 0):.3f} A · {p.get('watt', 0):.2f} W")
+                f"부하 {p.get('curr', 0):.3f} A · 누설 {leak} "
+                f"(임계 {LEAK_LIMIT:.3f} A) · {p.get('watt', 0):.2f} W")
         else:
             self.src.setText('INA226 연결 오류 · 전류·전압 측정값 없음')
         if self.isVisible():

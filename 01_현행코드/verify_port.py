@@ -167,13 +167,15 @@ def main():
     print(f'\n[evidence/gates] 실측 500건 중 gates 채워진 건수: {ok_ev} '
           f'({"OK" if ok_ev > 400 else "확인 필요"})')
 
-    # ── 7/12 상수 복구 확인 ──
-    print('\n[상수 대조] 7/12 수정분')
+    # classify() 무손실과 sender 전용 운영 게이트를 분리한다.
+    # STAT_PRE/CRIT는 과전류 차단 뒤에만 쓰는 sender 상태기 값이므로
+    # 레이더 정본과 달라도 classify 이식 손상으로 판정하지 않는다.
+    print('\n[상수 대조] classify 관련 정본')
     src_l = open(LIVE, encoding='utf-8').read()
     src_s = open(SEND, encoding='utf-8').read()
     const_bad = 0
-    for k in ('STAT_PRE_SEC', 'STAT_MISS_TOL', 'STAT_CRIT_SEC', 'FALL_CONFIRM',
-              'CLF_WIN', 'FEATURE_DIM', 'RECOVER_FRAMES', 'POSTFALL_HOLD'):
+    for k in ('FALL_CONFIRM', 'CLF_WIN', 'FEATURE_DIM',
+              'RECOVER_FRAMES', 'POSTFALL_HOLD'):
         def val(s):
             m = re.search(r'(?m)^%s\s*=\s*([0-9.]+|True|False)' % k, s)
             return m.group(1) if m else '?'
@@ -182,6 +184,8 @@ def main():
         const_bad += (0 if same else 1)
         print(f'   {"=" if same else "★"} {k:16s} live={a:8s} sender={b}')
     print(f'   → 상수 불일치 {const_bad}건')
+    for k in ('STAT_PRE_SEC', 'STAT_CRIT_SEC'):
+        print(f'   · sender 운영 {k:12s}={val(src_s)} (정본 비교 제외)')
 
     return 0 if (bad == 0 and const_bad == 0) else 1
 

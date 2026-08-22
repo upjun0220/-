@@ -19,7 +19,7 @@
   WARMUP ── 빈방 스캔 12s → 베이스라인 수집
   WAIT_TRAIN ── 노트북에서 '학습 시작' 을 눌러야 진행
   TRAINING ── 8초
-  LIVE   ── 보행 20s → 낙상(경보+차단) → 노트북에서 '상황 종료' 누르면 정상 복귀
+  LIVE   ── 보행 20s → 낙상(경보, 자동 차단 없음) → 노트북에서 '상황 종료'
             → 다시 보행 … 반복
 """
 import argparse
@@ -65,7 +65,8 @@ _clients = {}
 S = {
     'phase': PH_READY, 'warmup_count': 0, 'threshold': 0.0250,
     'scan_left': None, 'pre_alert': '', 'data_ok': True,
-    'ev_active': False, 'ev_type': None, 'ev_sev': 'normal', 'ev_conf': 0.0,
+    'ev_active': False, 'ev_type': None, 'ev_types': [], 'ev_items': {}, 'ev_rev': 0,
+    'ev_sev': 'normal', 'ev_conf': 0.0,
     'ev_zone': SIM_ZONE, 'ev_id': 0, 'ev_ts': 0.0,
     'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
     'ev_demo_pose': False,
@@ -259,12 +260,11 @@ def showcase():
 def _set_showcase_event(ev_type, sev, evidence, gates, rejected):
     with _lock:
         S.update({'ev_active': True, 'ev_type': ev_type, 'ev_sev': sev,
+                  'ev_types': [ev_type], 'ev_rev': 1,
                   'ev_conf': 0.87 if ev_type == 'fall_detected' else 0.80,
                   'ev_id': S['ev_id'] + 1, 'ev_ts': time.time(),
                   'ev_evidence': evidence, 'ev_gates': gates,
                   'ev_rejected': rejected, 'ev_demo_pose': True})
-        if ev_type == 'fall_detected':
-            S['breaker'][SIM_ZONE] = 'TRIPPED'
     log(f'SHOWCASE ALERT: {ev_type}')
 
 
@@ -295,14 +295,13 @@ def _live_cycle(k):
     ev, gates, rej = _fall_event()
     with _lock:
         S.update({'ev_active': True, 'ev_type': 'fall_detected', 'ev_sev': 'critical',
+                  'ev_types': ['fall_detected'], 'ev_rev': 1,
                   'ev_conf': 0.87, 'ev_zone': SIM_ZONE, 'ev_id': S['ev_id'] + 1,
                   'ev_ts': time.time(), 'ev_evidence': ev, 'ev_gates': gates,
                   'ev_rejected': rej})
-        S['breaker'][SIM_ZONE] = 'TRIPPED'
         S['incidents'].append({'type': 'fall_detected', 'zone': SIM_ZONE,
                                'detected': time.strftime('%H:%M:%S'), 'resolved': None})
-    log(f'ALERT Zone {SIM_ZONE}: FALL DETECTED (conf=87%) / '
-        f'BREAKER TRIP Zone {SIM_ZONE}')
+    log(f'ALERT Zone {SIM_ZONE}: FALL DETECTED (conf=87%, no auto trip)')
 
     # 상황 종료 대기 (누울 상태 유지)
     while True:
@@ -389,6 +388,8 @@ def sender_loop():
                 'threshold': S['threshold'], 'data_ok': True, 'data_age': 0.05,
                 'scan_left': S['scan_left'], 'pre_alert': S['pre_alert'],
                 'ev': {'active': S['ev_active'], 'type': S['ev_type'],
+                       'types': list(S.get('ev_types') or []), 'rev': S.get('ev_rev', 0),
+                       'items': dict(S.get('ev_items') or {}),
                        'sev': S['ev_sev'], 'conf': S['ev_conf'], 'zone': S['ev_zone'],
                        'id': S['ev_id'], 'ts': S['ev_ts'],
                        'evidence': S['ev_evidence'], 'gates': S['ev_gates'],

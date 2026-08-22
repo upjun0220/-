@@ -97,6 +97,11 @@ EVENT_LABELS = {            # 젯슨 콘솔 로그용 (영문 — 폰트 의존 
     'fall_suspected':      'FALL SUSPECTED (RULE/RF DISAGREEMENT)',
     'stationary_anomaly':  'STATIONARY ANOMALY (VERIFY: SHOCK/ENTRAPMENT)',
     'electric_shock_risk': 'ELECTRIC SHOCK RISK',
+    'electric_shock_risk_confirmed': 'ELECTRIC SHOCK CONFIRMED',
+    'leakage_current':     'LEAKAGE CURRENT',
+    'pinching_suspected':  'PINCHING SUSPECTED',
+    'overcurrent':         'EQUIPMENT OVERCURRENT',
+    'voltage_drop':        'EQUIPMENT VOLTAGE DROP',
     'pinching':            'PINCHING / ENTRAPMENT',
     'vibration_anomaly':   'VIBRATION ANOMALY',
 }
@@ -105,10 +110,13 @@ EVENT_KO = {                # 노트북 관제 화면용
     'fall_suspected':      '낙상 의심',
     'stationary_anomaly':  '장시간 무동작',
     'electric_shock_risk': '감전 위험',
+    'electric_shock_risk_confirmed': '감전 발생',
+    'leakage_current':     '설비 이상 · 누설전류',
+    'pinching_suspected':  '협착 의심',
     'pinching':            '협착 · 끼임',
     'vibration_anomaly':   '설비 이상 진동',
-    'overcurrent':         '과전류',
-    'voltage_drop':        '전압 강하',
+    'overcurrent':         '설비 이상 · 과전류',
+    'voltage_drop':        '설비 이상 · 전압 강하',
     'normal':              '정상',
 }
 # ══ 구역 · 장비 배치 ═══════════════════════════════════════════════════
@@ -130,6 +138,9 @@ EVENT_ZONE = {                         # 레이더·전기 유래 이벤트 → 
     'fall_suspected':      RADAR_ZONE,
     'stationary_anomaly':  RADAR_ZONE,
     'electric_shock_risk': RADAR_ZONE,
+    'electric_shock_risk_confirmed': RADAR_ZONE,
+    'leakage_current':     RADAR_ZONE,
+    'pinching_suspected':  RADAR_ZONE,
     'pinching':            RADAR_ZONE,
     'vibration_anomaly':   RADAR_ZONE,
 }
@@ -190,6 +201,9 @@ EVENT_CATEGORY = {
     'fall_detected':       '03_낙상_응급처치',
     'fall_suspected':      '03_낙상_응급처치',
     'electric_shock_risk': '01_감전_LOTO',
+    'electric_shock_risk_confirmed': '01_감전_LOTO',
+    'leakage_current':     '01_감전_LOTO',
+    'pinching_suspected':  '02_협착_끼임',
     'pinching':            '02_협착_끼임',
     'vibration_anomaly':   '04_예지보전',
     'overcurrent':         '01_감전_LOTO',
@@ -203,7 +217,7 @@ EVENT_CATEGORY = {
 # ══════════════════════════════════════════════════════════════════════
 # 4-B. 정지형 사전경보(PRE-ALERT) 파싱
 # ══════════════════════════════════════════════════════════════════════
-#  젯슨은 정지 10초(STAT_PRE_SEC)부터 30초(STAT_CRIT_SEC) 사이에 매 패킷마다
+#  젯슨은 과전류 차단 후 정지 3초(STAT_PRE_SEC)부터 5초(STAT_CRIT_SEC) 사이에
 #  pre_alert 문자열을 실어 보낸다:
 #     "PRE-ALERT  Zone A: no-motion 12s  --  MOVE to cancel  (18s to CRITICAL)"
 #  ⚠ [8/01] 그런데 노트북 화면이 이걸 한 번도 읽지 않고 있었다. 즉 근무자는
@@ -254,6 +268,9 @@ EVENT_SEV = {
     'fall_detected':       'critical',   # 게이트 5개 통과 = 확정
     'fall_suspected':      'warning',    # 규칙 양성/RF 음성 — 확인 전 차단하지 않음
     'electric_shock_risk': 'critical',
+    'electric_shock_risk_confirmed': 'critical',
+    'leakage_current':     'critical',
+    'pinching_suspected':  'warning',
     'pinching':            'critical',
     'overcurrent':         'critical',
     'voltage_drop':        'critical',
@@ -261,6 +278,13 @@ EVENT_SEV = {
     'vibration_anomaly':   'warning',    # 설비 이상 — 사람 사고가 아니다
     'normal':              'normal',
 }
+
+# 자동 차단은 전기·협착 사건에만 적용한다.
+# 낙상은 구조 접근이 우선이며 작업 대상 설비 회로를 자동 차단하지 않는다.
+AUTO_TRIP_EVENTS = frozenset({
+    'overcurrent', 'voltage_drop', 'leakage_current', 'electric_shock_risk',
+    'electric_shock_risk_confirmed', 'pinching',
+})
 
 
 def event_sev(et, default='critical'):
@@ -306,8 +330,13 @@ EVIDENCE_KO = {
 # ══════════════════════════════════════════════════════════════════════
 #  ⚠ 판정과 차단 실행은 젯슨이 한다. 노트북은 표시와 '복구 요청'만 한다.
 #    (링크가 끊겨도 젯슨이 독립 차단 — fail-safe. 이 상수는 표시 기준선용)
-CURR_LIMIT = 1.5            # [A] INA226 10A + 12V LED 시연 부하 과전류 임계
-VOLT_MIN = 10.5             # [V] 12V LED 시연 전원 저전압 임계 (정상 실측 12.016V)
+# ⚠ [8/21 실측] 8V LED 모의회로 2회:
+# 정상 0.0020~0.0035A / 50Ω 분기 ON 0.1510~0.1535A / 전압 7.73~8.035V.
+CURR_LIMIT = 0.10           # [A] 정상 최대와 이상 최소 사이 147.5mA 공백
+VOLT_MIN = 7.50             # [V] 스위치 ON 실측 최저 7.73V 아래
+POWER_CONFIRM = 2           # 1Hz 2회 연속 확인 후 전기 이상 확정
+LEAK_LIMIT = 0.004          # [A] 8V/1kΩ 예상 8mA의 임시 절반값; 실측 후 재확정
+LEAK_CONFIRM = 2            # INA226 #2도 1Hz 2회 연속 확인
 VIB_DS_THRESH = 0.20        # 설비 진동 판정 dop_std 임계
 
 # [8/20] 차단 범위는 구역 전체가 아니라 작업 대상 설비 회로 1개로 한정한다.

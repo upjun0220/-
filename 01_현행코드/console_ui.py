@@ -90,7 +90,8 @@ from radar_common import (
     LINK_TIMEOUT, CMD_RESOLVE, CMD_RESTORE, CMD_ENTER, CMD_EXIT, CEILING_H,
     PH_READY, PH_LIVE, PHASE_KO, parse_pre_alert,
     EVENT_KO, ZONE_IDS, ZONE_KO, RADAR_ZONE, ZONE_DEVICE, zone_equipped,
-    SEV_KO, GATE_META, REJECT_KO, EVIDENCE_KO, sev_color, event_sev,
+    SEV_KO, GATE_META, REJECT_KO, EVIDENCE_KO, AUTO_TRIP_EVENTS,
+    sev_color, event_sev,
     BG, PANEL, PANEL_HI, PANEL_LO, EDGE, TXT, DIM, FAINT,
     CYAN, GREEN, AMBER, RED, GRID,
     BG_ALERT, BG_OK, BG_WARN, BG_SEL, SEV_BG, SEV_BG_HI, RADIUS, RADIUS_SM,
@@ -1075,7 +1076,10 @@ class SopView(QtWidgets.QWidget):
         self.head.setText(title or EVENT_KO.get(et, str(et)))
         self.head.setStyleSheet(
             f'color:{sev_color(sev or event_sev(et))};border:none;background:transparent;')
-        self.done.setText(done or '작업 대상 설비 회로 차단 완료 · 젯슨 자동 실행')
+        default_done = ('경보 전파 완료 · 설비 회로 자동 차단 대상 아님'
+                        if et not in AUTO_TRIP_EVENTS else
+                        '작업 대상 설비 회로 차단 완료 · 젯슨 자동 실행')
+        self.done.setText(done or default_done)
         html = []
         for cat, lines in INSTANT_ACTION.get(et, INSTANT_ACTION['fall_detected']):
             html.append(f'<p style="color:{CYAN};margin:2px 0 4px">'
@@ -2070,7 +2074,8 @@ class AssistantDrawer(QtWidgets.QDialog):
     SYSTEM_CONTEXT = (
         'Radar-Guard는 IWR6843 mmWave 레이더의 포인트 클라우드를 Jetson Orin '
         'Nano가 판정하고, Windows 노트북은 UDP 수신·관제 UI·SOP RAG를 담당한다. '
-        '낙상·감전·협착 판정과 차단은 젯슨에서 끝나며 LLM은 판정하거나 차단하지 '
+        '낙상·감전·협착 판정은 젯슨에서 끝나며, 전기·협착 이상은 '
+        '젯슨이 차단한다. LLM은 판정하거나 차단하지 '
         '않는다. 카메라 대신 레이더를 써 개인정보와 조도·연기 제약을 줄인다. '
         '정지한 사람은 도플러가 0에 가까워 추적을 놓칠 수 있고, 각분해능 약 28도로 '
         '포인트가 적어 최근 10프레임을 누적한다. 젯슨에는 RTC가 없어 경과시간은 '
@@ -2501,6 +2506,7 @@ class SopEngineV2(core.SopEngine):
         bs = ((pkt.get('breaker') or {}).get('state')) or {}
         src = (pkt.get('breaker') or {}).get('src')
         off = bs.get(z, 'ON') != 'ON'
+        no_auto_trip = ev.get('type') not in AUTO_TRIP_EVENTS
         return {
             'zone': f"{z} {ZONE_KO.get(z, '')}",
             'hazard': ZONE_HAZARD.get(z, ''),
@@ -2512,7 +2518,8 @@ class SopEngineV2(core.SopEngine):
             'conf': ev.get('conf'),
             'height_now': pkt.get('height'),
             'elapsed': elapsed_sec,
-            'breaker': ('차단 완료(실측 확인)' if off and src == 'modbus'
+            'breaker': ('경보 — 설비 회로 자동 차단 대상 아님' if no_auto_trip
+                        else '차단 완료(실측 확인)' if off and src == 'modbus'
                         else '차단 신호 발신(차단기 모의값 — 현장 확인 필요)'
                         if off else '차단 미확인'),
         }
@@ -2609,6 +2616,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.alert = None
         self.alert_t0 = 0.0        # ★ 노트북 수신 시각 기준 (젯슨 시계 안 씀)
         self.last_ev_id = 0
+        self.last_ev_rev = 0
         self.incidents = []
         self.today = 0
         self.boot_t = time.time()
@@ -3079,9 +3087,12 @@ class ConsoleV2(QtWidgets.QMainWindow):
         """경보 상태기계 — v1 과 동일."""
         ev = pkt.get('ev') or {}
         eid = ev.get('id') or 0
-        if ev.get('active') and eid != self.last_ev_id:
+        rev = ev.get('rev') or 0
+        if ev.get('active') and (eid != self.last_ev_id or rev != self.last_ev_rev):
+            updating = eid == self.last_ev_id and self.last_ev_id != 0
             self.last_ev_id = eid
-            self.on_event(ev)
+            self.last_ev_rev = rev
+            self.on_event(ev, updating=updating)
         elif not ev.get('active') and self.alarm != ST_NORMAL:
             # 젯슨이 먼저 해소한 경우(노트북 '상황 종료'의 왕복 결과 포함)
             self.clear_alarm(remote=True)
@@ -3109,20 +3120,31 @@ class ConsoleV2(QtWidgets.QMainWindow):
     # ══════════════════════════════════════════════════════════════════
     # 경보
     # ══════════════════════════════════════════════════════════════════
-    def on_event(self, ev):
+    def on_event(self, ev, updating=False):
         self.assistant.close_drawer()
         self.alert = dict(ev)
-        context = stationary_display_context(ev)
+        types = list(dict.fromkeys(ev.get('types') or [ev.get('type')]))
+        items = ev.get('items') or {}
+        context = stationary_display_context(ev) if len(types) == 1 else None
         if context:
             self.alert['_display_context'] = context
-        self.alert_t0 = time.time()          # ★ 노트북 시각. 젯슨 시계 안 씀.
+        if not updating:
+            self.alert_t0 = time.time()      # ★ 노트북 시각. 젯슨 시계 안 씀.
         self.alarm = ST_UNACK
-        self.today += 1
+        if not updating:
+            self.today += 1
         z = ev.get('zone') or RADAR_ZONE
         et = ev.get('type')
         sev = ev.get('sev', 'critical')
-        name = context['name'] if context else EVENT_KO.get(et, '이상')
-        sop_type = context['sop_type'] if context else et
+        name = (context['name'] if context else ' + '.join(
+            f'{EVENT_KO.get(t, t)} [{SEV_KO.get((items.get(t) or {}).get("sev"), "")}]'
+            if items.get(t) else EVENT_KO.get(t, t) for t in types if t))
+        sop_priority = ('electric_shock_risk_confirmed', 'pinching',
+                        'pinching_suspected', 'leakage_current',
+                        'electric_shock_risk', 'fall_detected',
+                        'overcurrent', 'voltage_drop')
+        sop_type = (context['sop_type'] if context else
+                    next((t for t in sop_priority if t in types), et))
         col = sev_color(sev)
 
         self.monitor.b_left.setText(
@@ -3146,9 +3168,10 @@ class ConsoleV2(QtWidgets.QMainWindow):
 
         self.drawer.evi.set_event(ev, self.alert_t0)
         ts = time.strftime('%H:%M:%S', time.localtime(self.alert_t0))
-        self.incidents.append({'type': et, 'zone': z, 'detected': ts,
-                               'resolved': None})
-        self.evlog.add(ts, et, z, ev.get('conf', 0), '진행 중')
+        if not updating:
+            self.incidents.append({'type': et, 'zone': z, 'detected': ts,
+                                   'resolved': None})
+            self.evlog.add(ts, et, z, ev.get('conf', 0), '진행 중')
         self.timeline.add(f'{name} 감지 · {z} 구역 '
                           f'(판정 점수 {ev.get("conf", 0):.2f})', col)
         self._recent.appendleft((ts, f'{name} 감지', col))
@@ -3182,7 +3205,14 @@ class ConsoleV2(QtWidgets.QMainWindow):
         off = bs.get(z, 'ON') != 'ON'
         et = (self.alert or {}).get('type')
         reason = reasons.get(z)
-        if off and reason != et:
+        if et not in AUTO_TRIP_EVENTS:
+            if off:
+                why = EVENT_KO.get(reason, reason or '사유 미확인')
+                txt = f'{z} 구역 기존 차단 유지 · {why} (이 경보로 추가 차단 안 함)'
+            else:
+                txt = '경보 전파 완료 · 설비 회로 자동 차단 대상 아님'
+            c, bg = GREEN, BG_OK
+        elif off and reason != et:
             why = EVENT_KO.get(reason, reason or '사유 미확인')
             if src == 'modbus':
                 txt, c, bg = f'{z} 구역 기존 차단 유지 · {why}', GREEN, BG_OK

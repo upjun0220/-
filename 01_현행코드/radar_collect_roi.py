@@ -1,18 +1,18 @@
 """
-radar_collect_roi.py -- ROI·클러터 영향 비교용 라벨 데이터 수집 도구
-====================================================================
-radar_live_full.py 와 별개의 프로그램. 선풍기 풍속 약/중/강을
-버튼으로 라벨링해 FMCW 도플러 분산 차이를 실측한다.
+radar_collect_roi.py -- 협착 수평동작 비교용 라벨 수집 도구
+===========================================================
+radar_live_full.py 와 별개의 프로그램. 협착을 모의한 수평 몸부림이
+보행·쪼그리기와 분리되는지 같은 ROI에서 실측한다.
+감전은 기존 무동작 경로로 판정하므로 별도 경직 라벨을 다시 받지 않는다.
 
 실행 (천장 설치, 파서 먼저):
   [터미널 1 - 젯슨]  python3 ~/radar_parser.py
   [터미널 2 - 젯슨]  python3 ~/radar_collect.py
 
 사용법:
-  1) 선풍기만 레이더 시야에 두고 풍속을 약/중/강으로 고정
-  2) 해당 버튼 클릭 -> 직전 3초 구간이 라벨과 함께 저장됨
-  3) 각 클래스 목표(10개) 채우면 화면에 "수집 완료" 표시
-  4) 생성된 events_fan_vib_levels.jsonl 을 분석한다.
+  1) PINCH-XZ: 발을 크게 옮기지 않고 몸통을 좌우·수평으로 당기며 3초 몸부림
+  2) 동작 직후 해당 버튼 클릭 -> 직전 3초 구간 저장
+  3) 각 클래스 10개씩 수집. 순서를 섞어 피로·시간 편향을 줄인다.
 
 좌표계 (천장 설치 기준):
   TI 좌표에서 y = range(boresight) = 천장 센서에서 아래로의 거리.
@@ -42,7 +42,7 @@ JSON_PATH        = '/home/project/stage1_filtered.json'
 #   이 파일: 프레임 있음 + 아래 ROI 적용
 #   한 파일에 라벨만 같은 채로 쌓이면 나중에 구분이 불가능하다.
 SESSION_ID       = re.sub(r'[^A-Za-z0-9_-]', '_',
-                          os.environ.get('RADAR_SESSION', 'fan_vib_levels'))
+                          os.environ.get('RADAR_SESSION', 'pinch_motion_0821'))
 OUT_PATH         = f'/home/project/events_{SESSION_ID}.jsonl'
 EMPTY_PATH       = f'/home/project/empty_{SESSION_ID}.jsonl'
 CEILING_H        = 2.30       # 천장(센서)~바닥 거리 (m)  -- 실측값
@@ -70,28 +70,32 @@ FPS_EST          = 10
 WINDOW_FRAMES    = int(WINDOW_SEC * FPS_EST)   # ~30 frames
 DEBUG_TIMING     = False
 
-# [8/18 실측] 선풍기 풍속별 FMCW 도플러 분산 비교 전용.
-TARGET = {'vib_low': 10, 'vib_mid': 10, 'vib_high': 10}
-CORE_CLASSES    = ['vib_low', 'vib_mid', 'vib_high']
+# [8/21] 시연 범위에서 협착 수평동작을 정상·보행·쪼그리기와 비교한다.
+# 분포를 보기 전에 문턱을 정하지 않는다. 각 10회는 탐색용 최소 수량이다.
+TARGET = {c: 10 for c in ('still', 'walk', 'crouch', 'pinch_motion')}
+CORE_CLASSES = ['still', 'walk', 'crouch', 'pinch_motion']
 EXPLORE_CLASSES = []
 CLASSES         = CORE_CLASSES + EXPLORE_CLASSES
 CLASS_LABEL = {
     'fall': 'FALL', 'fast_sit': 'FAST-SIT', 'walk': 'WALK',
     'normal': 'NORMAL', 'crouch': 'CROUCH', 'exit': 'ENTRY/EXIT',
     'vib': 'VIB(machine)', 'vib_low': 'VIB-LOW', 'vib_mid': 'VIB-MID',
-    'vib_high': 'VIB-HIGH', 'wave': 'WAVE(arm)', 'still': 'STILL(lie)',
+    'vib_high': 'VIB-HIGH', 'wave': 'WORK(arm)', 'still': 'STILL(stand)',
+    'pinch_motion': 'PINCH-XZ',
 }
 BTN_COLOR = {
     'fall': '#3a0a0a', 'fast_sit': '#2a1a0a', 'walk': '#0a1a2a',
     'normal': '#0a2a12', 'crouch': '#24300a', 'exit': '#102a30',
     'vib': '#0a2a2a', 'vib_low': '#102a30', 'vib_mid': '#16383a',
     'vib_high': '#205052', 'wave': '#2a1030', 'still': '#08203a',
+    'pinch_motion': '#30102a',
 }
 BTN_TEXT_COLOR = {
     'fall': '#ff6666', 'fast_sit': '#ffbb66', 'walk': '#66bbff',
     'normal': '#66ff99', 'crouch': '#ddff77', 'exit': '#77ddff',
     'vib': '#66ffee', 'vib_low': '#99ffff', 'vib_mid': '#77eeee',
     'vib_high': '#55dddd', 'wave': '#ff99dd', 'still': '#66ccff',
+    'pinch_motion': '#ff88cc',
 }
 
 CUR_PERSON = 'A'
@@ -113,7 +117,7 @@ state = {
     'empty_frames': [],
     'empty_msg': 'not recorded',
     'fall_stats': {p: None for p in 'ABCDE'},
-    'vib_stats': {c: [] for c in CORE_CLASSES},
+    'motion_stats': {c: [] for c in CORE_CLASSES},
 }
 
 
@@ -310,8 +314,8 @@ def save_sample(label):
         state['counts'][label] += 1
         c = state['counts'][label]
         state['last_saved'] = f'{CLASS_LABEL[label]} saved ({c}/{TARGET[label]})'
-        if label.startswith('vib_'):
-            state['vib_stats'][label].extend(float(f['dop_std']) for f in window)
+        if label in state['motion_stats']:
+            state['motion_stats'][label].append(fall_metrics(window))
         if label == 'fall':
             stats = fall_metrics(window)
             stats['count'] = c
@@ -405,7 +409,7 @@ def build_info():
         last_dt  = state['last_data_t']
         empty_until = state['empty_until']
         empty_msg = state['empty_msg']
-        vib_stats = {c: list(v) for c, v in state['vib_stats'].items()}
+        motion_stats = {c: list(v) for c, v in state['motion_stats'].items()}
     stale = (time.time() - last_dt > 5.0) if last_dt > 0 else True
 
     lines = []
@@ -437,12 +441,14 @@ def build_info():
     for c in EXPLORE_CLASSES:
         lines.append(f"  {CLASS_LABEL[c]:<12} {counts[c]:>2}/{TARGET[c]}")
     lines.append('')
-    lines.append('[VIB DOP_STD: all saved frames mean / max]')
+    lines.append('[SAMPLE MEAN: ds_max / horiz / h_drop]')
     for c in CORE_CLASSES:
-        values = vib_stats[c]
+        values = motion_stats[c]
         lines.append(f"  {CLASS_LABEL[c]:<12} " +
                      ('--' if not values else
-                      f"{np.mean(values):.4f} / {max(values):.4f}"))
+                      f"{np.mean([v['ds_max'] for v in values]):.3f} / "
+                      f"{np.mean([v['horiz'] for v in values]):.3f} / "
+                      f"{np.mean([v['h_drop'] for v in values]):.3f}"))
     lines.append('')
     lines.append(f'LAST: {last}')
     lines.append('')

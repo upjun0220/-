@@ -65,7 +65,8 @@ try:
         CEILING_H, FRAME_INNER_HALF, HISTORY_LEN,
         PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
         EVENT_LABELS, EVENT_ZONE, ZONE_IDS, RADAR_ZONE, EVENT_SEV,
-        CURR_LIMIT, VOLT_MIN, VIB_DS_THRESH, BREAKER_SCOPE,
+        CURR_LIMIT, VOLT_MIN, POWER_CONFIRM, LEAK_LIMIT, LEAK_CONFIRM,
+        VIB_DS_THRESH, BREAKER_SCOPE, AUTO_TRIP_EVENTS,
     )
 except ImportError:
     sys.stderr.write(
@@ -131,12 +132,14 @@ CLUTTER_REMOVE_POINTS = True
 
 # ⚠ [7/31 회귀 복구] 아래 두 값이 7/12 이전 값으로 되돌아가 있었다.
 #   분리본이 7/12 수정 이전 버전에서 갈라져 나왔기 때문. radar_live_full.py 기준으로 복구.
-STAT_PRE_SEC  = 10.0   # [7/12] 15->10: 데모 시 15s 완전정지 유지가 어려워(실측 dwell 최대 6.9s)
+STAT_PRE_SEC  = 3.0    # [8/21] 과전류 차단 후 3초 무동작부터 협착 확인 단계 표시
                        #   1차: Zone 내 정지 이만큼 지속 -> PRE-ALERT(경고, 비latch)
-STAT_CRIT_SEC = 30.0   # 2차: 계속 무동작 -> stationary 경보(critical, latch)
+STAT_CRIT_SEC = 5.0    # [8/21] 과전류 차단 후 5초 연속 무동작 -> 협착 critical
 STAT_RESET_DS = 0.38   # [8/17 시험 후보] 현재 프레임 실측 전까지 확정값 아님
 STAT_RESET_FRAMES = 3  # 순간 케이블·고스트 스파이크 한 번으로 타이머를 지우지 않는다
-STATIONARY_ENABLED = False  # [8/18 실측] 위치 튀어오름 수정 전까지 낙상 시연에서 제외
+# [8/21] 평상시 무동작은 정상 작업과 구분할 수 없다.
+# 과전류로 실제 차단된 재실 상태에서만 협착 보조 게이트로 사용한다.
+STATIONARY_ENABLED = True
 MAINT_MODE    = False  # True = 계획 정비 중(LOTO/작업허가) -> 정지형 경보 억제
 STAT_MISS_TOL = 3      # [7/12] 10->3: 이탈 프레임 10개 용인이 '이동 중 타이머 생존 ->
                        #   오발화'의 주원인. 3프레임(~0.3s)만 용인.
@@ -399,7 +402,6 @@ class StationaryGate:
             self.positions.append((float(pos[0]), float(pos[1])))
         if self.since is None:
             self.since = now
-
         motion_reset = False
         if dop_std is not None:
             if dop_std >= self.reset_ds:
@@ -417,6 +419,24 @@ class StationaryGate:
         return {'dwell': dwell, 'pre': dwell >= STAT_PRE_SEC and not self.alerted,
                 'critical': critical, 'motion_reset': motion_reset,
                 'anchor': self.anchor()}
+
+
+def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason):
+    """전기 이상 차단 후 재실 상태에서만 인명사고 확인 게이트를 연다."""
+    return bool(STATIONARY_ENABLED and phase == PH_LIVE and occupied and not MAINT_MODE
+                and breaker_state == 'TRIPPED'
+                and breaker_reason in ('overcurrent', 'leakage_current'))
+
+
+def _event_requires_trip(event_type, severity):
+    """낙상 경보는 유지하되 전기·협착 critical만 자동 차단한다."""
+    return severity == 'critical' and event_type in AUTO_TRIP_EVENTS
+
+
+def _human_event_for_breaker(reason):
+    """전기 원인에 따라 5초 무동작의 인명사고 이름을 고른다."""
+    return ('electric_shock_risk_confirmed'
+            if reason == 'leakage_current' else 'pinching')
 
 
 def _rule_fall_positive(clf):
@@ -570,6 +590,9 @@ state = {
     'ds_h':   deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
     'ev_active':  False,
     'ev_type':    None,
+    'ev_types':   [],
+    'ev_items':   {},       # type -> {'sev','conf'}; 복합 사고의 개별 등급
+    'ev_rev':     0,
     'ev_sev':     'normal',
     'ev_conf':    0.0,
     'ev_zone':    RADAR_ZONE,   # [7/31] 'C' 고정이었음 — 레이더는 A 에 있다
@@ -627,6 +650,7 @@ RELAY_ADDR = 1
 RELAY_CH   = 0              # Modbus CH1. NO 배선: 코일 ON=정상 투입, OFF=차단
 INA_BUS    = '/dev/i2c-7'
 INA_ADDR   = 0x41
+INA_LEAK_ADDR = int(os.environ.get('RADAR_INA_LEAK_ADDR', '0x40'), 0)
 INA_SHUNT_OHM = 0.005       # M5Stack INA226 10A Isolated 공식 사양: 5 mΩ
 
 
@@ -711,23 +735,40 @@ class RelayRTU:
 RELAY = RelayRTU()
 
 
-def classify_equipment(curr, volt, dop_std):
+def classify_equipment(curr, volt, dop_std, leak_curr=None):
     """전기(전류/전압) + 기계(도플러 진동) 융합 판정 — 순수 함수."""
     out = []
-    if curr > CURR_LIMIT:
+    if curr is not None and curr > CURR_LIMIT:
         out.append({'event_type': 'overcurrent', 'zone_id': ELEC_ZONE,
                     'severity': 'critical', 'value': round(curr, 3), 'limit': CURR_LIMIT,
                     'msg': f'Overcurrent {curr:.2f} A (> {CURR_LIMIT} A)'})
-    if volt < VOLT_MIN:
+    if volt is not None and volt < VOLT_MIN:
         out.append({'event_type': 'voltage_drop', 'zone_id': ELEC_ZONE,
                     'severity': 'critical', 'value': round(volt, 1), 'limit': VOLT_MIN,
                     'msg': f'Voltage drop {volt:.1f} V (< {VOLT_MIN} V)'})
+    if leak_curr is not None and leak_curr > LEAK_LIMIT:
+        out.append({'event_type': 'leakage_current', 'zone_id': ELEC_ZONE,
+                    'severity': 'critical', 'value': round(leak_curr, 4),
+                    'limit': LEAK_LIMIT,
+                    'msg': f'Leakage current {leak_curr:.4f} A (> {LEAK_LIMIT} A)'})
     if dop_std > VIB_DS_THRESH:
         out.append({'event_type': 'vibration_anomaly', 'zone_id': VIB_ZONE,
                     'severity': 'critical', 'value': round(dop_std, 3),
                     'limit': VIB_DS_THRESH,
                     'msg': f'Abnormal vibration dop_std {dop_std:.3f} (> {VIB_DS_THRESH})'})
     return out
+
+
+def _confirm_power_anomalies(raw, streaks):
+    """1Hz 전기 이상을 종류별 연속 횟수로 확인한다."""
+    active = {a['event_type'] for a in raw}
+    for et in streaks:
+        streaks[et] = streaks[et] + 1 if et in active else 0
+    confirmed = [a for a in raw if streaks[a['event_type']] >=
+                 (LEAK_CONFIRM if a['event_type'] == 'leakage_current'
+                  else POWER_CONFIRM)]
+    # 동시 검출이면 접근 금지 SOP가 필요한 누설전류를 차단 이유로 우선한다.
+    return sorted(confirmed, key=lambda a: a['event_type'] != 'leakage_current')
 
 
 class BreakerLogic:
@@ -790,13 +831,13 @@ class BreakerLogic:
 BREAKER = BreakerLogic()
 
 
-def _read_power():
-    """INA226의 버스 전압과 션트 전압을 읽어 12V LED 부하를 실측한다."""
+def _read_ina226(addr):
+    """지정 주소 INA226의 버스전압·션트전류를 읽는다."""
     import fcntl
     fd = None
     try:
         fd = os.open(INA_BUS, os.O_RDWR)
-        fcntl.ioctl(fd, 0x0703, INA_ADDR)  # I2C_SLAVE
+        fcntl.ioctl(fd, 0x0703, addr)  # I2C_SLAVE
 
         def _reg16(reg, signed=False):
             os.write(fd, bytes((reg,)))
@@ -813,12 +854,24 @@ def _read_power():
                 'watt': round(voltage * current, 3), 'src': 'ina226',
                 'connected': True, 'error': None}
     except Exception as exc:
-        print(f'[INA226 ERROR] {exc}', flush=True)
+        print(f'[INA226 0x{addr:02X} ERROR] {exc}', flush=True)
         return {'curr': None, 'volt': None, 'watt': None,
                 'src': 'unavailable', 'connected': False, 'error': str(exc)}
     finally:
         if fd is not None:
             os.close(fd)
+
+
+def _read_power():
+    """메인 부하 INA226과 누설 분기 INA226을 독립 계측한다."""
+    main = _read_ina226(INA_ADDR)
+    leak = _read_ina226(INA_LEAK_ADDR)
+    main.update({
+        'leak_curr': leak['curr'], 'leak_volt': leak['volt'],
+        'leak_connected': leak['connected'], 'leak_error': leak['error'],
+        'leak_src': leak['src'],
+    })
+    return main
 
 
 def add_log(msg):
@@ -832,23 +885,10 @@ _SEV_RANK = {'normal': 0, 'warning': 1, 'critical': 2}
 
 
 def _can_latch(new_et, new_sev):
-    """critical 이 떠 있으면 새 사건을 막는다. 누설 확정 감전만 예외.
-    caller 가 _lock 보유 가정 (RLock 이라 재진입 안전).
-
-    ⚠ [8/20] 예전에는 critical 이 사실상 낙상 하나뿐이라 이 문제가 없었다.
-      감전·협착이 critical 로 올라올 수 있게 되면서 배타 규칙이 필요해졌다
-      (04_문서/설계/감전_협착_판정구조_0820.md). 한 방·한 사람 스코프라
-      critical 이 떠 있으면 운영자가 이미 그 구역으로 간다는 전제다.
-    """
+    """동일 사고 반복만 막고 서로 다른 후속 사고는 같은 사건에 병합한다."""
     if not state['ev_active']:
         return True
-    if state['ev_sev'] != 'critical':
-        return _SEV_RANK.get(new_sev, 0) > _SEV_RANK.get(state['ev_sev'], 0)
-    # critical 이 떠 있다 — 원칙적으로 막는다.
-    # 예외: 누설 확정 감전. 낙상 SOP(즉시 접근)를 보고 구조자가 활선에
-    # 접근하면 2차 감전이다. 감전 SOP 는 "전원 차단 확인 후 접근" 이다.
-    return (new_et == 'electric_shock_risk_confirmed'
-            and state['ev_type'] != new_et)
+    return new_et not in (state.get('ev_types') or [state.get('ev_type')])
 
 
 def _upgrade_severity(new_sev):
@@ -885,7 +925,22 @@ def _log_dropped(et, ts, reason):
         pass
 
 
-def _latch_event(et, clf, zn, ts, score_x):
+def _remove_event_type(et, ts, reason):
+    """같은 사고의 의심 단계를 확정 단계로 교체하기 전에 제거한다."""
+    types = list(state.get('ev_types') or [])
+    if et not in types:
+        return False
+    state['ev_types'] = [t for t in types if t != et]
+    state.get('ev_items', {}).pop(et, None)
+    for inc in reversed(state['incidents']):
+        if inc.get('type') == et and inc.get('resolved') is None:
+            inc['resolved'] = f'{ts} ({reason})'
+            break
+    state['logs'].append(f'[{ts}] {EVENT_LABELS.get(et, et)} -> {reason}')
+    return True
+
+
+def _latch_event(et, clf, zn, ts, score_x, control_trip=True):
     """경보 latch. caller가 _lock 보유 가정 (RLock이라 재진입 안전).
 
     [7/31] classify() 가 채운 evidence/gates/rejected 를 state 에 보관한다.
@@ -896,18 +951,21 @@ def _latch_event(et, clf, zn, ts, score_x):
       여기 도달했는데 ev_active 가 이미 True 면 그건 상위 등급의 선점이다 —
       기존 사건을 미해결로 방치하지 않도록 incidents 에 preempted 를 남긴다.
     """
-    if state['ev_active']:
-        for inc in reversed(state['incidents']):
-            if inc['resolved'] is None:
-                inc['resolved'] = f'{ts} (preempted by {et})'
-                break
-        state['logs'].append(
-            f'[{ts}] {EVENT_LABELS.get(et, et)} 이(가) 기존 '
-            f'{EVENT_LABELS.get(state["ev_type"], state["ev_type"])} 경보를 선점')
+    merging = state['ev_active']
+    types = list(state.get('ev_types') or ([state['ev_type']] if merging else []))
+    if et in types:
+        return False
+    types.append(et)
+    items = dict(state.get('ev_items') or {})
+    items[et] = {'sev': clf['severity'], 'conf': clf['confidence']}
+    if merging:
+        state['logs'].append(f'[{ts}] {EVENT_LABELS.get(et, et)} 병렬 감지 -- 기존 사건 유지')
     state.update({
-        'ev_active': True, 'ev_type': et,
-        'ev_sev': clf['severity'], 'ev_conf': clf['confidence'], 'ev_zone': zn,
-        'ev_id': state.get('ev_id', 0) + 1,
+        'ev_active': True, 'ev_type': et, 'ev_types': types, 'ev_items': items,
+        'ev_sev': max((state['ev_sev'], clf['severity']), key=lambda s: _SEV_RANK.get(s, 0)),
+        'ev_conf': max(state['ev_conf'], clf['confidence']), 'ev_zone': zn,
+        'ev_id': state.get('ev_id', 0) + (0 if merging else 1),
+        'ev_rev': state.get('ev_rev', 0) + 1,
         'ev_ts': time.time(),                       # 젯슨 시각(참고용). 경과시간은
                                                     #   노트북이 '수신 시각' 기준으로 센다.
         'ev_evidence': clf.get('evidence'),         # ⚠ None 일 수 있음(피처 계산 전 조기 return)
@@ -922,10 +980,10 @@ def _latch_event(et, clf, zn, ts, score_x):
     # ── 차단기: 판정과 차단은 젯슨이 실행한다 (fail-safe) ──
     #   링크가 끊겨도 차단은 이미 여기서 일어난 뒤다. 노트북은 결과를 볼 뿐이고
     #   재투입만 요청할 수 있다. 이것이 "노트북이 죽어도 안전하다"의 코드 근거다.
-    # ⚠⚠ 이 한 줄이 '전원을 끊을지' 를 정한다. classify() 의 severity 다.
-    #   radar_common.EVENT_SEV(표시 등급)와 절대 헷갈리지 말 것 —
-    #   그쪽을 바꿔도 여기는 안 바뀌고, 여기를 바꾸면 차단이 바뀐다.
-    if clf['severity'] == 'critical':
+    # ⚠⚠ 이 조건이 '전원을 끊을지' 를 정한다.
+    #   critical이어도 낙상은 경보만 발생하고, AUTO_TRIP_EVENTS의
+    #   전기·협착 사건만 차단한다. EVENT_SEV는 표시 등급이다.
+    if control_trip and _event_requires_trip(et, clf['severity']):
         tripped = BREAKER.trip(zn, reason=et)
         if tripped:
             state['logs'].append(f'[{ts}] BREAKER TRIP [{BREAKER_SCOPE}] Zone {zn} <- {lbl}')
@@ -933,6 +991,7 @@ def _latch_event(et, clf, zn, ts, score_x):
             state['logs'].append(
                 f'[{ts}] BREAKER TRIP FAILED [{BREAKER_SCOPE}] Zone {zn}: '
                 f'{RELAY.error or "미지원 구역"}')
+    return True
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1269,6 +1328,9 @@ def sender_loop():
                 'pre_alert':    state['pre_alert'],
                 'ev': {
                     'active': state['ev_active'], 'type': state['ev_type'],
+                    'types':  list(state.get('ev_types') or []),
+                    'items':  dict(state.get('ev_items') or {}),
+                    'rev':    state.get('ev_rev', 0),
                     'sev':    state['ev_sev'],    'conf': state['ev_conf'],
                     'zone':   state['ev_zone'],   'id':   state['ev_id'],
                     'ts':     state['ev_ts'],
@@ -1292,6 +1354,8 @@ def sender_loop():
                 'cfg': {'N_WARMUP': N_WARMUP, 'SCAN_SEC': SCAN_SEC,
                         'CEILING_H': CEILING_H, 'JSON_PATH': JSON_PATH,
                         'CURR_LIMIT': CURR_LIMIT, 'VOLT_MIN': VOLT_MIN,
+                        'POWER_CONFIRM': POWER_CONFIRM,
+                        'LEAK_LIMIT': LEAK_LIMIT, 'LEAK_CONFIRM': LEAK_CONFIRM,
                         'VIB_DS_THRESH': VIB_DS_THRESH},
             }
             if full:
@@ -1329,23 +1393,40 @@ def power_monitor_loop():
       다시 절반 가까이(5fps대)로 깎였다. Modbus 호출은 반드시 _lock 밖에서 하고,
       state 읽기/쓰기만 짧게 lock 안에서 한다.
     """
+    streaks = {'overcurrent': 0, 'voltage_drop': 0, 'leakage_current': 0}
     while True:
         _t0 = time.time()
         _pw = _read_power()
         with _lock:
             state['power'] = _pw
-            _live = state['phase'] == PH_LIVE and state['occupied']
+            _live = state['phase'] == PH_LIVE
         # ⚠ Modbus(BREAKER.on_anomalies -> RELAY.write)는 _lock 밖에서 부른다.
         #   (1) LIVE 에서만 판정한다. 웜업·학습 중 차단은 말이 안 된다.
         #   (2) dop_std 를 설비진동 게이트에 먹이지 않는다 — 설비 진동은
         #       classify() 의 vibration_anomaly 가 담당한다(지속성 요구).
         #       여기서는 전기 이상(과전류·전압강하)만 본다.
         _trip = []
-        if _live and _pw['curr'] is not None and _pw['volt'] is not None:
-            _trip = BREAKER.on_anomalies(
-                classify_equipment(_pw['curr'], _pw['volt'], dop_std=0.0))
+        _anoms = []
+        if _live and (_pw['curr'] is not None or _pw['volt'] is not None
+                      or _pw.get('leak_curr') is not None):
+            raw = classify_equipment(_pw['curr'], _pw['volt'], dop_std=0.0,
+                                     leak_curr=_pw.get('leak_curr'))
+            _anoms = _confirm_power_anomalies(raw, streaks)
+            _trip = BREAKER.on_anomalies(_anoms)
         _tz = BREAKER.tripped_zones()
         with _lock:
+            for _a in _anoms:
+                _et = _a['event_type']; _sev = _a['severity']
+                if _can_latch(_et, _sev):
+                    _clf = {
+                        'severity': _sev, 'confidence': 1.0,
+                        'evidence': {'value': _a['value'], 'limit': _a['limit'],
+                                     'curr': _pw['curr'], 'volt': _pw['volt']},
+                        'gates': {'power': {'pass': True}}, 'rejected': [],
+                    }
+                    _latch_event(_et, _clf, _a['zone_id'],
+                                 datetime.now().strftime('%H:%M:%S'), 1.0,
+                                 control_trip=False)
             for _z in _trip:
                 state['logs'].append(
                     f"[{datetime.now().strftime('%H:%M:%S')}] "
@@ -1495,11 +1576,16 @@ def pipeline_loop():
         add_log(f'>> STEP IN NOW -- OFF-NADIR (to the SIDE). Collection starts in {int(STEP_IN_SEC)}s.')
 
     def _stationary_tick(dop_std=None, pos=None):
-        """포인트 소실 뒤에도 타이머와 마지막 신뢰 위치를 유지한다."""
+        """과전류 차단 후에만 무동작·포인트 소실 타이머를 유지한다."""
         now = time.monotonic()
+        # BreakerLogic.trip() 이 Modbus 쓰기+코일 readback 성공 후에만
+        # 내부 상태와 reason 을 갱신한다. 낙상 등 다른 critical 차단은
+        # 무동작 게이트를 열지 않도록 reason='overcurrent'까지 확인한다.
+        _br = BREAKER.snapshot()
         with _lock:
-            active = (STATIONARY_ENABLED and state['phase'] == PH_LIVE
-                      and state['occupied'] and not MAINT_MODE)
+            active = _stationary_gate_active(
+                state['phase'], state['occupied'],
+                _br['state'].get(RADAR_ZONE), _br['reason'].get(RADAR_ZONE))
         result = stationary_gate.update(now, active, dop_std, pos)
         dwell = result['dwell']
         anchor = result['anchor']
@@ -1515,8 +1601,12 @@ def pipeline_loop():
 
             if result['critical']:
                 ts = datetime.now().strftime('%H:%M:%S')
-                _sev = EVENT_SEV.get('stationary_anomaly', 'warning')
-                if _can_latch('stationary_anomaly', _sev):
+                _reason = _br['reason'].get(RADAR_ZONE)
+                _human_et = _human_event_for_breaker(_reason)
+                if _human_et == 'pinching':
+                    _remove_event_type('pinching_suspected', ts, 'PINCHING CONFIRMED')
+                _sev = EVENT_SEV.get(_human_et, 'critical')
+                if _can_latch(_human_et, _sev):
                     clf = {
                         'severity': _sev,
                         'confidence': 0.95,
@@ -1530,9 +1620,10 @@ def pipeline_loop():
                                   'position': {'pass': anchor is not None}},
                         'rejected': [],
                     }
-                    _latch_event('stationary_anomaly', clf, RADAR_ZONE, ts, 1.0)
+                    _latch_event(_human_et, clf, RADAR_ZONE, ts, 1.0,
+                                 control_trip=False)
                 else:
-                    _log_dropped('stationary_anomaly', ts, '배타 latch')
+                    _log_dropped(_human_et, ts, '동일 사건 중복')
                 stationary_gate.alerted = True
 
         if result['motion_reset']:
@@ -1624,6 +1715,9 @@ def pipeline_loop():
                 state['train_requested']  = False
                 state['ev_active']        = False
                 state['ev_type']          = None
+                state['ev_types']         = []
+                state['ev_items']         = {}
+                state['ev_rev']           = 0
                 state['ev_sev']           = 'normal'
                 state['ev_conf']          = 0.0
                 state['pre_alert']        = ''
@@ -2275,15 +2369,15 @@ def pipeline_loop():
                         lbl = EVENT_LABELS.get(et, et)
                         state.update({
                             'ev_active': False, 'ev_type': None,
+                            'ev_types': [], 'ev_items': {}, 'ev_rev': 0,
                             'ev_sev': 'normal', 'ev_conf': 0.0,
                             # [7/31] 근거도 같이 비운다. 안 비우면 노트북 '판단 근거'
                             #   팝업이 해소된 옛 경보의 수치를 계속 보여준다.
                             'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
                         })
-                        for inc in reversed(state['incidents']):
+                        for inc in state['incidents']:
                             if inc['resolved'] is None:
                                 inc['resolved'] = ts
-                                break
                         state['logs'].append(f'[{ts}] RESOLVED Zone {zn}: {lbl} (manual ack)')
                         # ⚠ 차단기는 복구하지 않는다 (LOTO / restart prevention).
                         #   재투입은 노트북에서 확인 3개를 받은 뒤 CMD_RESTORE 로만.
