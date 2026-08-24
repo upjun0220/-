@@ -191,11 +191,16 @@ ck(not m._stationary_gate_active(
        m.PH_LIVE, True, 'TRIPPED', 'overcurrent', suppressed=True),
    '상황 해소 후 차단 유지 중에는 무동작 게이트 재무장 금지')
 
-shadow = [[0.0, 1.4, 0.0, 0.0, 0.40, 300.0, 16.0, 0.0, 0.0] for _ in range(30)]
+shadow = [[0.0, 1.5, 0.0, 0.0, 0.40, 300.0, 16.0, 0.0, 0.0] for _ in range(20)]
 shadow[-1][0] = 0.3
 sm = m._pinch_shadow_metrics(shadow)
-ck(sm['window'] == 30 and sm['candidate'] and sm['net_displacement'] == 0.3,
-   'PINCH Shadow는 30프레임 계측값만 계산', str(sm))
+ck(m.PINCH_SHADOW_WIN == 20 and sm['window'] == 20 and sm['candidate']
+   and sm['net_displacement'] == 0.3,
+   'A 협착 모션은 20프레임 실측 문턱으로 판정', str(sm))
+shadow_high = [row[:] for row in shadow]
+shadow_high[0][4] = 1.0
+ck(not m._pinch_shadow_metrics(shadow_high)['candidate'],
+   '협착 모션 ds_max 상한 초과는 critical 후보에서 제외')
 ck(m._human_event_for_breaker('overcurrent') == 'pinching'
    and m._human_event_for_breaker('leakage_current') ==
    'electric_shock_risk_confirmed', '전기 원인별 협착·감전 승격 분리')

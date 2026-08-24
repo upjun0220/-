@@ -90,8 +90,11 @@ JSON_PATH     = '/home/project/stage1_filtered.json'
 CLF_LOG_PATH  = '/home/project/clf_decisions.jsonl'   # classify 판정 로그(문턱 튜닝용)
 SUSPECT_LOG_PATH = '/home/project/fall_suspected.jsonl'  # 확인 라벨 전 재학습 후보
 PINCH_SHADOW_DIR = '/home/project/logs'  # 화면·latch와 분리한 협착 후보 계측
-PINCH_SHADOW_WIN = 30                    # 실효 약 3초 @ 10Hz
-PINCH_SHADOW_SEC = 3.0                   # 겹친 창을 매 프레임 중복 기록하지 않는다
+PINCH_SHADOW_WIN = 20                    # [8/24 A 실측] 판정 근거와 같은 약 2초 @ 10Hz
+PINCH_SHADOW_SEC = 2.0                   # 겹친 창을 매 프레임 중복 기록하지 않는다
+PINCH_DS_MEAN_MIN = 0.33                 # A PINCH 8/10, 동일 A 정상 30건 오탐 0건
+PINCH_DS_MAX_MAX = 0.59
+PINCH_HEIGHT_MEAN_MAX = 0.83
 
 DANGER_ZONES = {
     'A': {'x': (-FRAME_INNER_HALF, FRAME_INNER_HALF),
@@ -434,15 +437,18 @@ def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason,
 
 
 def _pinch_shadow_metrics(win):
-    """경보에는 쓰지 않는 3초 협착 후보 계측값을 만든다."""
+    """A 시연 동작의 2초 협착 후보 계측값을 만든다."""
     a = np.asarray(win, dtype=float)
     x, y, z = a[:, 0], a[:, 1], a[:, 2]
     step = np.hypot(np.diff(x), np.diff(z))
     dop_mean = float(a[:, 4].mean())
     height_mean = float((CEILING_H - y).mean())
     n_mean = float(a[:, 6].mean())
-    # 8/21 단일 세션의 탐색 문턱이다. verdict는 계측 태그일 뿐 경보에 사용하지 않는다.
-    candidate = dop_mean >= 0.38 and height_mean <= 1.00 and n_mean <= 18.0
+    # [8/24 실측] A의 PINCH 10건과 동일 A의 STILL/WALK/CROUCH 30건에서 고정했다.
+    # 같은 자료로 선정·평가한 시연 전용 문턱이므로 사람 일반화 근거는 없다.
+    candidate = (dop_mean > PINCH_DS_MEAN_MIN
+                 and float(a[:, 4].max()) <= PINCH_DS_MAX_MAX
+                 and height_mean <= PINCH_HEIGHT_MEAN_MAX)
     return {
         'window': len(win),
         'dop_mean': round(dop_mean, 5),
@@ -2228,7 +2234,8 @@ def pipeline_loop():
                 pinch_shadow_buf.clear()
                 continue
 
-            # 협착 Shadow: 과전류 차단 후 계측만 수행한다. UI·event·latch에는 쓰지 않는다.
+            # [8/24 A 시연] 과전류 차단 후 2초 협착 모션이 실측 문턱을 통과하면
+            # 기존 설비 이상 사건에 협착 critical을 병렬 추가한다.
             _shadow_br = BREAKER.snapshot()
             _shadow_active = (
                 _shadow_br['state'].get(RADAR_ZONE) == 'TRIPPED'
@@ -2258,6 +2265,23 @@ def pipeline_loop():
                         if not pinch_shadow_error:
                             add_log(f'PINCH-SHADOW 저장 실패: {e}')
                             pinch_shadow_error = True
+                    if _shadow['candidate']:
+                        with _lock:
+                            ts = datetime.now().strftime('%H:%M:%S')
+                            if _can_latch('pinching', 'critical'):
+                                clf = {
+                                    'severity': 'critical',
+                                    'confidence': 0.80,
+                                    'evidence': _shadow,
+                                    'gates': {
+                                        'occupied': {'pass': True},
+                                        'breaker_overcurrent': {'pass': True},
+                                        'pinch_motion_20f': {'pass': True},
+                                    },
+                                    'rejected': [],
+                                }
+                                _latch_event('pinching', clf, RADAR_ZONE, ts, 1.0,
+                                             control_trip=False)
             else:
                 pinch_shadow_buf.clear()
             feat_buf.append(feat.tolist())
