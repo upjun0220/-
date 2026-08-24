@@ -23,6 +23,58 @@
 검토 내용. 반대 의견이 있으면 근거와 함께.
 → 결론: (나면 여기에. 그리고 옮기고 지운다)
 ```
+
+## ⛔ 판정 코드 동결 — 2026-08-24 ~ 해제 시까지
+
+> **낙상 · 정지형(무동작) · PINCH 모션 · 판정값/임계값 — 판정에 관여하는 코드는 아예 건드리지 않는다.**
+> UI 작업을 포함한 **모든** 작업에 적용된다. 고쳐야 할 이유가 생기면 **먼저 홍유빈에게 허락을 받는다.**
+> 8/24 시연에서 낙상·협착·감전 경로가 전부 정상 동작하는 것을 확인했다. 그 상태를 기준선으로 고정한다.
+
+### 동결 — 파일 전체 (열지도 말 것)
+
+| 파일 | SHA-256 (8/24 기준선) |
+|---|---|
+| `01_현행코드/jetson_sender.py` | `18d2ede32dda6148c44d61a4e169cf271069d020351444c5c05169478aa76a2a` |
+| `01_현행코드/verify_jetson_safe.py` | `2c931a733651ff982d4353fb04da66eb4e90c48cba191d806ec7ecbd359e4a90` |
+| `01_현행코드/train_fall_safety.py` | `30023bdfbb315d15ba8762026473de236df745b1e9a52a5d34b4d5529409adc5` |
+| `01_현행코드/*.joblib` 모델 3개 | 재학습·교체·경로 변경 금지 |
+
+### 동결 — `radar_common.py` 안의 판정 항목
+
+`SCHEMA_VERSION` · `DATA_PORT` · `CTRL_PORT` · `CMD_*` · `CEILING_H` · `FRAME_INNER_HALF` ·
+`ENTRY_BAND` · `OCCUPANCY_CORE_HALF` · `PH_*` · `RADAR_ZONE` · `ZONE_IDS` · `EVENT_ZONE` ·
+`SEV_RANK` · **`EVENT_SEV`** · **`AUTO_TRIP_EVENTS`** · **`CURR_LIMIT`** · **`VOLT_MIN`** ·
+`POWER_CONFIRM` · `LEAK_LIMIT` · `LEAK_CONFIRM` · `VIB_DS_THRESH`
+그리고 **모든 딕셔너리의 키**(이벤트 타입 문자열).
+
+### 수정해도 되는 것 — 오늘 저녁 UI 작업 범위
+
+- `01_현행코드/console_ui.py` — 표시 전용
+- `01_현행코드/radar_core.py` — 표시 전용. 단 **판정을 UI에서 다시 계산해서 그리지 않는다**
+- `radar_common.py` 는 **표시 문구·색·폰트만**: `PHASE_KO` `PHASE_ACTION` `EVENT_KO` `ZONE_KO`
+  `SEV_KO` `GATE_META` `REJECT_KO` `EVIDENCE_KO` `BREAKER_SCOPE` · 팔레트(`BG`~`FS_*`)
+  → **값(한글 문구·색상)만 바꾼다. 키는 절대 못 바꾼다.**
+
+### 작업 후 반드시 실행하고 결과를 붙일 것
+
+```bash
+git --no-optional-locks diff --stat 01_현행코드/
+sha256sum 01_현행코드/jetson_sender.py 01_현행코드/verify_jetson_safe.py
+grep -nE "^(CURR_LIMIT|VOLT_MIN|POWER_CONFIRM|LEAK_LIMIT|LEAK_CONFIRM|VIB_DS_THRESH) *=" 01_현행코드/radar_common.py
+grep -n "AUTO_TRIP_EVENTS" -A4 01_현행코드/radar_common.py
+python 01_현행코드/verify_jetson_safe.py
+```
+
+기대값 — `jetson_sender.py` 변경 **0줄** · 위 SHA-256 **불변** ·
+`CURR_LIMIT=0.10` `VOLT_MIN=7.50` `POWER_CONFIRM=2` `LEAK_LIMIT=0.008` `LEAK_CONFIRM=2` `VIB_DS_THRESH=0.20` ·
+`AUTO_TRIP_EVENTS` 원소 6개이며 `fall_detected` **없음** · `verify_jetson_safe.py` 종료코드 0.
+
+**하나라도 어긋나면 커밋하지 말고 되돌린다.**
+
+> 상세·근거: `04_문서/설계/판정코드_동결_0824.md`
+> 협착 PINCH 판정도 동결 대상이다 — `PINCH_SHADOW_WIN=20` `PINCH_DS_MEAN_MIN=0.33` `PINCH_DS_MAX_MAX=0.59` `PINCH_HEIGHT_MEAN_MAX=0.83`.
+> **8/24 시연자 A 고정 규칙으로 채택**했다(A PINCH 8/10·A 정상 30건 오탐 0). 일반화 규칙이 아니다(B 4/10 · C 1/10).
+---
 
 ---
 

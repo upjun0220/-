@@ -2,34 +2,45 @@
 
 > 다음 세션의 실행 지시서다. 소통 창구가 아니다.
 
+## ⛔ 판정 코드 동결 (2026-08-24 ~ 해제 시까지)
+
+**낙상 · 정지형(무동작) · PINCH 모션 · 판정값/임계값에 관여하는 코드는 건드리지 않는다.** UI 작업 포함 모든 작업에 적용된다. 고칠 이유가 생기면 먼저 홍유빈에게 허락을 받는다.
+- 파일 전체 동결: `01_현행코드/jetson_sender.py` · `verify_jetson_safe.py` · `train_fall_safety.py` · `*.joblib` 3개
+- `radar_common.py` 동결: `EVENT_SEV` `AUTO_TRIP_EVENTS` `CURR_LIMIT` `VOLT_MIN` `POWER_CONFIRM` `LEAK_LIMIT` `LEAK_CONFIRM` `VIB_DS_THRESH` `SEV_RANK` `CEILING_H` `FRAME_INNER_HALF` `ENTRY_BAND` `PH_*` `CMD_*` `ZONE_IDS` `EVENT_ZONE` + 모든 딕셔너리 키
+- 수정 허용: `console_ui.py` · `radar_core.py` · `radar_common.py`의 표시 문구·색·폰트 **값만**(키 불변)
+- SHA-256 기준값·검증 절차: `AGENTS.md`/`CLAUDE.md` 최상단, `04_문서/설계/판정코드_동결_0824.md`
+
 ## State
 
-- Updated: 2026-08-20 · Claude Code
+- Updated: 2026-08-24 · Cowork
 - Branch: main
-- Commit: `620eec6` — `origin/main`보다 앞섬(미푸시). 이 세션 변경분은 아직 커밋 전
-- Working tree: `jetson_sender.py`·`console_ui.py`·`radar_core.py`·`radar_common.py`(차단 범위 문구를 `BREAKER_SCOPE='작업 대상 설비 회로'`로 통일, 판정 로직 무변경)·문서 4건 수정
+- Commit: `ac6fbbc` — `origin/main`보다 **6커밋 앞섬(미푸시)**
+- Working tree: `01_현행코드/` 4개 파일이 M 으로 뜨지만 **코드 실변경 0줄**이다. CRLF/LF 혼재로 인한 줄바꿈 노이즈뿐 — `git diff --ignore-all-space HEAD -- 01_현행코드/` 가 빈 출력임을 확인했다.
+- 문서 변경: `README.md` `AGENTS.md` `CLAUDE.md` `HANDOFF.md` `REVIEW.md` 최상단에 판정 동결 블록 삽입 · 신규 `04_문서/설계/판정코드_동결_0824.md` · 신규 `04_문서/진행보고/시연_런북_0824.md`
 
 ## Current objective
 
-차단 범위 표현 정정(문구·문서만, 판정 로직 무변경) — `radar_common.BREAKER_SCOPE` 신설, "구역 전원" 계열 문구 전부 "설비 회로"로 교체. PHASE 1(낙상 선점) 젯슨 배포는 이미 끝났고, **PHASE 1 실측 4개 기준은 아직 사람이 확인 안 함** — 이게 다음 세션의 최우선 순위다.
+**판정 코드는 동결이다(위 블록). 이번 세션은 UI·시연 자료만 만진다.** 8/24 실물 시연에서 낙상·과전류·협착·감전모의 4경로가 전부 화면에 표시되는 것을 확인했고, 남은 일정은 판정 개선이 아니라 UI·영상 품질에 쓴다는 것이 사용자 결정이다. `jetson_sender.py` 는 열지 않는다.
 
 ## Verified baseline
 
-- 젯슨 배포 마침(2026-08-20, IP `172.20.10.4`): 배포 전 발견한 문제 — 기존에 떠 있던 `radar_parser.py`가 `stage1_filtered.json`이 아니라 `stage1_filtered_0820.json`(팀원 흔적 추정)에 쓰고 있어 sender가 데이터를 못 읽었다. 재시작으로 해결, `[RF]`/`[RF30]` 로드 OK, UI 연결·WARMUP 진행 확인.
-- 이번 문구 변경 검증: pyflakes(무관 경고 1건 제외)·verify_jetson_safe 61건·validate_ai_bridge 전부 0건. `grep -rn "구역 전원" 01_현행코드/` 0건. `_can_latch` 7건·`_SEV_RANK` 3건·`severity']=='critical'` 존재 — 전부 지시서 예상치와 일치(로직 미변경 증명).
-- **PHASE 1 실측 4개 기준은 아직 미확인**: 60초 대기 후 낙상 2초 이내 / `dt` 중앙값 0.063~0.08 / fnum diff 20초간 미증가 / `[TIMING]` 비용 미증가. 배포는 됐지만 실제 낙상 시연을 아직 안 함.
+- 8/24 실물 시연 4경로 표시 실패 0건(낙상 / 과전류+무동작 / 과전류+PINCH 모션 / 누설모의+무동작). 경보까지의 실측 경과시간은 측정하지 않았다.
+- 낙상 `classify()` 실측·합성 9,580건 불일치 0건 · 젯슨 안전성 검사 87건 실패 0건.
+- 협착 PINCH 는 **시연자 A 고정 규칙**이다. A 8/10·A 정상 30건 오탐 0. B 4/10 · C 1/10 으로 일반화되지 않는다. Cowork 재현에서 `still` 이 B 6/10 · C 9/10 통과 — 시연자가 A 가 아니면 오작동으로 보인다.
+- 동결 기준 SHA-256 `jetson_sender.py` = `18d2ede32dda6148c44d61a4e169cf271069d020351444c5c05169478aa76a2a`.
 
 ## Next actions
 
-1. **입실 60초 대기 → 낙상**으로 PHASE 1 4개 기준 실측(위 목록). 통과해야 PHASE 2(감전·협착) 착수 가능.
-2. 이번 문구 변경분(4개 코드 파일 + 문서 4건) 커밋.
-3. 통과 후 PHASE 2: `radar_common` 스키마(`electric_shock_risk_confirmed`/`insulation_fault`)·`--hazard` CLI·화면 정리(관심영역 삭제).
+1. UI 작업은 `console_ui.py` · `radar_core.py` 와 `radar_common.py` 의 표시 문구·색·폰트 **값**만. 딕셔너리 키와 판정 상수는 건드리지 않는다.
+2. 작업 후 `sha256sum 01_현행코드/jetson_sender.py` 로 동결 확인. 값이 위와 다르면 커밋하지 말고 되돌린다.
+3. 미푸시 6커밋과 문서 변경분 커밋·푸시 여부를 사용자에게 확인.
 
 ## Blockers
 
-1. PHASE 1 실측 4개 기준이 사람의 실시연 없이는 확인 불가 — 다음 세션 최우선.
-2. INA226 #2(누설전류) 미도착 — PHASE 2 감전 확정 경로는 자리만 가능.
+1. `01_현행코드/*.py` 줄바꿈 CRLF/LF 혼재 — `git diff` 가 실변경보다 25배 크게 나온다. 판단은 `--ignore-all-space` 와 SHA-256 으로 한다. `.gitattributes` 정규화는 별도 항목.
+2. `INBOX.md` 10/10 포화 — 새 지시 항목을 넣으려면 기존 항목 정리가 먼저다.
+3. INA226 #2 미도착 — 누설전류는 단일 INA 3구간 모의로 대체 중이다.
 
 ## Acceptance
 
-PHASE 1: 위 4개 실측 기준 충족. 이후에만 PHASE 2 착수 — `STATIONARY_ENABLED=True` 전환도 이때까지 금지.
+`jetson_sender.py` SHA-256 불변 · `01_현행코드/` 실변경(공백 무시) 0줄 · `scripts/validate_ai_bridge.py` 와 `scripts/validate_handoff.py` 위반 0건.
