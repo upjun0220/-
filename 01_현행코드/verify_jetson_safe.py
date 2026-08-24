@@ -192,9 +192,17 @@ ck(m._human_event_for_breaker('overcurrent') == 'pinching'
    'electric_shock_risk_confirmed', '전기 원인별 협착·감전 승격 분리')
 ck(m.CURR_LIMIT == 0.10 and m.VOLT_MIN == 7.50,
    '8V 과전류 실측 임계 적용', f'{m.CURR_LIMIT}A/{m.VOLT_MIN}V')
-ck(m.LEAK_LIMIT == 0.004 and m.POWER_CONFIRM == 2 and m.LEAK_CONFIRM == 2,
-   '누설 예상 임계와 2회 연속 확인 설정')
-eq = m.classify_equipment(0.1535, 7.815, 0.0, leak_curr=0.008)
+ck(m.LEAK_LIMIT == 0.008 and m.POWER_CONFIRM == 2 and m.LEAK_CONFIRM == 2,
+   '누설 모의 실측 임계와 2회 연속 확인 설정')
+ck(not m.classify_equipment(0.0050, 8.124, 0.0),
+   '단일 INA 정상 최대 5.0mA는 전기 이상 아님')
+single_leak = m.classify_equipment(0.0115, 8.110, 0.0)
+ck([a['event_type'] for a in single_leak] == ['leakage_current'],
+   '단일 INA 1kΩ 분기 최소 11.5mA는 누설 모의', str(single_leak))
+single_over = m.classify_equipment(0.1505, 7.876, 0.0)
+ck([a['event_type'] for a in single_over] == ['overcurrent'],
+   '단일 INA 50Ω 분기는 과전류만 판정', str(single_over))
+eq = m.classify_equipment(0.1535, 7.815, 0.0, leak_curr=0.0085)
 ck({a['event_type'] for a in eq} == {'overcurrent', 'leakage_current'},
    '8V 예상 과전류·누설 동시 판정', str(eq))
 streaks = {'overcurrent': 0, 'voltage_drop': 0, 'leakage_current': 0}

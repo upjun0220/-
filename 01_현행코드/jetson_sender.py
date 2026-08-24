@@ -650,7 +650,8 @@ RELAY_ADDR = 1
 RELAY_CH   = 0              # Modbus CH1. NO 배선: 코일 ON=정상 투입, OFF=차단
 INA_BUS    = '/dev/i2c-7'
 INA_ADDR   = 0x41
-INA_LEAK_ADDR = int(os.environ.get('RADAR_INA_LEAK_ADDR', '0x40'), 0)
+_INA_LEAK_ADDR_RAW = os.environ.get('RADAR_INA_LEAK_ADDR', '').strip()
+INA_LEAK_ADDR = int(_INA_LEAK_ADDR_RAW, 0) if _INA_LEAK_ADDR_RAW else None
 INA_SHUNT_OHM = 0.005       # M5Stack INA226 10A Isolated 공식 사양: 5 mΩ
 
 
@@ -746,11 +747,16 @@ def classify_equipment(curr, volt, dop_std, leak_curr=None):
         out.append({'event_type': 'voltage_drop', 'zone_id': ELEC_ZONE,
                     'severity': 'critical', 'value': round(volt, 1), 'limit': VOLT_MIN,
                     'msg': f'Voltage drop {volt:.1f} V (< {VOLT_MIN} V)'})
-    if leak_curr is not None and leak_curr > LEAK_LIMIT:
+    # [8/24 실측] INA #2 도착 전 단일 센서 시연 경로.
+    # 정상 4.0~5.0mA / 1kΩ 분기 11.5~12.5mA / 50Ω 분기 150.5~151.0mA.
+    # 전용 센서가 있으면 그 값을 우선하고, 없을 때만 메인 전류 구간을 쓴다.
+    leak_value = (leak_curr if leak_curr is not None else
+                  curr if curr is not None and curr < CURR_LIMIT else None)
+    if leak_value is not None and leak_value >= LEAK_LIMIT:
         out.append({'event_type': 'leakage_current', 'zone_id': ELEC_ZONE,
-                    'severity': 'critical', 'value': round(leak_curr, 4),
+                    'severity': 'critical', 'value': round(leak_value, 4),
                     'limit': LEAK_LIMIT,
-                    'msg': f'Leakage current {leak_curr:.4f} A (> {LEAK_LIMIT} A)'})
+                    'msg': f'Leakage simulation {leak_value:.4f} A (>= {LEAK_LIMIT} A)'})
     if dop_std > VIB_DS_THRESH:
         out.append({'event_type': 'vibration_anomaly', 'zone_id': VIB_ZONE,
                     'severity': 'critical', 'value': round(dop_std, 3),
@@ -863,9 +869,11 @@ def _read_ina226(addr):
 
 
 def _read_power():
-    """메인 부하 INA226과 누설 분기 INA226을 독립 계측한다."""
+    """메인 INA226을 읽고, 주소를 설정한 경우에만 누설 전용 INA226도 읽는다."""
     main = _read_ina226(INA_ADDR)
-    leak = _read_ina226(INA_LEAK_ADDR)
+    leak = (_read_ina226(INA_LEAK_ADDR) if INA_LEAK_ADDR is not None else
+            {'curr': None, 'volt': None, 'src': 'single_ina_sim',
+             'connected': False, 'error': 'INA226 #2 미설정 — 메인 전류 구간 사용'})
     main.update({
         'leak_curr': leak['curr'], 'leak_volt': leak['volt'],
         'leak_connected': leak['connected'], 'leak_error': leak['error'],
