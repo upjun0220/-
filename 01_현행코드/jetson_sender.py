@@ -89,6 +89,9 @@ LAPTOP_IP = os.environ.get('RADAR_LAPTOP_IP', '')   # 비워두면 HELLO로 자�
 JSON_PATH     = '/home/project/stage1_filtered.json'
 CLF_LOG_PATH  = '/home/project/clf_decisions.jsonl'   # classify 판정 로그(문턱 튜닝용)
 SUSPECT_LOG_PATH = '/home/project/fall_suspected.jsonl'  # 확인 라벨 전 재학습 후보
+PINCH_SHADOW_DIR = '/home/project/logs'  # 화면·latch와 분리한 협착 후보 계측
+PINCH_SHADOW_WIN = 30                    # 실효 약 3초 @ 10Hz
+PINCH_SHADOW_SEC = 3.0                   # 겹친 창을 매 프레임 중복 기록하지 않는다
 
 DANGER_ZONES = {
     'A': {'x': (-FRAME_INNER_HALF, FRAME_INNER_HALF),
@@ -426,6 +429,30 @@ def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason):
     return bool(STATIONARY_ENABLED and phase == PH_LIVE and occupied and not MAINT_MODE
                 and breaker_state == 'TRIPPED'
                 and breaker_reason in ('overcurrent', 'leakage_current'))
+
+
+def _pinch_shadow_metrics(win):
+    """경보에는 쓰지 않는 3초 협착 후보 계측값을 만든다."""
+    a = np.asarray(win, dtype=float)
+    x, y, z = a[:, 0], a[:, 1], a[:, 2]
+    step = np.hypot(np.diff(x), np.diff(z))
+    dop_mean = float(a[:, 4].mean())
+    height_mean = float((CEILING_H - y).mean())
+    n_mean = float(a[:, 6].mean())
+    # 8/21 단일 세션의 탐색 문턱이다. verdict는 계측 태그일 뿐 경보에 사용하지 않는다.
+    candidate = dop_mean >= 0.38 and height_mean <= 1.00 and n_mean <= 18.0
+    return {
+        'window': len(win),
+        'dop_mean': round(dop_mean, 5),
+        'dop_max': round(float(a[:, 4].max()), 5),
+        'x_range': round(float(x.max() - x.min()), 4),
+        'z_range': round(float(z.max() - z.min()), 4),
+        'net_displacement': round(float(np.hypot(x[-1] - x[0], z[-1] - z[0])), 4),
+        'path_length': round(float(step.sum()), 4),
+        'height_mean': round(height_mean, 4),
+        'point_count_mean': round(n_mean, 2),
+        'candidate': bool(candidate),
+    }
 
 
 def _event_requires_trip(event_type, severity):
@@ -1540,6 +1567,10 @@ def pipeline_loop():
     last_motion_t = -1e9
     motion_run = 0
     stationary_gate = StationaryGate()
+    pinch_shadow_buf = deque(maxlen=PINCH_SHADOW_WIN)
+    pinch_shadow_last = 0.0
+    pinch_shadow_path = None
+    pinch_shadow_error = False
     def _track_log(points_n, centroid, now):
         """현장 진단용 수동 재실 상태를 1초에 한 번 즉시 출력한다."""
         nonlocal track_log_t
@@ -1749,6 +1780,8 @@ def pipeline_loop():
             clf_buf     = []
             rf30_buf    = []
             fnum_buf    = []
+            pinch_shadow_buf.clear()
+            pinch_shadow_last = 0.0
             warmup_feat = []
             prev_c      = None
             prev_zvel   = 0.0
@@ -2180,7 +2213,41 @@ def pipeline_loop():
                 _is_live = (state['phase'] == PH_LIVE)
                 _occupied = state['occupied']
             if not _is_live or not _occupied:
+                pinch_shadow_buf.clear()
                 continue
+
+            # 협착 Shadow: 과전류 차단 후 계측만 수행한다. UI·event·latch에는 쓰지 않는다.
+            _shadow_br = BREAKER.snapshot()
+            _shadow_active = (
+                _shadow_br['state'].get(RADAR_ZONE) == 'TRIPPED'
+                and _shadow_br['reason'].get(RADAR_ZONE) == 'overcurrent')
+            if _shadow_active:
+                pinch_shadow_buf.append(feat.tolist())
+                _shadow_now = time.monotonic()
+                if (len(pinch_shadow_buf) == PINCH_SHADOW_WIN
+                        and _shadow_now - pinch_shadow_last >= PINCH_SHADOW_SEC):
+                    _shadow = {
+                        'ts': datetime.now().isoformat(timespec='seconds'),
+                        'frame': _fnum,
+                        'breaker_reason': 'overcurrent',
+                        'occupied': True,
+                        **_pinch_shadow_metrics(pinch_shadow_buf),
+                    }
+                    try:
+                        if pinch_shadow_path is None:
+                            os.makedirs(PINCH_SHADOW_DIR, exist_ok=True)
+                            pinch_shadow_path = os.path.join(
+                                PINCH_SHADOW_DIR,
+                                f'pinch_shadow_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jsonl')
+                        with open(pinch_shadow_path, 'a', encoding='utf-8') as _sf:
+                            _sf.write(json.dumps(_shadow, separators=(',', ':')) + '\n')
+                        pinch_shadow_last = _shadow_now
+                    except OSError as e:
+                        if not pinch_shadow_error:
+                            add_log(f'PINCH-SHADOW 저장 실패: {e}')
+                            pinch_shadow_error = True
+            else:
+                pinch_shadow_buf.clear()
             feat_buf.append(feat.tolist())
             if len(feat_buf) > SEQ_LEN:
                 feat_buf.pop(0)

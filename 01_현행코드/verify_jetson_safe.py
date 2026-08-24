@@ -187,6 +187,12 @@ ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'overcurrent'),
    '과전류 차단+입실 상태에서만 무동작 게이트 ON')
 ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'leakage_current'),
    '누설전류 차단+입실이면 감전 확인 게이트 ON')
+
+shadow = [[0.0, 1.4, 0.0, 0.0, 0.40, 300.0, 16.0, 0.0, 0.0] for _ in range(30)]
+shadow[-1][0] = 0.3
+sm = m._pinch_shadow_metrics(shadow)
+ck(sm['window'] == 30 and sm['candidate'] and sm['net_displacement'] == 0.3,
+   'PINCH Shadow는 30프레임 계측값만 계산', str(sm))
 ck(m._human_event_for_breaker('overcurrent') == 'pinching'
    and m._human_event_for_breaker('leakage_current') ==
    'electric_shock_risk_confirmed', '전기 원인별 협착·감전 승격 분리')
