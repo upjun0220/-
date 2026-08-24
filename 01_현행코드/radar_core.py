@@ -60,7 +60,7 @@ import pyqtgraph as pg
 from radar_common import (
     DATA_PORT, CTRL_PORT, HELLO_SEC, LINK_TIMEOUT, SCHEMA_VERSION,
     CMD_HELLO, CMD_START, CMD_TRAIN, CMD_RESET,
-    CEILING_H, FRAME_INNER_HALF, OCCUPANCY_CORE_HALF, HISTORY_LEN,
+    CEILING_H, FRAME_INNER_HALF, HISTORY_LEN,
     PH_READY, PH_WARMUP, PH_WAIT_TRAIN, PH_TRAINING, PH_WAIT_ARM, PH_LIVE,
     PHASE_ORDER, PHASE_KO, PHASE_ACTION,
     EVENT_KO, EVENT_CATEGORY, ZONE_IDS, ZONE_KO, RADAR_ZONE, pg_conn_str,
@@ -615,11 +615,11 @@ def stick_segments(center, axis, length, right, spread=1.0):
     return np.asarray(segs, dtype=np.float32)
 
 
-@lru_cache(maxsize=1)
-def _mannequin_mesh():
-    """리깅으로 정자세를 만든 일체형 CC0 인체 OBJ를 정규화한다."""
+@lru_cache(maxsize=4)
+def _load_mannequin_mesh(filename, upright=True):
+    """MakeHuman 인체 OBJ의 body 표면만 읽어 화면 좌표로 정규화한다."""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        'mannequin_cc0.obj')
+                        filename)
     vertices, faces = [], []
     group = None
     with open(path, encoding='utf-8', errors='replace') as src:
@@ -647,39 +647,26 @@ def _mannequin_mesh():
     faces = remap[np.asarray(faces, dtype=np.uint32)]
     mesh = np.column_stack((source[:, 0], source[:, 2], source[:, 1]))
     mesh[:, 2] -= mesh[:, 2].min()
-    mesh /= mesh[:, 2].max()
+    scale = mesh[:, 2].max() if upright else np.ptp(mesh, axis=0).max()
+    mesh /= scale
     mesh[:, 0] -= 0.5 * (mesh[:, 0].min() + mesh[:, 0].max())
     mesh[:, 1] -= np.median(mesh[:, 1])
 
     return mesh.astype(np.float32), faces.astype(np.uint32)
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=1)
+def _mannequin_mesh():
+    """정상 추정 자세용 일체형 CC0 인체 OBJ를 정규화한다."""
+    return _load_mannequin_mesh('mannequin_cc0.obj')
+
+
+@lru_cache(maxsize=3)
 def _incident_mannequin_mesh(kind):
-    """동일 OBJ를 몸 중심선에 따라 굽혀 시연용 사고 자세를 만든다."""
-    unit, faces = _mannequin_mesh()
-    t = unit[:, 2]
-    paths = {
-        'fall': ((-0.48, -0.28, -0.02, 0.27, 0.48),
-                 (0.08, -0.04, 0.00, 0.06, -0.03),
-                 (-0.03, 0.08, 0.00, 0.05, -0.02)),
-        'electric': ((0.00, 0.02, 0.00, -0.12, -0.22),
-                     (0.00, 0.00, 0.00, -0.05, -0.10),
-                     (-0.50, -0.27, 0.00, 0.29, 0.47)),
-        'pinching': ((-0.04, -0.02, 0.00, 0.16, 0.27),
-                     (0.00, 0.00, 0.00, 0.08, 0.14),
-                     (-0.50, -0.28, 0.00, 0.27, 0.44)),
-        'stationary': ((0.00, 0.00, 0.00, 0.00, 0.00),
-                       (0.00, 0.00, 0.00, 0.00, 0.00),
-                       (-0.50, -0.25, 0.00, 0.25, 0.50)),
-    }
-    px, py, pz = paths.get(kind, paths['stationary'])
-    knots = np.linspace(0.0, 1.0, 5)
-    posed = unit.copy()
-    posed[:, 0] += np.interp(t, knots, px)
-    posed[:, 1] += np.interp(t, knots, py)
-    posed[:, 2] = np.interp(t, knots, pz)
-    return posed.astype(np.float32), faces
+    """Blender 표준 골격으로 미리 굽혀 둔 사고별 정적 메시를 읽는다."""
+    if kind not in ('fall', 'electric', 'pinching'):
+        return _mannequin_mesh()
+    return _load_mannequin_mesh(f'mannequin_{kind}.obj', upright=(kind != 'fall'))
 
 
 def body_mesh(center, axis, length, right):
@@ -1084,14 +1071,6 @@ def _facility_scene_geometry():
     add_front_details(-1.28, -0.45, 0.715, 1.42,
                       machine_lines, machine_dots)
 
-    # 표시 전용 관심영역. 판정 경로로 되먹이지 않으며 사이에 중립 완충부를 둔다.
-    electrical_zone = np.array(((-0.72, 0.12, 0.045), (-0.12, 0.12, 0.045),
-                                (-0.12, 0.72, 0.045), (-0.72, 0.72, 0.045),
-                                (-0.72, 0.12, 0.045)), dtype=np.float32)
-    fan_zone = np.array(((0.12, 0.12, 0.045), (0.72, 0.12, 0.045),
-                         (0.72, 0.72, 0.045), (0.12, 0.72, 0.045),
-                         (0.12, 0.12, 0.045)), dtype=np.float32)
-
     # 접지 동바는 등급색이 아닌 시설 식별용 저채도 황동색으로 별도 렌더링한다.
     ground_lines = [np.array(((-4.18, -3.08, 0.20),
                               (-4.18, 3.12, 0.20))),
@@ -1102,7 +1081,7 @@ def _facility_scene_geometry():
         ground_lines.append(np.array(((-4.18, target[1], 0.20), target)))
     return (np.vstack(fixed_lines), np.asarray(fixed_dots, dtype=np.float32),
             np.vstack(machine_lines), np.asarray(machine_dots, dtype=np.float32),
-            np.vstack(ground_lines), electrical_zone, fan_zone)
+            np.vstack(ground_lines))
 
 
 class Track3D(QtWidgets.QWidget):
@@ -1159,15 +1138,11 @@ class Track3D(QtWidgets.QWidget):
         g.setSpacing(0.5, 0.5)
         g.setColor(pg.mkColor(GRID))
         self.gl.addItem(g)
+        # 실제 판정 ROI 외곽. 표시만 사용하며 판정값은 공용 상수를 그대로 읽는다.
         h = FRAME_INNER_HALF
-        z = np.array([[-h, -h, 0.01], [h, -h, 0.01], [h, h, 0.01],
-                      [-h, h, 0.01], [-h, -h, 0.01]])
-        self.gl.addItem(gl.GLLinePlotItem(pos=z, color=pg.glColor(CYAN), width=1.6,
-                                          antialias=True))
-        c = OCCUPANCY_CORE_HALF
-        core = np.array([[-c, -c, 0.012], [c, -c, 0.012], [c, c, 0.012],
-                         [-c, c, 0.012], [-c, -c, 0.012]])
-        self.gl.addItem(gl.GLLinePlotItem(pos=core, color=pg.glColor(DIM), width=1.0,
+        roi = np.array([[-h, -h, 0.01], [h, -h, 0.01], [h, h, 0.01],
+                        [-h, h, 0.01], [-h, -h, 0.01]])
+        self.gl.addItem(gl.GLLinePlotItem(pos=roi, color=pg.glColor(CYAN), width=1.6,
                                           antialias=True))
         # 1 m 높이 눈금 — 캡슐 크기를 눈으로 가늠할 기준
         for h in (1.0, 2.0):
@@ -1179,7 +1154,7 @@ class Track3D(QtWidgets.QWidget):
         # ⚠ 실측이 아닌 데모 설비 배치. 남색으로 낮춰 원시 점군(청록)과
         #   경보 색(빨강·주황)을 가리지 않고, 카메라 복원처럼 보이지 않게 한다.
         (env_lines, env_dots, machine_lines, machine_dots,
-         ground_lines, electrical_zone, fan_zone) = _facility_scene_geometry()
+         ground_lines) = _facility_scene_geometry()
         self.env_lines = gl.GLLinePlotItem(
             pos=env_lines, color=(0.10, 0.24, 0.38, 0.62), width=1.0,
             antialias=True, mode='lines')
@@ -1193,19 +1168,11 @@ class Track3D(QtWidgets.QWidget):
         self.ground_lines = gl.GLLinePlotItem(
             pos=ground_lines, color=(0.55, 0.38, 0.10, 0.72), width=1.2,
             antialias=True, mode='lines')
-        self.electrical_zone = gl.GLLinePlotItem(
-            pos=electrical_zone, color=(0.96, 0.62, 0.04, 0.92), width=2.3,
-            antialias=True)
-        self.fan_zone = gl.GLLinePlotItem(
-            pos=fan_zone, color=(0.66, 0.52, 0.98, 0.92), width=2.3,
-            antialias=True)
         self.gl.addItem(self.env_lines)
         self.gl.addItem(self.env_dots)
         self.gl.addItem(self.machine_lines)
         self.gl.addItem(self.machine_dots)
         self.gl.addItem(self.ground_lines)
-        self.gl.addItem(self.electrical_zone)
-        self.gl.addItem(self.fan_zone)
         # 점군보다 먼저 그려 점이 반투명 형상 뒤에 묻히지 않게 한다.
         body_unit, body_faces = _mannequin_mesh()
         body_unit = body_unit.copy()
@@ -1226,7 +1193,7 @@ class Track3D(QtWidgets.QWidget):
         self._incident_kind = None
         self._body_unit = body_unit
         self._body_faces = body_faces
-        self.sc = gl.GLScatterPlotItem(size=6.0, color=pg.glColor(CYAN))
+        self.sc = gl.GLScatterPlotItem(size=5.0, color=(*pg.glColor(CYAN)[:3], 0.38))
         self.gl.addItem(self.sc)
         # 인체 도식 — mode='lines' 로 끊긴 선분들을 한 아이템에 그린다
         self.cap = gl.GLLinePlotItem(color=pg.glColor(GREEN), width=2.2,
@@ -1240,6 +1207,7 @@ class Track3D(QtWidgets.QWidget):
         self.tr = gl.GLLinePlotItem(color=(0.53, 0.6, 0.73, 0.6), width=1.2,
                                     antialias=True)
         self.gl.addItem(self.tr)
+        self._equipment_alarm = False
         v.addWidget(self.gl, 1)
 
     def _build_2d(self, v):
@@ -1265,6 +1233,20 @@ class Track3D(QtWidgets.QWidget):
     def reset_camera(self):
         if self.gl is not None:
             self.gl.setCameraPosition(**self._cam0)
+
+    def set_equipment_alarm(self, active):
+        """과전류·누설전류 경보를 변압기 형상에도 표시한다."""
+        active = bool(active)
+        if self.gl is None or active == self._equipment_alarm:
+            return
+        self._equipment_alarm = active
+        if active:
+            color = pg.glColor(sev_color('critical'))
+            self.machine_lines.setData(color=(*color[:3], 0.92))
+            self.machine_dots.setData(color=(*color[:3], 0.78))
+        else:
+            self.machine_lines.setData(color=(0.34, 0.28, 0.66, 0.76))
+            self.machine_dots.setData(color=(0.38, 0.32, 0.72, 0.62))
 
     # ── 경보 등급별 색 ────────────────────────────────────────────────
     #  ⚠ v1 은 bool(alert) 하나로 '빨강이냐 아니냐' 만 정했다. 그래서 정지형
@@ -1335,7 +1317,8 @@ class Track3D(QtWidgets.QWidget):
                 self._incident_kind = incident_kind
             if len(pts):
                 arr = np.column_stack([pts[:, 0], pts[:, 2], CEILING_H - pts[:, 1]])
-                self.sc.setData(pos=arr, color=pg.glColor(pt_c), size=6.0)
+                color = pg.glColor(pt_c)
+                self.sc.setData(pos=arr, color=(*color[:3], 0.50), size=5.2)
             if len(self.trail) > 2:
                 self.tr.setData(pos=np.array(self.trail))
             if incident:
@@ -1347,35 +1330,30 @@ class Track3D(QtWidgets.QWidget):
                 self.body.setTransform(transform)
                 self.body_rim.setTransform(transform)
                 color = pg.glColor(fig_c)
-                self.body.setColor((*color[:3], 0.42))
-                self.body_rim.setColor((*color[:3], 0.20))
+                self.body.setColor((*color[:3], 0.60))
+                self.body_rim.setColor((*color[:3], 0.26))
                 self._body_sev = sev
                 self.body.show()
                 self.body_rim.show()
             elif p and p['shape_ok'] and not hide_shape:
                 self.hd.setData(pos=np.array([self.to_disp(p['head'])]),
                                 color=pg.glColor(hd_c))
-                if p['posture'] == 'standing':
-                    self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32),
-                                     color=pg.glColor(fig_c))
-                    transform = self._body_transform(p)
-                    self.body.setTransform(transform)
-                    self.body_rim.setTransform(transform)
-                    if self._body_sev != sev:
-                        color = (pg.glColor(fig_c)
-                                 if sev in ('warning', 'critical')
-                                 else (0.78, 0.88, 0.92, 1.0))
-                        self.body.setColor((*color[:3], 0.34))
-                        rim = color[:3] if sev in ('warning', 'critical') \
-                            else (0.0, 0.85, 1.0)
-                        self.body_rim.setColor((*rim, 0.13))
-                        self._body_sev = sev
-                    self.body.show()
-                    self.body_rim.show()
-                else:
-                    self.cap.setData(pos=self._stick3d(p), color=pg.glColor(fig_c))
-                    self.body.hide()
-                    self.body_rim.hide()
+                self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32),
+                                 color=pg.glColor(fig_c))
+                transform = self._body_transform(p)
+                self.body.setTransform(transform)
+                self.body_rim.setTransform(transform)
+                if self._body_sev != sev:
+                    color = (pg.glColor(fig_c)
+                             if sev in ('warning', 'critical')
+                             else (0.78, 0.88, 0.92, 1.0))
+                    self.body.setColor((*color[:3], 0.52))
+                    rim = color[:3] if sev in ('warning', 'critical') \
+                        else (0.0, 0.85, 1.0)
+                    self.body_rim.setColor((*rim, 0.22))
+                    self._body_sev = sev
+                self.body.show()
+                self.body_rim.show()
             else:
                 self.cap.setData(pos=np.zeros((0, 3), dtype=np.float32))
                 self.hd.setData(pos=np.zeros((0, 3), dtype=np.float32))
@@ -1401,21 +1379,29 @@ class Track3D(QtWidgets.QWidget):
 
     @staticmethod
     def _incident_transform(incident):
-        """시연 전용 OBJ 포즈. 위치·자세가 실측이라는 의미는 없다."""
+        """사고 OBJ의 발/바닥과 설비 접근 방향을 맞춘다."""
         kind = incident.get('kind', 'stationary')
         x, y = incident.get('pos', (0.0, 0.0))
         phase = np.sin(time.monotonic() * 5.0)
         length = 1.62
+        posed, _ = _incident_mannequin_mesh(kind)
+        floor_z = -float(posed[:, 2].min()) * length
+        # 낙상은 카메라에서 서 있는 투영으로 보이지 않게 바닥 면에서
+        # 가로로 누이고, 감전·협착은 팔이 설비(+Y)를 향하게 돌린다.
+        angle = np.radians(90.0 if kind in ('electric', 'pinching') else 0.0)
+        rotation = np.array(((np.cos(angle), -np.sin(angle), 0.0),
+                             (np.sin(angle), np.cos(angle), 0.0),
+                             (0.0, 0.0, 1.0))) * length
         if kind == 'fall':
-            center = np.array((x, y, 0.20))
+            center = np.array((x, y, floor_z))
         elif kind == 'electric':
-            center = np.array((x, y - 0.03 * phase, 0.78))
+            center = np.array((x, y - 0.015 * phase, floor_z))
         elif kind == 'pinching':
-            center = np.array((x + 0.03 * phase, y, 0.76))
+            center = np.array((x + 0.015 * phase, y, floor_z))
         else:
-            center = np.array((x, y, 0.81))
+            center = np.array((x, y, floor_z))
         matrix = np.eye(4, dtype=float)
-        matrix[:3, :3] *= length
+        matrix[:3, :3] = rotation
         matrix[:3, 3] = center
         return pg.Transform3D(matrix)
 
@@ -1483,8 +1469,12 @@ class Track3D(QtWidgets.QWidget):
         right /= np.linalg.norm(right) or 1.0
         depth = np.cross(a, right)
         matrix = np.eye(4, dtype=float)
-        matrix[:3, :3] = np.column_stack((right, depth, a)) * L
-        matrix[:3, 3] = C
+        linear = np.column_stack((right, depth, a)) * L
+        matrix[:3, :3] = linear
+        # 중심을 임의로 내리지 않고, 실제 변환된 메시의 최저 정점만 z=0에
+        # 맞춘다. 따라서 발은 뜨지도 않고 지면 아래로 들어가지도 않는다.
+        floor_z = float((self._body_unit @ linear.T)[:, 2].min())
+        matrix[:3, 3] = (C[0], C[1], -floor_z)
         return pg.Transform3D(matrix)
 
     @staticmethod

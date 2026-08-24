@@ -2871,17 +2871,20 @@ class ConsoleV2(QtWidgets.QMainWindow):
         return 'normal'
 
     def _incident_visual(self):
-        """명시적 시연 패킷에서만 고정 OBJ 사고 포즈를 허용한다."""
-        if not self.alert or not self.alert.get('demo_pose'):
+        """경보 종류를 실측 자세와 구분된 OBJ 사고 포즈로 반환한다."""
+        if not self.alert:
             return None
-        et = self.alert.get('type')
-        evidence = self.alert.get('evidence') or {}
-        pos = (float(evidence.get('anchor_cx', 0.0)),
-               float(evidence.get('anchor_cz', 0.0)))
-        if et == 'fall_detected':
-            return {'kind': 'fall', 'pos': pos}
-        context = self.alert.get('_display_context')
-        return context and {'kind': context['kind'], 'pos': context['pos']}
+        types = set(self.alert.get('types') or [self.alert.get('type')])
+        if 'fall_detected' in types:
+            # 변압기와 겹치지 않는 전면 빈 바닥에 사고 예시 자세를 둔다.
+            return {'kind': 'fall', 'pos': (0.0, -0.55)}
+        if types & {'pinching', 'pinching_suspected'}:
+            # 우측 변압기 강제냉각 팬 앞. 표시 전용 고정 위치다.
+            return {'kind': 'pinching', 'pos': (0.65, 0.18)}
+        if types & {'electric_shock_risk', 'electric_shock_risk_confirmed'}:
+            # 좌측 단자함 앞. 표시 전용 고정 위치로 판정 좌표가 아니다.
+            return {'kind': 'electric', 'pos': (-0.82, 0.28)}
+        return None
 
     def _refresh_scene(self):
         """3D↔2D 전환 직후, 새 패킷을 기다리지 않고 즉시 다시 그린다.
@@ -3025,6 +3028,10 @@ class ConsoleV2(QtWidgets.QMainWindow):
                                                        'stationary_anomaly'))
         incident = self._incident_visual()
         self.scene.track._incident = incident
+        types = set((self.alert or {}).get('types') or
+                    [(self.alert or {}).get('type')]) if on_alert else set()
+        self.scene.track.set_equipment_alarm(
+            bool(types & {'overcurrent', 'leakage_current'}))
         pose = self.scene.push(pkt, sev, hide_shape=lost)
         if pose:
             # ⚠ v1 은 zone 이 없을 때 'C' 로 떨어졌다 — 레이더가 없는 구역이다.

@@ -291,6 +291,32 @@ check('34. 누운 상태 축 부호 반전 없음', flips == 0, f'{flips}회/120
 check('35. 도식에 관절 자유도가 없음(고정 비율)',
       set(core.STICK) == {'head_t','head_r','neck','shoulder','hip',
                           'sh_w','hand_t','hand_w','foot_t','foot_w'})
+check('35a. 정상 누움도 3D 뼈대 대신 표면 마네킹 표시',
+      len(getattr(w.scene.track.cap, 'pos', ())) == 0
+      and w.scene.track.body.visible())
+
+# ── 36~38. 실제 경보 사고 포즈·설비 위험 표시 ──
+event_pose = {}
+for et, want in (('fall_detected', 'fall'),
+                 ('electric_shock_risk', 'electric'),
+                 ('pinching', 'pinching')):
+    w.alert = {'type': et, 'types': [et], 'evidence': {}}
+    event_pose[et] = (w._incident_visual() or {}).get('kind')
+check('36. 실제 사고 경보 3종이 OBJ 포즈로 연결',
+      event_pose == {'fall_detected': 'fall',
+                     'electric_shock_risk': 'electric',
+                     'pinching': 'pinching'}, event_pose)
+
+meshes = [core._incident_mannequin_mesh(k)[0]
+          for k in ('fall', 'electric', 'pinching')]
+check('37. 사고 포즈 3종의 관절 형상이 서로 다름',
+      all(meshes[i].shape != meshes[j].shape
+          or not _np.allclose(meshes[i], meshes[j])
+          for i in range(3) for j in range(i + 1, 3)))
+
+geometry = core._facility_scene_geometry()
+check('38. 폐기한 주황·보라 소영역이 설비 형상에서 제거',
+      len(geometry) == 5, f'형상 그룹 {len(geometry)}개')
 
 print('\n' + '='*62)
 print(f'통과 {len(OK)} / 실패 {len(NG)}')

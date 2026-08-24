@@ -205,8 +205,15 @@ def main():
                     n_seg = cap_n_seg(cap)
                     check(f'{label}: 사람 경보 중 형상 숨김 [{tag}]', n_seg == 0,
                           f'선분 {n_seg}개')
-                check(f'{label}: 캡션에 추적 소실 명시',
-                      '추적 소실' in w.monitor._pose_text, w.monitor._pose_text[:60])
+                if et == 'fall_detected':
+                    check(f'{label}: 사고 포즈가 실측 자세가 아님을 명시',
+                          '사고 유형 시각화' in w.monitor._pose_text
+                          and '실측 자세 아님' in w.monitor._pose_text,
+                          w.monitor._pose_text[:80])
+                else:
+                    check(f'{label}: 캡션에 추적 소실 명시',
+                          '추적 소실' in w.monitor._pose_text,
+                          w.monitor._pose_text[:60])
             else:
                 for tag, cap in widgets:
                     col = cap_color_hex(cap)
