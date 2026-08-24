@@ -424,9 +424,11 @@ class StationaryGate:
                 'anchor': self.anchor()}
 
 
-def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason):
+def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason,
+                            suppressed=False):
     """전기 이상 차단 후 재실 상태에서만 인명사고 확인 게이트를 연다."""
-    return bool(STATIONARY_ENABLED and phase == PH_LIVE and occupied and not MAINT_MODE
+    return bool(STATIONARY_ENABLED and not suppressed
+                and phase == PH_LIVE and occupied and not MAINT_MODE
                 and breaker_state == 'TRIPPED'
                 and breaker_reason in ('overcurrent', 'leakage_current'))
 
@@ -611,6 +613,7 @@ state = {
     'reset_requested':   False,
     'arm_reset_requested': False,
     'resolve_requested': False,
+    'stationary_gate_suppressed': False,  # 상황 해소 후 재투입 전 재경보 금지
     'latest_pts':       [],
     'cz_h':   deque([1.7] * HISTORY_LEN, maxlen=HISTORY_LEN),
     'sc_h':   deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
@@ -1301,11 +1304,16 @@ def control_listener():
                     f'[{ts}] [BTN] 작업자 퇴실 확인 — 신규 사고 판정 중지, 기존 경보·차단 유지')
             elif cmd == CMD_RESOLVE:
                 state['resolve_requested'] = True
+                if BREAKER.any_tripped():
+                    state['stationary_gate_suppressed'] = True
+                    state['pre_alert'] = ''
             elif cmd == CMD_RESTORE:
                 # [7/31] 전력 재투입. 노트북은 '요청'만 하고 실행은 젯슨이 한다.
                 #   노트북 UI 가 이미 LOTO 체크 3개를 받은 뒤에만 보낸다.
                 zs = msg.get('zones') or None
                 done = BREAKER.restore(zs)
+                if done:
+                    state['stationary_gate_suppressed'] = False
                 state['logs'].append(
                     f'[{ts}] BREAKER RESTORE {done or "(대상 없음)"} <- 노트북 {addr[0]}')
         print(f'[{ts}] [CMD] {cmd} from {addr[0]}')
@@ -1450,6 +1458,9 @@ def power_monitor_loop():
             _trip = BREAKER.on_anomalies(_anoms)
         _tz = BREAKER.tripped_zones()
         with _lock:
+            if _trip:
+                # 수동 해소 뒤에도 새 전기 이상으로 다시 차단되면 새 사고로 감시한다.
+                state['stationary_gate_suppressed'] = False
             for _a in _anoms:
                 _et = _a['event_type']; _sev = _a['severity']
                 if _can_latch(_et, _sev):
@@ -1624,7 +1635,8 @@ def pipeline_loop():
         with _lock:
             active = _stationary_gate_active(
                 state['phase'], state['occupied'],
-                _br['state'].get(RADAR_ZONE), _br['reason'].get(RADAR_ZONE))
+                _br['state'].get(RADAR_ZONE), _br['reason'].get(RADAR_ZONE),
+                state['stationary_gate_suppressed'])
         result = stationary_gate.update(now, active, dop_std, pos)
         dwell = result['dwell']
         anchor = result['anchor']
@@ -2450,6 +2462,7 @@ def pipeline_loop():
                             #   팝업이 해소된 옛 경보의 수치를 계속 보여준다.
                             'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
                         })
+                        stationary_gate.reset()
                         for inc in state['incidents']:
                             if inc['resolved'] is None:
                                 inc['resolved'] = ts

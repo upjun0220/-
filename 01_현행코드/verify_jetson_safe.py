@@ -187,6 +187,9 @@ ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'overcurrent'),
    '과전류 차단+입실 상태에서만 무동작 게이트 ON')
 ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'leakage_current'),
    '누설전류 차단+입실이면 감전 확인 게이트 ON')
+ck(not m._stationary_gate_active(
+       m.PH_LIVE, True, 'TRIPPED', 'overcurrent', suppressed=True),
+   '상황 해소 후 차단 유지 중에는 무동작 게이트 재무장 금지')
 
 shadow = [[0.0, 1.4, 0.0, 0.0, 0.40, 300.0, 16.0, 0.0, 0.0] for _ in range(30)]
 shadow[-1][0] = 0.3
