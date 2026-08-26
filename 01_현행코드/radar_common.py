@@ -111,7 +111,7 @@ EVENT_KO = {                # 노트북 관제 화면용
     'stationary_anomaly':  '장시간 무동작',
     'electric_shock_risk': '감전 위험',
     'electric_shock_risk_confirmed': '감전 발생',
-    'leakage_current':     '설비 이상 · 누설전류 모의',
+    'leakage_current':     '설비 이상 · 누설전류 시나리오',
     'pinching_suspected':  '협착 의심',
     'pinching':            '협착 · 끼임',
     'vibration_anomaly':   '설비 이상 진동',

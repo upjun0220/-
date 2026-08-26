@@ -546,7 +546,7 @@ class PoseEstimator:
             'shape_ok': bool(shape_ok),
             'shape_why': shape_why,
             # 화면에 반드시 이 라벨을 띄울 것 — 추정임을 숨기지 않는다.
-            'label': (f'추정 형상 · 최근 {len(self.buf)}프레임 누적 '
+            'label': (f'레이더 형상 · 최근 {len(self.buf)}프레임 누적 '
                       f'(원시 {len(self.buf[-1][1])}점/프레임) · 머리 {head_src}'
                       if shape_ok else
                       f'형상 표시 안 함 ({shape_why}) · 최근 {len(self.buf)}프레임 '

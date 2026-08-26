@@ -801,8 +801,19 @@ class FacilityPlan(QtWidgets.QWidget):
         # 설비 윤곽 (도면 밀도용 — 판정과 무관하므로 가장 낮은 대비)
         p.setPen(QtGui.QPen(QtGui.QColor(GRID), 1))
         p.setBrush(QtCore.Qt.NoBrush)
-        for r in fac.EQUIPMENT:
-            p.drawRect(self._rect(r, f))
+        for item in fac.EQUIPMENT:
+            if not isinstance(item[0], str):
+                p.drawRect(self._rect(item, f))
+                continue
+            kind, *v = item
+            if kind == 'pipe':
+                p.drawLine(self._pt(v[0], v[1], f), self._pt(v[2], v[3], f))
+            elif kind == 'tank':
+                c = self._pt(v[0], v[1], f)
+                radius = v[2] * f[0]
+                p.drawEllipse(c, radius, radius)
+            else:
+                p.drawRect(self._rect(v[:4], f))
 
         # 구역
         for z, d in fac.ZONES.items():
@@ -2323,6 +2334,11 @@ class AssistantDrawer(QtWidgets.QDialog):
             f'<span style="color:{AMBER};">AI 응답 실패: '
             f'{html_escape(error)}</span>', False, 'AI'))
 
+    def system_notice(self, text):
+        """젯슨에서 확인된 상태 변화를 AI 대화에 즉시 알린다."""
+        self.log.append(self._bubble(html_escape(text), False, 'Radar-Guard AI'))
+        self.open_drawer()
+
 
 # ══════════════════════════════════════════════════════════════════════
 # 9. 좌측 네비게이션
@@ -2520,7 +2536,7 @@ class SopEngineV2(core.SopEngine):
             'elapsed': elapsed_sec,
             'breaker': ('경보 — 설비 회로 자동 차단 대상 아님' if no_auto_trip
                         else '차단 완료(실측 확인)' if off and src == 'modbus'
-                        else '차단 신호 발신(차단기 모의값 — 현장 확인 필요)'
+                        else '차단 신호 발신(실측 미확인 — 현장 확인 필요)'
                         if off else '차단 미확인'),
         }
 
@@ -2941,6 +2957,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
     #   히스토리(cz/ds/sc/logs/incidents)는 1초에 한 번 오는 'full' 패킷에 실린다.
     #   full 이 아닌 패킷엔 그 키가 없으므로 직전 값을 이어 붙인다. (v1 과 동일)
     def on_packet(self, pkt):
+        previous = self.pkt
         if not pkt.get('full'):
             for k in self.HIST_KEYS:
                 if k not in pkt and k in self.pkt:
@@ -2949,6 +2966,24 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.rx_ts = time.time()
         self.alive = True
         self.dash.on_packet(pkt)
+
+        prev_breaker = (previous.get('breaker') or {}) if previous else {}
+        breaker = pkt.get('breaker') or {}
+        if (prev_breaker.get('src') == 'modbus'
+                and prev_breaker.get('connected')
+                and breaker.get('src') == 'modbus'
+                and breaker.get('connected')):
+            before = prev_breaker.get('state') or {}
+            after = breaker.get('state') or {}
+            restored = [z for z in ZONE_IDS
+                        if before.get(z) not in (None, 'ON')
+                        and after.get(z) == 'ON']
+            for z in restored:
+                place = ZONE_KO.get(z, f'Zone {z}')
+                self.timeline.add(f'{z} {place} 전력 복구 확인', GREEN)
+                self.assistant.system_notice(
+                    f'{place}에서 전력을 복구했습니다. Modbus 릴레이 응답으로 '
+                    '정상 투입 상태를 확인했습니다.')
 
         ev0 = pkt.get('ev') or {}
         page = self.stack.currentIndex()
@@ -3038,7 +3073,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
             #   레이더 유래 정보는 레이더가 설치된 구역으로 보고한다.
             z = ev.get('zone') or RADAR_ZONE
             if incident:
-                shape = '사고 유형 시각화 · 실측 자세 아님'
+                shape = '사고 유형 시각화'
             elif lost:
                 shape = ('추적 소실 — 정지한 대상은 반사가 줄어 놓칩니다')
             elif not pose['shape_ok']:
@@ -3225,11 +3260,11 @@ class ConsoleV2(QtWidgets.QMainWindow):
                 txt, c, bg = f'{z} 구역 기존 차단 유지 · {why}', GREEN, BG_OK
             else:
                 txt, c, bg = (f'{z} 구역 기존 차단 상태 · {why} '
-                              f'(차단기 모의값)'), AMBER, BG_WARN
+                              f'(실측 미확인)'), AMBER, BG_WARN
         elif off and src == 'modbus':
             txt, c, bg = f'{z} 구역 작업 대상 설비 회로 차단 완료 · 젯슨 자동 실행', GREEN, BG_OK
         elif off:
-            txt, c, bg = (f'{z} 구역 차단 신호 발신 (차단기 모의값 — '
+            txt, c, bg = (f'{z} 구역 차단 신호 발신 (실측 미확인 — '
                           f'현장 차단 여부를 직접 확인하십시오)'), AMBER, BG_WARN
         else:
             txt, c, bg = (f'{z} 구역 설비 회로 차단이 확인되지 않았습니다 — '
