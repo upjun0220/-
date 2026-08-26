@@ -19,8 +19,8 @@
 
 | 파일 | SHA-256 (8/24 기준선) |
 |---|---|
-| `01_현행코드/jetson_sender.py` | `5b00451d1604780a03de85a2816d3324eec35d486fed1172834f140c3458dd1c` |
-| `01_현행코드/verify_jetson_safe.py` | `719c6d1e1d12ac3eac1c7feee834fdc54787989f1c4420f28171762ba01d4934` |
+| `01_현행코드/jetson_sender.py` | `afb5470a1e9e77ee87f4b38fc45ea5dbaaf93cebb5786a2aca8361e421361ac8` |
+| `01_현행코드/verify_jetson_safe.py` | `75f10ee49c428053463d9cdb36585183b18f6a1f9c30224301372f2f4509621d` |
 | `01_현행코드/train_fall_safety.py` | `30023bdfbb315d15ba8762026473de236df745b1e9a52a5d34b4d5529409adc5` |
 | `01_현행코드/*.joblib` 모델 3개 | 재학습·교체·경로 변경 금지 |
 
@@ -50,7 +50,7 @@ grep -n "AUTO_TRIP_EVENTS" -A4 01_현행코드/radar_common.py
 python 01_현행코드/verify_jetson_safe.py
 ```
 
-기대값 — 승인된 8/26 shadow 계측 이후 위 SHA-256 **불변** · `classify()` 정본 대조 **9,580건 불일치 0건** ·
+기대값 — 승인된 8/26 R2 시연 기준선에서 위 SHA-256 **불변** · `classify()` 정본 대조 **9,580건 불일치 0건** ·
 `CURR_LIMIT=0.10` `VOLT_MIN=7.50` `POWER_CONFIRM=2` `LEAK_LIMIT=0.008` `LEAK_CONFIRM=2` `VIB_DS_THRESH=0.20` ·
 `AUTO_TRIP_EVENTS` 원소 6개이며 `fall_detected` **없음** · `verify_jetson_safe.py` 종료코드 0.
 
@@ -60,6 +60,34 @@ python 01_현행코드/verify_jetson_safe.py
 > 협착 PINCH 판정도 동결 대상이다 — `PINCH_SHADOW_WIN=20` `PINCH_DS_MEAN_MIN=0.33` `PINCH_DS_MAX_MAX=0.59` `PINCH_HEIGHT_MEAN_MAX=0.83`.
 > **8/24 시연자 A 고정 규칙으로 채택**했다(A PINCH 8/10·A 정상 30건 오탐 0). 일반화 규칙이 아니다(B 4/10 · C 1/10).
 ---
+
+---
+
+# 🟢 8/26 — 협착 R2 실판정과 상황 해소 후 15초 재확인을 분리
+
+> 4명 협착 실측에서 기존 모션 규칙은 2초 표본 10/38, R2는 28/38이었고 네 명 모두 첫 창부터 반응했다. 영상 시연 안정화를 위해 사용자 승인으로 기존 R2를 실판정에 연결했지만, 상황 해소 뒤 남은 PINCH 창이 즉시 critical을 다시 여는 결함이 실장비에서 발견됐다.
+> 구현물: `01_현행코드/jetson_sender.py`(2,868줄) · `01_현행코드/verify_jetson_safe.py`(509줄)
+> 검증: 판정 이식 **9,580건 불일치 0건** · 젯슨 안전성 **102항목 실패 0건** · 실장비 **상황 해소 후 critical 재발화 0건, 15초 warning 전환 확인**
+
+---
+
+## A. 기존 규칙은 사람에 따라 협착 시작을 18~19초 늦게 잡았다
+
+**문제.** 절대 높이와 `ds_max` 상한에 묶인 기존 규칙은 승원·성준·민석·재국의 동일 시연에서 10/38만 통과했다. 민석·재국은 시작 직후가 아니라 약 18~19초 뒤에야 양성이 나와, 5초 무동작 보완 경로보다도 늦을 수 있었다.
+
+**해결.** `ds_mean>0.34`, `ds_max>0.45`, `path_length>2.8`, `height_mean<=1.00`인 기존 R2를 20프레임 창 이후 매 프레임 평가해 실판정 `candidate`로 승격했다. 옛 A 규칙은 `legacy_candidate`로 로그에 남겨 같은 실측에서 계속 비교할 수 있게 했고, 5초 무동작 critical 경로도 안전망으로 유지했다. 더 느슨한 R2-new는 전체 음성 오탐이 51/105로 늘어 채택하지 않았다.
+
+## B. 상황 해소가 무동작 경로만 바꾸고 R2 모션 경로는 열어뒀다
+
+**문제.** `15:53:53` 상황 해소와 같은 시각 기존 20프레임 R2 창이 `candidate=true`였고 `15:53:55`에도 다시 양성이었다. 15초 전환은 `StationaryGate`에만 적용됐으며, R2 버퍼는 초기화되지 않고 `stationary_followup`도 확인하지 않아 pinching critical이 즉시 다시 latch됐다.
+
+**해결.** 해소 시 `pinch_shadow_buf`와 R2 상승 상태를 초기화하고, 차단 유지 후속 상태에서는 R2 shadow 계측만 계속하되 critical latch를 금지했다. 이 구간은 움직임이 없을 때 15초 뒤 `stationary_anomaly` warning만 허용한다. 전력을 복구하고 새로운 과전류 차단이 발생하면 후속 상태가 풀려 R2가 다시 활성화된다.
+
+## C. 양성 상승 로그가 균등 표본과 섞여 성능을 부풀릴 수 있었다
+
+**문제.** R2 양성 상승 순간은 2초 스로틀을 무시해 추가 기록되므로 단순 행 비율은 R2 성능을 과대평가한다.
+
+**해결.** 각 shadow 행에 `throttled`, `r2_rising`, `latch_suppressed_after_resolve`를 기록해 2초 균등 표본과 사건 상승 기록을 분리했다. 보고 수치에는 균등 표본만 사용한다.
 
 ---
 

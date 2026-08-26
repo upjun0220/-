@@ -217,6 +217,11 @@ ck(m.state['ev_evidence'] is None and m.state['ev_gates'] is None,
 ck(not m._resolve_event('00:00:02'), '반복 상황 해소는 새 상태를 만들지 않음')
 ck(not m._fall_rearmed(m.RF30_WINDOW - 1), '새 30프레임 전 낙상 재-latch 차단')
 ck(m._fall_rearmed(m.RF30_WINDOW), '새 30프레임부터 낙상 판정 재개')
+pinch_src = open(SEND, encoding='utf-8').read()
+ck('pinch_shadow_buf.clear()' in pinch_src
+   and "not state['stationary_followup']" in pinch_src
+   and 'latch_suppressed_after_resolve' in pinch_src,
+   '상황 해소 시 PINCH 창 초기화·R2 critical 재-latch 차단')
 
 print('\n[2-C] 차단 직전 개인 기준선 shadow 계측')
 samples = [
@@ -240,13 +245,15 @@ ck(empty['pretrip_valid_frames'] == 0
 shadow = [[0.0, 1.5, 0.0, 0.0, 0.40, 300.0, 16.0, 0.0, 0.0] for _ in range(20)]
 shadow[-1][0] = 0.3
 sm = m._pinch_shadow_metrics(shadow)
-ck(m.PINCH_SHADOW_WIN == 20 and sm['window'] == 20 and sm['candidate']
-   and sm['net_displacement'] == 0.3,
-   'A 협착 모션은 20프레임 실측 문턱으로 판정', str(sm))
-shadow_high = [row[:] for row in shadow]
-shadow_high[0][4] = 1.0
-ck(not m._pinch_shadow_metrics(shadow_high)['candidate'],
-   '협착 모션 ds_max 상한 초과는 critical 후보에서 제외')
+ck(m.PINCH_SHADOW_WIN == 20 and sm['window'] == 20
+   and sm['legacy_candidate'] and not sm['candidate'],
+   '옛 A 규칙 양성·R2 저이동 탈락을 분리', str(sm))
+r2_shadow = [[(-0.2 if i % 2 else 0.2), 1.4, 0.0, 0.0, 0.50,
+              300.0, 16.0, 0.0, 0.0] for i in range(20)]
+r2m = m._pinch_shadow_metrics(r2_shadow)
+ck(r2m['candidate'] and r2m['r2_candidate']
+   and not r2m['legacy_candidate'] and r2m['path_length'] > 2.8,
+   '기존 R2 양성은 실판정 candidate로 승격', str(r2m))
 ck(m._human_event_for_breaker('overcurrent') == 'pinching'
    and m._human_event_for_breaker('leakage_current') ==
    'electric_shock_risk_confirmed', '전기 원인별 협착·감전 승격 분리')

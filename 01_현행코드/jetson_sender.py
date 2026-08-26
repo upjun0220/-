@@ -453,11 +453,10 @@ def _pinch_shadow_metrics(win):
     dop_mean = float(a[:, 4].mean())
     height_mean = float((CEILING_H - y).mean())
     n_mean = float(a[:, 6].mean())
-    # [8/24 실측] A의 PINCH 10건과 동일 A의 STILL/WALK/CROUCH 30건에서 고정했다.
-    # 같은 자료로 선정·평가한 시연 전용 문턱이므로 사람 일반화 근거는 없다.
-    candidate = (dop_mean > PINCH_DS_MEAN_MIN
-                 and float(a[:, 4].max()) <= PINCH_DS_MAX_MAX
-                 and height_mean <= PINCH_HEIGHT_MEAN_MAX)
+    # [8/24 실측] 옛 A 시연 규칙은 비교 로그로만 보존한다.
+    legacy_candidate = (dop_mean > PINCH_DS_MEAN_MIN
+                        and float(a[:, 4].max()) <= PINCH_DS_MAX_MAX
+                        and height_mean <= PINCH_HEIGHT_MEAN_MAX)
     r2_candidate = (dop_mean > PINCH_R2_DS_MEAN_MIN
                     and float(a[:, 4].max()) > PINCH_R2_DS_MAX_MIN
                     and float(step.sum()) > PINCH_R2_PATH_MIN
@@ -472,7 +471,8 @@ def _pinch_shadow_metrics(win):
         'path_length': round(float(step.sum()), 4),
         'height_mean': round(height_mean, 4),
         'point_count_mean': round(n_mean, 2),
-        'candidate': bool(candidate),
+        'legacy_candidate': bool(legacy_candidate),
+        'candidate': bool(r2_candidate),
         'r2_candidate': bool(r2_candidate),
     }
 
@@ -1845,6 +1845,8 @@ def pipeline_loop():
             state['human_reset_requested'] = False
         if occupancy_reset or human_reset:
             stationary_gate.reset()
+            pinch_shadow_buf.clear()
+            pinch_r2_prev = False
             feat_buf.clear(); clf_buf.clear(); rf30_buf.clear(); fnum_buf.clear()
             prev_c = None; prev_zvel = 0.0; ema_zacc = 0.0
             prev_c_full = None; prev_zvel_full = 0.0; ema_zacc_full = 0.0
@@ -2381,6 +2383,12 @@ def pipeline_loop():
                     _throttled = _shadow_now - pinch_shadow_last >= PINCH_SHADOW_SEC
                     _r2_rising = _shadow['r2_candidate'] and not pinch_r2_prev
                     pinch_r2_prev = _shadow['r2_candidate']
+                    with _lock:
+                        _after_resolve = state['stationary_followup']
+                    _shadow.update({'throttled': bool(_throttled),
+                                    'r2_rising': bool(_r2_rising),
+                                    'latch_suppressed_after_resolve':
+                                        bool(_after_resolve)})
                     try:
                         if (_throttled or _r2_rising) and pinch_shadow_path is None:
                             os.makedirs(PINCH_SHADOW_DIR, exist_ok=True)
@@ -2396,10 +2404,11 @@ def pipeline_loop():
                         if not pinch_shadow_error:
                             add_log(f'PINCH-SHADOW 저장 실패: {e}')
                             pinch_shadow_error = True
-                    if _throttled and _shadow['candidate']:
+                    if _shadow['candidate']:
                         with _lock:
                             ts = datetime.now().strftime('%H:%M:%S')
-                            if _can_latch('pinching', 'critical'):
+                            if (not state['stationary_followup']
+                                    and _can_latch('pinching', 'critical')):
                                 clf = {
                                     'severity': 'critical',
                                     'confidence': 0.80,
