@@ -3264,7 +3264,10 @@ class ConsoleV2(QtWidgets.QMainWindow):
             return
         if self.link:
             self.link.send_cmd(CMD_RESOLVE)
-        self.clear_alarm()
+        else:
+            # 실운용은 젯슨의 ev.active=false 응답을 받은 뒤에만 해제한다.
+            # 먼저 지우면 현장 UI는 위험, 관제 UI는 정상으로 갈라진다.
+            self.clear_alarm()
 
     def clear_alarm(self, remote=False):
         if self.alarm == ST_NORMAL:
