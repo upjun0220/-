@@ -95,6 +95,14 @@ PINCH_SHADOW_SEC = 2.0                   # 겹친 창을 매 프레임 중복 �
 PINCH_DS_MEAN_MIN = 0.33                 # A PINCH 8/10, 동일 A 정상 30건 오탐 0건
 PINCH_DS_MAX_MAX = 0.59
 PINCH_HEIGHT_MEAN_MAX = 0.83
+# [8/26 shadow 전용] 승원 R2를 기존 판정과 병렬 계측한다. latch에는 쓰지 않는다.
+PINCH_R2_DS_MEAN_MIN = 0.34
+PINCH_R2_DS_MAX_MIN = 0.45
+PINCH_R2_PATH_MIN = 2.8
+PINCH_R2_HEIGHT_MAX = 1.00
+# [8/26 shadow 전용] 판정에는 쓰지 않고 차단 직전 개인 기준선 가능성만 계측한다.
+PINCH_BASELINE_SEC = 5.0
+PINCH_BASELINE_MAX_FRAMES = 100
 
 DANGER_ZONES = {
     'A': {'x': (-FRAME_INNER_HALF, FRAME_INNER_HALF),
@@ -141,6 +149,7 @@ CLUTTER_REMOVE_POINTS = True
 STAT_PRE_SEC  = 3.0    # [8/21] 과전류 차단 후 3초 무동작부터 협착 확인 단계 표시
                        #   1차: Zone 내 정지 이만큼 지속 -> PRE-ALERT(경고, 비latch)
 STAT_CRIT_SEC = 5.0    # [8/21] 과전류 차단 후 5초 연속 무동작 -> 협착 critical
+STAT_FOLLOWUP_SEC = 15.0  # [8/26] 상황 해소 뒤 차단 유지+재실 무동작 -> 확인 warning
 STAT_RESET_DS = 0.38   # [8/17 시험 후보] 현재 프레임 실측 전까지 확정값 아님
 STAT_RESET_FRAMES = 3  # 순간 케이블·고스트 스파이크 한 번으로 타이머를 지우지 않는다
 # [8/21] 평상시 무동작은 정상 작업과 구분할 수 없다.
@@ -399,7 +408,8 @@ class StationaryGate:
         pos = np.median(np.asarray(self.positions, dtype=float), axis=0)
         return round(float(pos[0]), 3), round(float(pos[1]), 3)
 
-    def update(self, now, active, dop_std=None, pos=None):
+    def update(self, now, active, dop_std=None, pos=None,
+               pre_sec=STAT_PRE_SEC, crit_sec=STAT_CRIT_SEC):
         if not active:
             self.reset()
             return {'dwell': 0.0, 'pre': False, 'critical': False,
@@ -421,16 +431,15 @@ class StationaryGate:
                 self.motion_hits = 0
 
         dwell = max(0.0, now - self.since)
-        critical = dwell >= STAT_CRIT_SEC and not self.alerted
-        return {'dwell': dwell, 'pre': dwell >= STAT_PRE_SEC and not self.alerted,
+        critical = dwell >= crit_sec and not self.alerted
+        return {'dwell': dwell, 'pre': dwell >= pre_sec and not self.alerted,
                 'critical': critical, 'motion_reset': motion_reset,
                 'anchor': self.anchor()}
 
 
-def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason,
-                            suppressed=False):
+def _stationary_gate_active(phase, occupied, breaker_state, breaker_reason):
     """전기 이상 차단 후 재실 상태에서만 인명사고 확인 게이트를 연다."""
-    return bool(STATIONARY_ENABLED and not suppressed
+    return bool(STATIONARY_ENABLED
                 and phase == PH_LIVE and occupied and not MAINT_MODE
                 and breaker_state == 'TRIPPED'
                 and breaker_reason in ('overcurrent', 'leakage_current'))
@@ -449,6 +458,10 @@ def _pinch_shadow_metrics(win):
     candidate = (dop_mean > PINCH_DS_MEAN_MIN
                  and float(a[:, 4].max()) <= PINCH_DS_MAX_MAX
                  and height_mean <= PINCH_HEIGHT_MEAN_MAX)
+    r2_candidate = (dop_mean > PINCH_R2_DS_MEAN_MIN
+                    and float(a[:, 4].max()) > PINCH_R2_DS_MAX_MIN
+                    and float(step.sum()) > PINCH_R2_PATH_MIN
+                    and height_mean <= PINCH_R2_HEIGHT_MAX)
     return {
         'window': len(win),
         'dop_mean': round(dop_mean, 5),
@@ -460,6 +473,44 @@ def _pinch_shadow_metrics(win):
         'height_mean': round(height_mean, 4),
         'point_count_mean': round(n_mean, 2),
         'candidate': bool(candidate),
+        'r2_candidate': bool(r2_candidate),
+    }
+
+
+def _pinch_baseline_snapshot(samples, now):
+    """차단 직전 유효 높이의 분위수를 만든다. 결과는 shadow 로그 전용이다."""
+    valid = [s for s in samples if 0.0 <= now - s['t'] <= PINCH_BASELINE_SEC]
+    out = {
+        'pretrip_window_sec': PINCH_BASELINE_SEC,
+        'pretrip_valid_frames': len(valid),
+        'pretrip_q70': None, 'pretrip_q80': None, 'pretrip_q90': None,
+        'pretrip_x_range': None, 'pretrip_z_range': None,
+        'pretrip_point_count_median': None,
+    }
+    if not valid:
+        return out
+    heights = np.asarray([s['height'] for s in valid], dtype=float)
+    xs = np.asarray([s['cx'] for s in valid], dtype=float)
+    zs = np.asarray([s['cz'] for s in valid], dtype=float)
+    out.update({
+        'pretrip_q70': round(float(np.percentile(heights, 70)), 4),
+        'pretrip_q80': round(float(np.percentile(heights, 80)), 4),
+        'pretrip_q90': round(float(np.percentile(heights, 90)), 4),
+        'pretrip_x_range': round(float(np.ptp(xs)), 4),
+        'pretrip_z_range': round(float(np.ptp(zs)), 4),
+        'pretrip_point_count_median': round(
+            float(np.median([s['n'] for s in valid])), 1),
+    })
+    return out
+
+
+def _pinch_shadow_ratios(height_mean, baseline):
+    """기준선별 높이 비율을 계산한다. candidate에는 절대 사용하지 않는다."""
+    return {
+        f'height_ratio_q{q}': (round(height_mean / base, 4)
+                               if isinstance(base, (int, float)) and base > 0 else None)
+        for q in (70, 80, 90)
+        for base in (baseline.get(f'pretrip_q{q}'),)
     }
 
 
@@ -472,6 +523,11 @@ def _human_event_for_breaker(reason):
     """전기 원인에 따라 5초 무동작의 인명사고 이름을 고른다."""
     return ('electric_shock_risk_confirmed'
             if reason == 'leakage_current' else 'pinching')
+
+
+def _fall_rearmed(frame_count):
+    """상황 해소 뒤 완전히 새로운 RF30 판정창이 쌓였는지 확인한다."""
+    return frame_count >= RF30_WINDOW
 
 
 def _rule_fall_positive(clf):
@@ -611,6 +667,8 @@ def _rf30_fall_score(win):
 # 3. SHARED STATE
 # ═══════════════════════════════════════════════════════════
 _lock = threading.RLock()
+_pinch_pretrip_heights = deque(maxlen=PINCH_BASELINE_MAX_FRAMES)
+_pinch_trip_baseline = {}
 state = {
     'phase':             PH_READY,
     'warmup_count':      0,
@@ -618,8 +676,8 @@ state = {
     'train_requested':   False,
     'reset_requested':   False,
     'arm_reset_requested': False,
-    'resolve_requested': False,
-    'stationary_gate_suppressed': False,  # 상황 해소 후 재투입 전 재경보 금지
+    'human_reset_requested': False,
+    'stationary_followup': False,  # 상황 해소 후 차단 유지 중 15초 무동작 재확인
     'latest_pts':       [],
     'cz_h':   deque([1.7] * HISTORY_LEN, maxlen=HISTORY_LEN),
     'sc_h':   deque([0.0] * HISTORY_LEN, maxlen=HISTORY_LEN),
@@ -984,6 +1042,37 @@ def _remove_event_type(et, ts, reason):
     return True
 
 
+def _resolve_event(ts):
+    """제어 명령 수신 즉시 사건을 해소하고 사람 판정 초기화를 예약한다.
+
+    레이더 처리 루프까지 기다리면 UI는 해소 전 사건을 계속 받고, 남아 있던
+    낙상 창이 곧바로 같은 사건을 다시 latch한다. 차단기와 전기 판정 상태는
+    보존하고 사람 판정 버퍼만 처리 루프 시작점에서 비운다.
+    """
+    if not state['ev_active']:
+        return False
+    et = state['ev_type']; zn = state['ev_zone']
+    lbl = EVENT_LABELS.get(et, et)
+    state.update({
+        'ev_active': False, 'ev_type': None,
+        'ev_types': [], 'ev_items': {}, 'ev_rev': 0,
+        'ev_sev': 'normal', 'ev_conf': 0.0,
+        'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
+        'human_reset_requested': True,
+        'stationary_followup': BREAKER.any_tripped(),
+        'pre_alert': '',
+    })
+    for inc in state['incidents']:
+        if inc['resolved'] is None:
+            inc['resolved'] = ts
+    state['logs'].append(f'[{ts}] RESOLVED Zone {zn}: {lbl} (manual ack)')
+    if BREAKER.any_tripped():
+        state['logs'].append(
+            f'[{ts}] [{BREAKER_SCOPE}] 차단 유지 '
+            f'{BREAKER.tripped_zones()} — 재투입은 수동')
+    return True
+
+
 def _latch_event(et, clf, zn, ts, score_x, control_trip=True):
     """경보 latch. caller가 _lock 보유 가정 (RLock이라 재진입 안전).
 
@@ -1294,32 +1383,37 @@ def control_listener():
                 state['train_requested'] = True
             elif cmd == CMD_RESET:
                 state['reset_requested'] = True
+                _pinch_pretrip_heights.clear()
+                _pinch_trip_baseline.clear()
             elif cmd == CMD_ENTER:
                 state['occupied'] = True
                 state['occupancy_reset_requested'] = True
+                _pinch_pretrip_heights.clear()
+                _pinch_trip_baseline.clear()
                 state['track_state'] = 'tracking'
                 state['track_anchor'] = None
                 state['logs'].append(f'[{ts}] [BTN] 작업자 입실 확인')
             elif cmd == CMD_EXIT:
                 state['occupied'] = False
                 state['occupancy_reset_requested'] = True
+                _pinch_pretrip_heights.clear()
+                _pinch_trip_baseline.clear()
                 state['track_state'] = 'absent'
                 state['track_anchor'] = None
                 state['pre_alert'] = ''
                 state['logs'].append(
                     f'[{ts}] [BTN] 작업자 퇴실 확인 — 신규 사고 판정 중지, 기존 경보·차단 유지')
             elif cmd == CMD_RESOLVE:
-                state['resolve_requested'] = True
-                if BREAKER.any_tripped():
-                    state['stationary_gate_suppressed'] = True
-                    state['pre_alert'] = ''
+                _resolve_event(ts)
             elif cmd == CMD_RESTORE:
                 # [7/31] 전력 재투입. 노트북은 '요청'만 하고 실행은 젯슨이 한다.
                 #   노트북 UI 가 이미 LOTO 체크 3개를 받은 뒤에만 보낸다.
                 zs = msg.get('zones') or None
                 done = BREAKER.restore(zs)
                 if done:
-                    state['stationary_gate_suppressed'] = False
+                    state['stationary_followup'] = False
+                    _pinch_pretrip_heights.clear()
+                    _pinch_trip_baseline.clear()
                 state['logs'].append(
                     f'[{ts}] BREAKER RESTORE {done or "(대상 없음)"} <- 노트북 {addr[0]}')
         print(f'[{ts}] [CMD] {cmd} from {addr[0]}')
@@ -1465,8 +1559,14 @@ def power_monitor_loop():
         _tz = BREAKER.tripped_zones()
         with _lock:
             if _trip:
-                # 수동 해소 뒤에도 새 전기 이상으로 다시 차단되면 새 사고로 감시한다.
-                state['stationary_gate_suppressed'] = False
+                # 새 전기 이상은 최초 3초/5초 협착·감전 확인 단계부터 다시 감시한다.
+                state['stationary_followup'] = False
+            if RADAR_ZONE in _trip:
+                # 판정과 무관한 shadow 기준선. 차단 뒤의 낮아진 자세가 분모에
+                # 섞이지 않도록 Modbus readback 성공 순간 한 번만 고정한다.
+                _pinch_trip_baseline.clear()
+                _pinch_trip_baseline.update(_pinch_baseline_snapshot(
+                    list(_pinch_pretrip_heights), time.monotonic()))
             for _a in _anoms:
                 _et = _a['event_type']; _sev = _a['severity']
                 if _can_latch(_et, _sev):
@@ -1571,6 +1671,7 @@ def pipeline_loop():
     fall_hits   = []
     fall_pending   = None
     recover_streak = 0
+    fall_rearm_frames = RF30_WINDOW
     stat_since  = None
     stat_miss   = 0
     stat_zone   = None
@@ -1586,6 +1687,7 @@ def pipeline_loop():
     stationary_gate = StationaryGate()
     pinch_shadow_buf = deque(maxlen=PINCH_SHADOW_WIN)
     pinch_shadow_last = 0.0
+    pinch_r2_prev = False
     pinch_shadow_path = None
     pinch_shadow_error = False
     def _track_log(points_n, centroid, now):
@@ -1641,16 +1743,21 @@ def pipeline_loop():
         with _lock:
             active = _stationary_gate_active(
                 state['phase'], state['occupied'],
-                _br['state'].get(RADAR_ZONE), _br['reason'].get(RADAR_ZONE),
-                state['stationary_gate_suppressed'])
-        result = stationary_gate.update(now, active, dop_std, pos)
+                _br['state'].get(RADAR_ZONE), _br['reason'].get(RADAR_ZONE))
+            followup = state['stationary_followup']
+        # 상황 해소 뒤에는 기존 협착/감전 critical을 반복하지 않는다. 차단이
+        # 유지되고 작업자가 15초간 움직이지 않을 때 확인 필요 warning만 낸다.
+        crit_sec = STAT_FOLLOWUP_SEC if followup else STAT_CRIT_SEC
+        pre_sec = crit_sec if followup else STAT_PRE_SEC
+        result = stationary_gate.update(now, active, dop_std, pos,
+                                        pre_sec=pre_sec, crit_sec=crit_sec)
         dwell = result['dwell']
         anchor = result['anchor']
         with _lock:
             state['track_anchor'] = ({'cx': anchor[0], 'cz': anchor[1]}
                                      if anchor is not None else None)
-            if result['pre']:
-                remain = max(0, int(STAT_CRIT_SEC - dwell))
+            if result['pre'] and not followup:
+                remain = max(0, int(crit_sec - dwell))
                 state['pre_alert'] = (f'PRE-ALERT  Zone {RADAR_ZONE}: no-motion {int(dwell)}s'
                                       f'  --  MOVE to cancel  ({remain}s to CRITICAL)')
             else:
@@ -1659,7 +1766,8 @@ def pipeline_loop():
             if result['critical']:
                 ts = datetime.now().strftime('%H:%M:%S')
                 _reason = _br['reason'].get(RADAR_ZONE)
-                _human_et = _human_event_for_breaker(_reason)
+                _human_et = ('stationary_anomaly' if followup
+                             else _human_event_for_breaker(_reason))
                 if _human_et == 'pinching':
                     _remove_event_type('pinching_suspected', ts, 'PINCHING CONFIRMED')
                 _sev = EVENT_SEV.get(_human_et, 'critical')
@@ -1668,6 +1776,7 @@ def pipeline_loop():
                         'severity': _sev,
                         'confidence': 0.95,
                         'evidence': {'dwell': round(dwell, 1),
+                                     'after_resolve': followup,
                                      'reset_ds': STAT_RESET_DS,
                                      'reset_frames': STAT_RESET_FRAMES,
                                      'anchor_cx': anchor[0] if anchor else None,
@@ -1732,7 +1841,9 @@ def pipeline_loop():
         with _lock:
             occupancy_reset = state['occupancy_reset_requested']
             state['occupancy_reset_requested'] = False
-        if occupancy_reset:
+            human_reset = state['human_reset_requested']
+            state['human_reset_requested'] = False
+        if occupancy_reset or human_reset:
             stationary_gate.reset()
             feat_buf.clear(); clf_buf.clear(); rf30_buf.clear(); fnum_buf.clear()
             prev_c = None; prev_zvel = 0.0; ema_zacc = 0.0
@@ -1740,6 +1851,7 @@ def pipeline_loop():
             prev_c_rf30 = None; prev_zvel_rf30 = 0.0; ema_zacc_rf30 = 0.0
             anom_streak = 0; pend_et = None; pend_cnt = 0
             fall_hits.clear(); fall_pending = None; recover_streak = 0
+            fall_rearm_frames = 0 if human_reset else RF30_WINDOW
             stat_since = None; stat_zone = None; stat_miss = 0; stat_pre = False
             stat_hits = stat_tot = 0; motion_run = 0; last_motion_t = -1e9
             with _lock:
@@ -2232,19 +2344,28 @@ def pipeline_loop():
                 _occupied = state['occupied']
             if not _is_live or not _occupied:
                 pinch_shadow_buf.clear()
+                pinch_r2_prev = False
                 continue
 
             # [8/24 A 시연] 과전류 차단 후 2초 협착 모션이 실측 문턱을 통과하면
             # 기존 설비 이상 사건에 협착 critical을 병렬 추가한다.
             _shadow_br = BREAKER.snapshot()
+            if (_shadow_br['state'].get(RADAR_ZONE) == 'ON'
+                    and float(feat[6]) >= TRACK_N_MIN):
+                with _lock:
+                    _pinch_pretrip_heights.append({
+                        't': time.monotonic(),
+                        'height': CEILING_H - float(feat[1]),
+                        'cx': float(feat[0]), 'cz': float(feat[2]),
+                        'n': float(feat[6]),
+                    })
             _shadow_active = (
                 _shadow_br['state'].get(RADAR_ZONE) == 'TRIPPED'
                 and _shadow_br['reason'].get(RADAR_ZONE) == 'overcurrent')
             if _shadow_active:
                 pinch_shadow_buf.append(feat.tolist())
                 _shadow_now = time.monotonic()
-                if (len(pinch_shadow_buf) == PINCH_SHADOW_WIN
-                        and _shadow_now - pinch_shadow_last >= PINCH_SHADOW_SEC):
+                if len(pinch_shadow_buf) == PINCH_SHADOW_WIN:
                     _shadow = {
                         'ts': datetime.now().isoformat(timespec='seconds'),
                         'frame': _fnum,
@@ -2252,20 +2373,30 @@ def pipeline_loop():
                         'occupied': True,
                         **_pinch_shadow_metrics(pinch_shadow_buf),
                     }
+                    with _lock:
+                        _baseline = dict(_pinch_trip_baseline)
+                    _shadow.update(_baseline)
+                    _shadow.update(_pinch_shadow_ratios(
+                        _shadow['height_mean'], _baseline))
+                    _throttled = _shadow_now - pinch_shadow_last >= PINCH_SHADOW_SEC
+                    _r2_rising = _shadow['r2_candidate'] and not pinch_r2_prev
+                    pinch_r2_prev = _shadow['r2_candidate']
                     try:
-                        if pinch_shadow_path is None:
+                        if (_throttled or _r2_rising) and pinch_shadow_path is None:
                             os.makedirs(PINCH_SHADOW_DIR, exist_ok=True)
                             pinch_shadow_path = os.path.join(
                                 PINCH_SHADOW_DIR,
                                 f'pinch_shadow_{datetime.now().strftime("%Y%m%d_%H%M%S")}.jsonl')
-                        with open(pinch_shadow_path, 'a', encoding='utf-8') as _sf:
-                            _sf.write(json.dumps(_shadow, separators=(',', ':')) + '\n')
-                        pinch_shadow_last = _shadow_now
+                        if _throttled or _r2_rising:
+                            with open(pinch_shadow_path, 'a', encoding='utf-8') as _sf:
+                                _sf.write(json.dumps(_shadow, separators=(',', ':')) + '\n')
+                        if _throttled:
+                            pinch_shadow_last = _shadow_now
                     except OSError as e:
                         if not pinch_shadow_error:
                             add_log(f'PINCH-SHADOW 저장 실패: {e}')
                             pinch_shadow_error = True
-                    if _shadow['candidate']:
+                    if _throttled and _shadow['candidate']:
                         with _lock:
                             ts = datetime.now().strftime('%H:%M:%S')
                             if _can_latch('pinching', 'critical'):
@@ -2284,6 +2415,7 @@ def pipeline_loop():
                                              control_trip=False)
             else:
                 pinch_shadow_buf.clear()
+                pinch_r2_prev = False
             feat_buf.append(feat.tolist())
             if len(feat_buf) > SEQ_LEN:
                 feat_buf.pop(0)
@@ -2294,6 +2426,7 @@ def pipeline_loop():
             rf30_buf.append(feat_rf30.tolist())
             if len(rf30_buf) > RF30_WINDOW:
                 rf30_buf.pop(0)
+            fall_rearm_frames = min(RF30_WINDOW, fall_rearm_frames + 1)
             # [8/19 계측] clf_buf 와 나란히 유지 — 판정 로그에 frame_num 범위를
             #   남겨 처리율(fnum 간격 vs 실제 경과시간)을 사후 확인할 수 있게 한다.
             fnum_buf.append(_fnum)
@@ -2472,32 +2605,6 @@ def pipeline_loop():
                 state['sc_h'].append(score)
                 ts = datetime.now().strftime('%H:%M:%S')
 
-                # ── 수동 해제 (노트북 Event Resolved 버튼) ──
-                if state['resolve_requested']:
-                    state['resolve_requested'] = False
-                    if state['ev_active']:
-                        et = state['ev_type']; zn = state['ev_zone']
-                        lbl = EVENT_LABELS.get(et, et)
-                        state.update({
-                            'ev_active': False, 'ev_type': None,
-                            'ev_types': [], 'ev_items': {}, 'ev_rev': 0,
-                            'ev_sev': 'normal', 'ev_conf': 0.0,
-                            # [7/31] 근거도 같이 비운다. 안 비우면 노트북 '판단 근거'
-                            #   팝업이 해소된 옛 경보의 수치를 계속 보여준다.
-                            'ev_evidence': None, 'ev_gates': None, 'ev_rejected': [],
-                        })
-                        stationary_gate.reset()
-                        for inc in state['incidents']:
-                            if inc['resolved'] is None:
-                                inc['resolved'] = ts
-                        state['logs'].append(f'[{ts}] RESOLVED Zone {zn}: {lbl} (manual ack)')
-                        # ⚠ 차단기는 복구하지 않는다 (LOTO / restart prevention).
-                        #   재투입은 노트북에서 확인 3개를 받은 뒤 CMD_RESTORE 로만.
-                        if BREAKER.any_tripped():
-                            state['logs'].append(
-                                f'[{ts}] [{BREAKER_SCOPE}] 차단 유지 '
-                                f'{BREAKER.tripped_zones()} — 재투입은 수동')
-
                 rf_candidate = rf_score is not None and rf_score >= rf_threshold
                 # [8/14 실측] RF는 AE와 기존 규칙이 놓친 약한 낙상을 직접 후보로 올린다.
                 is_anomaly = score > thr or rf_candidate
@@ -2569,17 +2676,23 @@ def pipeline_loop():
                     if et == 'normal':
                         pend_et, pend_cnt = None, 0
                     elif et in ('fall_detected', 'fall_suspected'):
-                        # 규칙의 2초 창을 통과한 낙상 후보는 RF 동의 여부와 무관하게
-                        # FALL_CONFIRM 경로를 쓴다. 의심 경보를 일반 이상 3회 게이트로
-                        # 보내면 짧은 실제 낙상이 사라진다(8/06 실측: 2회 뒤 normal).
-                        _now = time.time()
-                        fall_hits = [t for t in fall_hits if _now - t <= FALL_WIN_SEC]
-                        fall_hits.append(_now)
-                        if len(fall_hits) < FALL_CONFIRM:
+                        if not _fall_rearmed(fall_rearm_frames):
                             et = 'normal'
+                            fall_hits.clear()
+                            fall_pending = None
+                            recover_streak = 0
                         else:
-                            fall_hits = []
-                            pend_et, pend_cnt = None, 0
+                            # 규칙의 2초 창을 통과한 낙상 후보는 RF 동의 여부와 무관하게
+                            # FALL_CONFIRM 경로를 쓴다. 의심 경보를 일반 이상 3회 게이트로
+                            # 보내면 짧은 실제 낙상이 사라진다(8/06 실측: 2회 뒤 normal).
+                            _now = time.time()
+                            fall_hits = [t for t in fall_hits if _now - t <= FALL_WIN_SEC]
+                            fall_hits.append(_now)
+                            if len(fall_hits) < FALL_CONFIRM:
+                                et = 'normal'
+                            else:
+                                fall_hits = []
+                                pend_et, pend_cnt = None, 0
                     else:
                         _need = CONFIRM_EVENTS
                         if et == pend_et:

@@ -151,6 +151,7 @@ ck(m.SCAN_SEC == 12.0 and m.N_WARMUP == 150 and m.STEP_IN_SEC == 5.0,
 
 print('\n[2] 7/12 실측 튜닝 상수 (회귀 없어야 함)')
 for k, want in (('STAT_MISS_TOL', 3), ('STAT_PRE_SEC', 3.0), ('STAT_CRIT_SEC', 5.0),
+                ('STAT_FOLLOWUP_SEC', 15.0),
                 ('FALL_CONFIRM', 1), ('CLF_WIN', 20), ('FEATURE_DIM', 9),
                 ('CEILING_H', 2.30), ('POSTFALL_HOLD', 1.2)):
     got = getattr(m, k, None)
@@ -168,6 +169,12 @@ ck(held == (0.42, 0.32), '점군 소실 뒤 마지막 신뢰 cx/cz 중앙값 유
 ck(gate.update(3.0, True, None)['pre'], '점군 소실 중에도 3초 확인 단계 유지')
 ck(not gate.update(4.9, True, None)['critical'], '5초 전에는 협착 critical 없음')
 ck(gate.update(5.0, True, None)['critical'], '5초에 협착 승격 트리거 1회 발생')
+followup = m.StationaryGate(reset_ds=0.38, reset_frames=3)
+followup.update(0.0, True, None)
+ck(not followup.update(14.9, True, None, pre_sec=15.0, crit_sec=15.0)['critical'],
+   '상황 해소 후 15초 전에는 무동작 warning 없음')
+ck(followup.update(15.0, True, None, pre_sec=15.0, crit_sec=15.0)['critical'],
+   '상황 해소 후 15초에 무동작 warning 트리거 1회 발생')
 gate.reset(); gate.update(0.0, True, 0.05)
 gate.update(5.0, True, 0.50); gate.update(5.1, True, 0.05)
 ck(gate.update(10.0, True, None)['pre'], '순간 도플러 스파이크 1회는 타이머 유지')
@@ -187,9 +194,48 @@ ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'overcurrent'),
    '과전류 차단+입실 상태에서만 무동작 게이트 ON')
 ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'leakage_current'),
    '누설전류 차단+입실이면 감전 확인 게이트 ON')
-ck(not m._stationary_gate_active(
-       m.PH_LIVE, True, 'TRIPPED', 'overcurrent', suppressed=True),
-   '상황 해소 후 차단 유지 중에는 무동작 게이트 재무장 금지')
+ck(m._stationary_gate_active(m.PH_LIVE, True, 'TRIPPED', 'overcurrent'),
+   '상황 해소 후에도 차단 유지+입실이면 15초 재확인 게이트 ON')
+
+print('\n[2-B] 상황 해소 즉시 반영·낙상 재무장')
+m.state.update({
+    'ev_active': True, 'ev_type': 'fall_detected',
+    'ev_types': ['fall_detected'],
+    'ev_items': {'fall_detected': {'sev': 'critical', 'conf': 0.9}},
+    'ev_sev': 'critical', 'ev_conf': 0.9, 'ev_zone': 'A',
+    'ev_evidence': {'old': True}, 'ev_gates': {'old': True},
+    'ev_rejected': ['old'], 'human_reset_requested': False,
+})
+m.state['incidents'].append(
+    {'type': 'fall_detected', 'zone': 'A', 'detected': '00:00:00', 'resolved': None})
+ck(m._resolve_event('00:00:01'), '활성 사건 상황 해소 처리 성공')
+ck(not m.state['ev_active'] and m.state['ev_type'] is None,
+   '상황 해소 명령에서 사건 상태 즉시 NORMAL')
+ck(m.state['human_reset_requested'], '사람 판정 버퍼 초기화 예약')
+ck(m.state['ev_evidence'] is None and m.state['ev_gates'] is None,
+   '해소한 사건의 근거·게이트 제거')
+ck(not m._resolve_event('00:00:02'), '반복 상황 해소는 새 상태를 만들지 않음')
+ck(not m._fall_rearmed(m.RF30_WINDOW - 1), '새 30프레임 전 낙상 재-latch 차단')
+ck(m._fall_rearmed(m.RF30_WINDOW), '새 30프레임부터 낙상 판정 재개')
+
+print('\n[2-C] 차단 직전 개인 기준선 shadow 계측')
+samples = [
+    {'t': float(t), 'height': float(t), 'cx': t * 0.1, 'cz': t * 0.2, 'n': 20.0}
+    for t in range(4, 11)
+]
+base = m._pinch_baseline_snapshot(samples, 10.0)
+ck(base['pretrip_valid_frames'] == 6, '최근 5초 표본만 기준선에 포함', str(base))
+ck(base['pretrip_q70'] == 8.5 and base['pretrip_q80'] == 9.0
+   and base['pretrip_q90'] == 9.5,
+   'q70/q80/q90 계산', str(base))
+ratios = m._pinch_shadow_ratios(4.5, base)
+ck(ratios == {'height_ratio_q70': 0.5294, 'height_ratio_q80': 0.5,
+              'height_ratio_q90': 0.4737},
+   '높이 비율은 로그용으로만 계산', str(ratios))
+empty = m._pinch_baseline_snapshot([], 10.0)
+ck(empty['pretrip_valid_frames'] == 0
+   and m._pinch_shadow_ratios(0.8, empty)['height_ratio_q80'] is None,
+   '기준선 부족 시 비율 None — 판정값 대체 없음')
 
 shadow = [[0.0, 1.5, 0.0, 0.0, 0.40, 300.0, 16.0, 0.0, 0.0] for _ in range(20)]
 shadow[-1][0] = 0.3

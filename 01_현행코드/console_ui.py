@@ -81,7 +81,7 @@ import pyqtgraph as pg
 import facility as fac
 import radar_core as core
 from radar_core import (
-    RadarLink, INSTANT_ACTION,
+    RadarLink, INSTANT_ACTION, INSTANT_ACTION_UNKNOWN,
     PowerPopup, RestorePopup, GraphPopup, SettingsPopup,
     RAG_OK, EMBED_MODEL, HAS_GL,
     ST_NORMAL, ST_UNACK, ST_ACK,
@@ -629,15 +629,22 @@ class ZoneStrip(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setFixedHeight(86)
-        self.state = {z: {'bad': False, 'off': False} for z in ZONE_IDS}
+        self.state = {z: {'bad': False, 'off': False, 'power': 'unknown'}
+                      for z in ZONE_IDS}
         self.sev = 'normal'
 
     def update_state(self, st, sev='normal'):
         zs = st.get('zone_state') or {}
         bs = ((st.get('breaker') or {}).get('state')) or {}
+        power = st.get('power') or {}
+        volt = power.get('volt')
+        measured = power.get('connected') is True and volt is not None
+        power_state = ('ok' if measured and volt > 0
+                       else 'missing' if measured else 'unknown')
         for z in ZONE_IDS:
             self.state[z] = {'bad': zs.get(z, 'NORMAL') == 'ALERT',
-                             'off': bs.get(z, 'ON') != 'ON'}
+                             'off': bs.get(z, 'ON') != 'ON',
+                             'power': power_state if z == RADAR_ZONE else 'unknown'}
         self.sev = sev
         self.update()
 
@@ -651,9 +658,10 @@ class ZoneStrip(QtWidgets.QWidget):
         for i, z in enumerate(ZONE_IDS):
             s, eq = self.state[z], zone_equipped(z)
             x = i * (zw + gap)
-            hot = eq and (s['bad'] or s['off'])
+            hot = eq and (s['bad'] or s['off'] or s['power'] != 'ok')
             # 경보 중이면 그 등급 색, 차단만 남은 상태면 빨강(전원이 끊긴 사실)
-            hot_c = sev_color(self.sev) if (s['bad'] and self.sev != 'normal') else RED
+            hot_c = (sev_color(self.sev) if (s['bad'] and self.sev != 'normal')
+                     else RED if s['off'] else AMBER)
             if hot:
                 bd, fill = hot_c, SEV_BG.get(self.sev, BG_ALERT)
             elif eq:
@@ -692,9 +700,14 @@ class ZoneStrip(QtWidgets.QWidget):
                 p.drawText(base, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
                            '장비 미설치')
                 continue
-            p.setPen(QtGui.QColor(RED if s['off'] else GREEN))
+            status = ('설비 회로 차단됨' if s['off'] else
+                      '전원 미검출 (0 V)' if s['power'] == 'missing' else
+                      '전원 계측 미확인' if s['power'] == 'unknown' else
+                      '설비 회로 정상')
+            p.setPen(QtGui.QColor(RED if s['off'] else
+                                  GREEN if s['power'] == 'ok' else AMBER))
             p.drawText(base, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft,
-                       '설비 회로 차단됨' if s['off'] else '설비 회로 정상')
+                       status)
         p.end()
 
 
@@ -1071,7 +1084,7 @@ class SopView(QtWidgets.QWidget):
         self.body.setReadOnly(True)
         self.body.setFont(f(F_BODY))
         self.body.setStyleSheet(TEXT_QSS)
-        v.addWidget(self.body, 3)
+        v.addWidget(self.body, 2)
         self.stat = lb('', F_CAP, DIM, wrap=True)
         v.addWidget(self.stat)
         v.addWidget(lb('검색된 안전 매뉴얼 · 실측 브리핑 · AI 생성', F_LABEL, DIM))
@@ -1079,7 +1092,7 @@ class SopView(QtWidgets.QWidget):
         self.src.setReadOnly(True)
         self.src.setFont(f(F_LABEL))
         self.src.setStyleSheet(TEXT_QSS)
-        v.addWidget(self.src, 2)
+        v.addWidget(self.src, 3)
         self._et = 'fall_detected'
 
     def show_for(self, et='fall_detected', done=None, title=None, sev=None):
@@ -1092,7 +1105,10 @@ class SopView(QtWidgets.QWidget):
                         '작업 대상 설비 회로 차단 완료 · 젯슨 자동 실행')
         self.done.setText(done or default_done)
         html = []
-        for cat, lines in INSTANT_ACTION.get(et, INSTANT_ACTION['fall_detected']):
+        # ⚠ [8/25] 폴백이 INSTANT_ACTION['fall_detected'] 였다. 등록되지 않은
+        #   이벤트에 낙상 응급처치가 떴다 — 과전류 경보에 "환자를 움직이지
+        #   마십시오" 가 나오던 원인이다. 중립 문구로 떨어뜨린다.
+        for cat, lines in INSTANT_ACTION.get(et, INSTANT_ACTION_UNKNOWN):
             html.append(f'<p style="color:{CYAN};margin:2px 0 4px">'
                         f'<b>[{cat}]</b></p>'
                         f'<ul style="margin:0 0 10px 14px;color:{TXT}">')
@@ -1109,8 +1125,17 @@ class SopView(QtWidgets.QWidget):
             return
         h = []
         for n, t in srcs:
-            h.append(f'<p style="color:{CYAN};margin:0 0 3px"><b>{n}</b></p>'
-                     f'<p style="color:{DIM};margin:0 0 12px">{t}</p>')
+            # [8/25] 파일명을 그대로 찍지 않는다. 공식 지침과 프로젝트 자체 SOP 가
+            #   나란히 뜨면 둘 다 같은 "매뉴얼" 로 보인다 → 등급을 먼저 밝힌다.
+            #   자체 작성은 근거 조항을 함께 적어 근거 없는 문서가 아님을 보인다.
+            kind, title, basis = core.source_label(n)
+            col = CYAN if kind == core.SRC_OFFICIAL else AMBER
+            h.append(f'<p style="color:{col};margin:0 0 2px">'
+                     f'<b>[{core.SRC_BADGE[kind]}]</b> {title}</p>')
+            if basis:
+                h.append(f'<p style="color:{FAINT};margin:0 0 3px">'
+                         f'근거: {basis}</p>')
+            h.append(f'<p style="color:{DIM};margin:0 0 12px">{t}</p>')
         brief, sep, generated = ai.partition('\n---AI_SOP---\n')
         if brief:
             h.append(f'<p style="color:{AMBER};margin:8px 0 3px">'
@@ -1851,12 +1876,27 @@ class MonitorPage(QtWidgets.QWidget):
         self.drawer.ack.clicked.connect(self._drawer_ack)
         self._sync_seg()
 
+    def fit_pose_text(self):
+        """현재 폭에 맞춰 캡션을 다시 말줄임한다.
+
+        ⚠ fit_legend 와 같은 함정에 빠져 있었다 — 드로어가 열리면 형제 위젯의
+          maximumWidth 만 바뀌어 이 페이지의 resizeEvent 가 안 뜨는데 장면 폭은
+          420px 줄어든다. 그래서 경보로 드로어가 열리면 캡션이 드로어 열리기 전
+          폭 기준으로 잘린 채 남아 실제로는 삐져나갔다.
+          (8/25 레이아웃 검증 실측: 1366×900 '감시-경보' 에서 422 > 408px)
+          → resizeEvent 뿐 아니라 주기 갱신(tick_ui)에서도 부른다.
+        """
+        text = getattr(self, '_pose_text', None)
+        if not text:
+            return
+        fm = QtGui.QFontMetrics(self.pose_lb.font())
+        self.pose_lb.setText(fm.elidedText(
+            text, QtCore.Qt.ElideRight, max(self.pose_lb.width() - 4, 40)))
+
     def set_pose_text(self, text, color):
         """폭에 맞춰 말줄임. 줄바꿈으로 높이가 늘어나면 장면과 겹친다."""
         self._pose_text = text
-        fm = QtGui.QFontMetrics(self.pose_lb.font())
-        self.pose_lb.setText(fm.elidedText(text, QtCore.Qt.ElideRight,
-                                           max(self.pose_lb.width() - 4, 40)))
+        self.fit_pose_text()
         self.pose_lb.setStyleSheet(
             f'color:{color};border:none;background:transparent;')
         self.pose_lb.setToolTip(text)
@@ -1876,11 +1916,7 @@ class MonitorPage(QtWidgets.QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self.fit_legend()
-        if getattr(self, '_pose_text', None):
-            fm = QtGui.QFontMetrics(self.pose_lb.font())
-            self.pose_lb.setText(fm.elidedText(
-                self._pose_text, QtCore.Qt.ElideRight,
-                max(self.pose_lb.width() - 4, 40)))
+        self.fit_pose_text()
 
     def _drawer_ack(self):
         self.drawer.close_drawer()
@@ -2303,7 +2339,12 @@ class AssistantDrawer(QtWidgets.QDialog):
             with urllib.request.urlopen(req, timeout=120) as response:
                 answer = json.loads(response.read().decode('utf-8')).get(
                     'response', '').strip()
-            source_text = ' · '.join(sources) if sources else 'Radar-Guard 내장 시스템 명세'
+            # 질의 답변의 출처도 같은 규칙으로 표기한다(파일명 노출 금지).
+            labels = []
+            for s_file in sources:
+                kind, title, _ = core.source_label(s_file)
+                labels.append(f'[{core.SRC_BADGE[kind]}] {title}')
+            source_text = ' · '.join(labels) if labels else 'Radar-Guard 내장 시스템 명세'
             self.answer_ready.emit(answer, source_text,
                                    time.perf_counter() - started)
         except Exception as e:
@@ -2458,6 +2499,25 @@ class SopEngineV2(core.SopEngine):
       · 생성 지연·환각·문장 잘림 없이 매 사건의 현재 값이 즉시 반영된다.
     """
 
+    # ⚠ [8/25] 데몬 스레드가 살아 있는 채로 앱이 닫히면 Qt 객체가 먼저 지워져
+    #   signal.emit 자체가 RuntimeError 를 낸다. 그러면 except 절 안의 emit 도
+    #   같이 터져 traceback 이 콘솔로 새어 나간다(레이아웃 검증 2회차 실측).
+    #   _work_v2 주석이 "무슨 일이 있어도 조용히 끝난다" 라고 적어 둔 불변식이
+    #   실제로는 지켜지지 않고 있었다 → emit 을 감싸서 불변식을 코드로 만든다.
+    #   삼키는 것은 '이미 창이 닫힌 뒤의 표시 실패' 뿐이고, 검색·생성 실패는
+    #   그대로 화면에 뜬다(README §9).
+    def _emit_status(self, msg):
+        try:
+            self.status.emit(msg)
+        except RuntimeError:
+            pass
+
+    def _emit_ready(self, *args):
+        try:
+            self.ready.emit(*args)
+        except RuntimeError:
+            pass
+
     def request(self, ev_type, facts=None):
         threading.Thread(target=self._work_v2, args=(ev_type, facts or {}),
                          daemon=True).start()
@@ -2465,10 +2525,10 @@ class SopEngineV2(core.SopEngine):
     # ── 검색 (v1 _work 의 앞부분과 동일한 절차) ──
     def _search(self, ev_type):
         if not RAG_OK:
-            self.status.emit('매뉴얼 검색 불가 — langchain 미설치 (즉시 조치만 표시)')
+            self._emit_status('매뉴얼 검색 불가 — langchain 미설치 (즉시 조치만 표시)')
             return [], ''
         try:
-            self.status.emit('안전 매뉴얼 검색 중…')
+            self._emit_status('안전 매뉴얼 검색 중…')
             situation = (core.SOP_QUERY.get(ev_type)
                          or f'{EVENT_KO.get(ev_type, ev_type)} 조치')
             cat = core.EVENT_CATEGORY.get(ev_type)
@@ -2479,10 +2539,10 @@ class SopEngineV2(core.SopEngine):
             docs = core.search_sop_documents(vs, ev_type, situation, cat)
             srcs = [(d.metadata.get('source_file', '?'),
                      ' '.join(d.page_content.split())[:360]) for d in docs]
-            self.status.emit(f'매뉴얼 {len(docs)}건 검색됨')
+            self._emit_status(f'매뉴얼 {len(docs)}건 검색됨')
             return srcs, ' '.join(d.page_content for d in docs)[:1500]
         except Exception as e:
-            self.status.emit(f'매뉴얼 검색 실패: {e}  (docker start radar-guard-db)')
+            self._emit_status(f'매뉴얼 검색 실패: {e}  (docker start radar-guard-db)')
             return [], ''
 
     def _work_v2(self, ev_type, facts):
@@ -2493,25 +2553,25 @@ class SopEngineV2(core.SopEngine):
         try:
             self._work_body(ev_type, facts)
         except Exception as e:
-            self.status.emit(f'SOP 처리 실패: {e}  (즉시조치는 계속 표시)')
+            self._emit_status(f'SOP 처리 실패: {e}  (즉시조치는 계속 표시)')
 
     def _work_body(self, ev_type, facts):
         srcs, ctx = self._search(ev_type)
         brief = self._fact_block(facts).replace('\n- ', ' · ').removeprefix('- ')
-        self.status.emit('공식 매뉴얼 표시 · AI 생성 중…')
-        self.ready.emit(ev_type, srcs, brief)
+        self._emit_status('공식 매뉴얼 표시 · AI 생성 중…')
+        self._emit_ready(ev_type, srcs, brief)
         if not core.USE_LLM_SUMMARY:
             return
         try:
             started = time.perf_counter()
             generated = self._gen_facts(ev_type, ctx, facts)
             elapsed = time.perf_counter() - started
-            self.status.emit(f'AI 생성 SOP 표시 · {elapsed:.1f}초 · 공식 매뉴얼 기반')
-            self.ready.emit(
+            self._emit_status(f'AI 생성 SOP 표시 · {elapsed:.1f}초 · 공식 매뉴얼 기반')
+            self._emit_ready(
                 ev_type, srcs,
                 f'{brief}\n---AI_SOP---\n{generated}\n\n생성 {elapsed:.1f}초')
         except Exception as e:
-            self.status.emit(f'AI SOP 생성 실패: {e}  (공식 원문은 계속 표시)')
+            self._emit_status(f'AI SOP 생성 실패: {e}  (공식 원문은 계속 표시)')
 
     # ── 사실 블록 ──
     @staticmethod
@@ -2608,7 +2668,7 @@ class SopEngineV2(core.SopEngine):
                     headers={'Content-Type': 'application/json'})
                 urllib.request.urlopen(req, timeout=120).read()
             except Exception as e:
-                self.status.emit(f'AI 모델 준비 실패: {e}  (경보 시 다시 시도)')
+                self._emit_status(f'AI 모델 준비 실패: {e}  (경보 시 다시 시도)')
         threading.Thread(target=worker, daemon=True).start()
 
 
@@ -3402,6 +3462,7 @@ class ConsoleV2(QtWidgets.QMainWindow):
         self.dash.set_blink(self.blink)      # 평면도 경보 점멸
         self.monitor.clock.setText(time.strftime('%H:%M:%S'))
         self.monitor.fit_legend()
+        self.monitor.fit_pose_text()     # 드로어 개폐는 resizeEvent 를 안 일으킨다
         if self.stack.currentIndex() != PG_MON:
             return
         self._tick_summary()

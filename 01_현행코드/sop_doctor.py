@@ -56,6 +56,11 @@ TEST_QUERIES = [
     ('fall_detected', '추락 넘어짐 재해 발생 시 응급처치와 재해자 이송 방법'),
     ('electric_shock_risk', '감전 사고 발생 시 응급조치 및 전원 차단 잠금 표지'),
     ('pinching', '회전기계 끼임 협착 재해 발생 시 구조 및 정지 절차'),
+    ('stationary_anomaly', '작업자 무응답 감전 협착 사고 발견 시 초동 대응'),
+    # [8/25] 코덱스가 프로젝트 자체 SOP(설비 전기이상 대응)를 01_감전_예방 에 색인했다.
+    #   이 두 이벤트가 실제로 그 문서를 뽑는지 확인해야 한다.
+    ('overcurrent', '과전류 전기 설비 이상 시 차단 및 점검 절차'),
+    ('leakage_current', '누설전류 전기 설비 이상 시 차단 및 절연 점검 절차'),
 ]
 
 
@@ -238,7 +243,7 @@ try:
     embed('연결 확인')
     search_ok = True
 except Exception as e:
-    warn(f'ollama 임베딩 호출 실패 — 실검색 테스트 생략', f'{type(e).__name__}')
+    warn('ollama 임베딩 호출 실패 — 실검색 테스트 생략', f'{type(e).__name__}')
     print(f'    → ollama serve 확인 후 다시 실행. (모델: ollama pull {EXPECTED_EMBED})')
 
 if search_ok:
@@ -246,20 +251,30 @@ if search_ok:
         cat = EVENT_CATEGORY.get(et)
         vec = embed(q)
         vlit = '[' + ','.join(f'{x:.6f}' for x in vec) + ']'
-        if cat:
-            cur.execute("""SELECT cmetadata->>'source_file', embedding <=> %s::vector AS d,
-                                  left(document, 62)
-                           FROM langchain_pg_embedding
-                           WHERE collection_id=%s AND cmetadata->>'category'=%s
-                           ORDER BY d LIMIT 2""", (vlit, cid, cat))
-        else:
-            cur.execute("""SELECT cmetadata->>'source_file', embedding <=> %s::vector AS d,
-                                  left(document, 62)
-                           FROM langchain_pg_embedding
-                           WHERE collection_id=%s
-                           ORDER BY d LIMIT 2""", (vlit, cid))
-        hits = cur.fetchall()
-        head = f'{et}  (필터 {cat or "없음 — 전체"})'
+        # [8/25] EVENT_CATEGORY 값이 튜플일 수 있다(감전·협착·정지형).
+        #   현행 radar_core.search_sop_documents() 와 같은 의미로 맞춘다:
+        #     문자열 → 그 카테고리에서 2건 / 튜플 → 원소당 1건.
+        #   예전엔 튜플을 그대로 %s 에 넣어 psycopg2 가 `= ('a','b')` 로 펼치는 바람에
+        #   튜플 이벤트를 검사할 수 없었다.
+        cats = list(cat) if isinstance(cat, (list, tuple)) else ([cat] if cat else [None])
+        per = 1 if isinstance(cat, (list, tuple)) else 2
+        hits = []
+        for c in cats:
+            if c:
+                cur.execute("""SELECT cmetadata->>'source_file', embedding <=> %s::vector AS d,
+                                      left(document, 62)
+                               FROM langchain_pg_embedding
+                               WHERE collection_id=%s AND cmetadata->>'category'=%s
+                               ORDER BY d LIMIT %s""", (vlit, cid, c, per))
+            else:
+                cur.execute("""SELECT cmetadata->>'source_file', embedding <=> %s::vector AS d,
+                                      left(document, 62)
+                               FROM langchain_pg_embedding
+                               WHERE collection_id=%s
+                               ORDER BY d LIMIT %s""", (vlit, cid, per))
+            hits += cur.fetchall()
+        shown = cat if cat else '없음 — 전체'
+        head = f'{et}  (필터 {shown})'
         if hits:
             ok(f'{head} → {len(hits)}건')
             for f, d, txt in hits:
